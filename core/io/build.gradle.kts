@@ -1,29 +1,15 @@
-// Android library: this is the only module allowed to touch SAF, ContentResolver or File.
+// T-04: Pure Kotlin JVM for now. The line index, encoding detection and readers
+// are all java.nio — no Android imports needed.
+// T-05 converts this to an Android library when SAF/ContentResolver are added.
 plugins {
-    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.jvm)
 }
-android {
-    namespace = "com.omnieditor.core.io"
-    compileSdk = 35
-    defaultConfig {
-        minSdk = 31
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-    flavorDimensions += "distribution"
-    productFlavors {
-        create("direct") { dimension = "distribution" }
-        create("store") { dimension = "distribution" }
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
-    }
-    kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21) } }
-}
+kotlin { jvmToolchain(21) }
 dependencies {
     api(project(":core:model"))
     implementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.junit)
     testImplementation(libs.kotest.assertions)
-    androidTestImplementation(libs.androidx.test.runner)
+    testImplementation(libs.kotest.property)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
