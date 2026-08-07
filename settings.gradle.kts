@@ -19,4 +19,5 @@ include(":core:io")
 include(":design")
 include(":feature:editor")
 include(":feature:compare")
-// Remaining feature modules added at the task that needs them (T-23 setup, T-24 home).
+include(":feature:setup")
+// Remaining: T-24 adds feature:home if needed.
