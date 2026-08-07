@@ -1,6 +1,6 @@
 # Building and installing Omni Editor
 
-An Android build needs three things: a JDK 17, the Android SDK, and Gradle. Nothing else —
+An Android build needs three things: a JDK 21, the Android SDK, and Gradle. Nothing else —
 Android Studio is convenient but never required.
 
 ---
@@ -10,9 +10,9 @@ Android Studio is convenient but never required.
 Best fit for Claude Code: headless, scriptable, no IDE.
 
 ```bash
-# 1. JDK 17
-sudo apt update && sudo apt install -y openjdk-17-jdk unzip wget
-java -version                                  # expect 17.x
+# 1. JDK 21
+sudo apt update && sudo apt install -y openjdk-21-jdk unzip wget
+java -version                                  # expect 21.x
 
 # 2. Android SDK command-line tools
 export ANDROID_HOME="$HOME/Android/Sdk"
@@ -28,8 +28,7 @@ export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
 yes | sdkmanager --licenses
 sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-# 4. Gradle wrapper — one time only, see gradle/wrapper/README.md
-sudo apt install -y gradle && gradle wrapper --gradle-version 8.11.1
+# 4. Gradle wrapper is already checked in — no need to install Gradle separately
 
 # 5. Build
 cd /path/to/omni-editor
