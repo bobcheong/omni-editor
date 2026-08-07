@@ -83,8 +83,8 @@ fun CompareScreen(
                     onFilterChanged = { state.filterMode = it },
                 )
 
-                // Unified diff view
-                UnifiedDiffView(
+                // Adaptive diff view: unified on phone, split on tablet/landscape
+                AdaptiveDiffView(
                     state = state,
                     modifier = Modifier.weight(1f),
                     contentPadding = padding,
