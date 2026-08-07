@@ -1,0 +1,115 @@
+package com.omnieditor.core.io
+
+import com.omnieditor.core.model.CompareResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import java.io.File
+
+/**
+ * Caches [CompareResult] to disk by session ID so results survive process death.
+ *
+ * When a compare is interrupted (killed at 80%) and the app reopens, the last
+ * stored result is restored without recomputing. Partial results are stored
+ * incrementally as hunks stream in.
+ *
+ * Storage format: JSON in `{cacheDir}/{sessionId}.json`.
+ * Thread-safe via per-session mutex.
+ */
+class ResultStore(private val cacheDir: File) {
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        prettyPrint = false
+    }
+
+    private val locks = HashMap<String, Mutex>()
+
+    private fun mutexFor(sessionId: String): Mutex {
+        return synchronized(locks) {
+            locks.getOrPut(sessionId) { Mutex() }
+        }
+    }
+
+    /**
+     * Store a complete compare result for a session.
+     */
+    suspend fun store(sessionId: String, result: CompareResult) {
+        mutexFor(sessionId).withLock {
+            withContext(Dispatchers.IO) {
+                cacheDir.mkdirs()
+                val file = File(cacheDir, "$sessionId.json")
+                val tmpFile = File(cacheDir, "$sessionId.tmp")
+                try {
+                    val data = json.encodeToString(CompareResult.serializer(), result)
+                    tmpFile.writeText(data)
+                    tmpFile.renameTo(file)
+                } catch (e: Exception) {
+                    tmpFile.delete()
+                    throw e
+                }
+            }
+        }
+    }
+
+    /**
+     * Load a cached compare result for a session.
+     * Returns null if no cached result exists or if the cache is corrupted.
+     */
+    suspend fun load(sessionId: String): CompareResult? {
+        return mutexFor(sessionId).withLock {
+            withContext(Dispatchers.IO) {
+                val file = File(cacheDir, "$sessionId.json")
+                if (!file.exists()) return@withContext null
+                try {
+                    val data = file.readText()
+                    json.decodeFromString(CompareResult.serializer(), data)
+                } catch (e: Exception) {
+                    // Corrupted cache — delete and return null
+                    file.delete()
+                    null
+                }
+            }
+        }
+    }
+
+    /**
+     * Check if a cached result exists for a session.
+     */
+    fun has(sessionId: String): Boolean {
+        return File(cacheDir, "$sessionId.json").exists()
+    }
+
+    /**
+     * Delete the cached result for a session.
+     */
+    suspend fun evict(sessionId: String) {
+        mutexFor(sessionId).withLock {
+            withContext(Dispatchers.IO) {
+                File(cacheDir, "$sessionId.json").delete()
+                File(cacheDir, "$sessionId.tmp").delete()
+            }
+        }
+    }
+
+    /**
+     * Delete all cached results.
+     */
+    suspend fun evictAll() {
+        withContext(Dispatchers.IO) {
+            cacheDir.listFiles()?.forEach { it.delete() }
+        }
+    }
+
+    /**
+     * Total size of the cache in bytes.
+     */
+    fun cacheSize(): Long {
+        return cacheDir.listFiles()
+            ?.filter { it.extension == "json" }
+            ?.sumOf { it.length() }
+            ?: 0L
+    }
+}
