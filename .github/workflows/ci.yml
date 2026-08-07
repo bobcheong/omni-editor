@@ -1,0 +1,27 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+
+      # CLAUDE.md: core modules must stay platform-independent.
+      - name: Core purity
+        run: ./gradlew checkCorePurity
+
+      # DIST-5: both flavours stay green even though only `direct` ships.
+      - name: Unit tests, both flavours
+        run: ./gradlew testDirectDebugUnitTest testStoreDebugUnitTest :core:model:test :core:diff:test
+
+      - name: Static analysis
+        run: ./gradlew detekt lintDirectDebug
+
+      - name: Assemble
+        run: ./gradlew assembleDirectDebug assembleStoreDebug

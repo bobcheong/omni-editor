@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Omni Editor</string>
+    <string name="home_empty_title">Nothing open yet</string>
+    <string name="home_empty_body">Open a file to edit, or pick two files to compare.</string>
+    <string name="home_open_file">Open a file</string>
+    <string name="home_new_compare">New compare</string>
+</resources>

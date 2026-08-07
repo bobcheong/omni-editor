@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      DIST-2: the store flavour uses the Storage Access Framework only.
+      No storage permission is declared or requested. Sessions persist URI grants.
+    -->
+</manifest>

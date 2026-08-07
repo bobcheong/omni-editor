@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Omni Editor — Android Product & Engineering Specification</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EDEFEE;
+    --panel:#F9FAF9;
+    --ink:#15191B;
+    --muted:#5F696B;
+    --rule:#C9D1CE;
+    --rule-soft:#DDE3E0;
+    --anchor:#0B5B58;
+    --add:#1D6B45;
+    --adapt:#8A5A00;
+    --drop:#9E2A2B;
+    --gutter:64px;
+    --maxw:960px;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    font-size:16px;
+    line-height:1.6;
+  }
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 20px 96px}
+
+  /* ---------- masthead ---------- */
+  header.mast{
+    border-bottom:2px solid var(--ink);
+    padding:40px 0 20px;
+    margin-bottom:8px;
+  }
+  .eyebrow{
+    font-family:"IBM Plex Mono",monospace;
+    font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--anchor);margin:0 0 14px;
+  }
+  h1{
+    font-family:"IBM Plex Sans Condensed",sans-serif;
+    font-weight:700;font-size:clamp(38px,9vw,68px);
+    line-height:.98;letter-spacing:-.02em;margin:0 0 10px;
+  }
+  h1 .sub{display:block;font-weight:500;color:var(--muted);font-size:clamp(17px,3.6vw,24px);letter-spacing:0;line-height:1.25;margin-top:12px;max-width:34em}
+  .metagrid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:2px;background:var(--rule-soft);border:1px solid var(--rule-soft);
+    margin-top:26px;
+  }
+  .metagrid div{background:var(--paper);padding:10px 12px}
+  .metagrid dt{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 3px}
+  .metagrid dd{margin:0;font-size:14px;font-weight:500}
+
+  /* ---------- legend ---------- */
+  .legend{
+    border:1px solid var(--rule);background:var(--panel);
+    padding:16px 18px;margin:28px 0 8px;
+  }
+  .legend h4{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin:0 0 12px;color:var(--muted)}
+  .legend ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+  .legend li{display:flex;gap:12px;align-items:baseline;font-size:14.5px}
+  .mk{
+    font-family:"IBM Plex Mono",monospace;font-weight:600;
+    width:22px;flex:none;text-align:center;
+  }
+  .mk.a{color:var(--add)} .mk.b{color:var(--adapt)} .mk.c{color:var(--drop)}
+
+  /* ---------- sections ---------- */
+  section{margin-top:56px}
+  .hunk{
+    font-family:"IBM Plex Mono",monospace;
+    font-size:13px;font-weight:500;color:var(--anchor);
+    border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);
+    padding:7px 0;margin-bottom:22px;
+    display:flex;gap:10px;flex-wrap:wrap;
+  }
+  .hunk b{font-weight:600}
+  h2{
+    font-family:"IBM Plex Sans Condensed",sans-serif;
+    font-weight:700;font-size:clamp(26px,5.5vw,36px);line-height:1.08;
+    letter-spacing:-.01em;margin:0 0 8px;
+  }
+  h3{
+    font-family:"IBM Plex Sans Condensed",sans-serif;
+    font-weight:600;font-size:20px;margin:34px 0 6px;letter-spacing:-.005em;
+  }
+  h4{font-size:15px;font-weight:600;margin:22px 0 4px}
+  p{margin:0 0 14px}
+  .lede{font-size:17.5px;color:var(--muted);max-width:38em;margin-bottom:22px}
+  a{color:var(--anchor)}
+
+  /* ---------- requirement rows: the signature ---------- */
+  .reqs{border-top:1px solid var(--rule-soft)}
+  .req{
+    display:grid;
+    grid-template-columns:22px 76px 1fr;
+    gap:0 12px;
+    border-bottom:1px solid var(--rule-soft);
+    padding:12px 0;
+    align-items:start;
+  }
+  .req > .mk{width:auto;text-align:left;padding-top:2px}
+  .req .rid{
+    font-family:"IBM Plex Mono",monospace;font-size:12px;
+    color:var(--muted);padding-top:4px;letter-spacing:-.01em;
+  }
+  .req .body p{margin:0 0 8px}
+  .req .body p:last-child{margin-bottom:0}
+  .req .body strong{font-weight:600}
+  .req .body ul{margin:6px 0 0;padding-left:18px}
+  .req .body li{margin-bottom:4px}
+  .req .body .note{font-size:14px;color:var(--muted)}
+  .req.add{background:linear-gradient(to right,rgba(29,107,69,.055),transparent 55%)}
+  .req.adapt{background:linear-gradient(to right,rgba(138,90,0,.06),transparent 55%)}
+  .req.drop{background:linear-gradient(to right,rgba(158,42,43,.05),transparent 55%)}
+
+  /* ---------- tables ---------- */
+  .tablewrap{overflow-x:auto;margin:18px 0;border:1px solid var(--rule-soft)}
+  table{border-collapse:collapse;width:100%;font-size:14px;background:var(--panel);min-width:520px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+  th{
+    font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--muted);font-weight:500;
+    background:var(--paper);border-bottom:1px solid var(--rule);
+  }
+  td code{font-size:12.5px}
+  tr:last-child td{border-bottom:none}
+  .tag{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;white-space:nowrap}
+  .tag.a{color:var(--add)} .tag.b{color:var(--adapt)} .tag.c{color:var(--drop)}
+
+  /* ---------- misc blocks ---------- */
+  pre{
+    font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.5;
+    background:var(--panel);border:1px solid var(--rule-soft);
+    padding:14px;overflow-x:auto;margin:14px 0;
+  }
+  code{font-family:"IBM Plex Mono",monospace;background:rgba(11,91,88,.08);padding:1px 4px;font-size:13px}
+  pre code{background:none;padding:0;font-size:inherit}
+  ul.plain{padding-left:20px;margin:0 0 14px}
+  ul.plain li{margin-bottom:6px}
+  .callout{
+    border-left:3px solid var(--anchor);background:var(--panel);
+    padding:12px 16px;margin:18px 0;font-size:15px;
+  }
+  .callout b{font-family:"IBM Plex Sans Condensed",sans-serif;font-size:16px}
+  .q{border-bottom:1px solid var(--rule-soft);padding:14px 0;display:grid;grid-template-columns:44px 1fr;gap:12px}
+  .q .qn{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--drop);font-weight:600;padding-top:3px}
+  .q p{margin:0 0 6px}
+  .q .why{font-size:14px;color:var(--muted);margin:0}
+  footer{margin-top:72px;padding-top:20px;border-top:2px solid var(--ink);font-size:13px;color:var(--muted)}
+  footer p{margin:0 0 6px}
+
+  @media (max-width:620px){
+    .req{grid-template-columns:20px 1fr;gap:0 10px}
+    .req .rid{grid-column:2;padding-top:0;margin-bottom:4px}
+    .req .body{grid-column:2}
+    .wrap{padding:0 16px 72px}
+  }
+  @media (prefers-reduced-motion:no-preference){
+    section{animation:rise .5s ease both}
+    @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Product &amp; engineering specification · revision 3</p>
+  <h1>Omni Editor
+    <span class="sub">An Android file, folder and document compare/merge app — the mobile counterpart to UltraCompare.</span>
+  </h1>
+  <dl class="metagrid">
+    <div><dt>Document</dt><dd>OE-SPEC-001 · v1.2</dd></div>
+    <div><dt>Date</dt><dd>7 August 2026</dd></div>
+    <div><dt>Distribution</dt><dd>Direct install (APK); store listing optional later</dd></div>
+    <div><dt>Target platform</dt><dd>Android 12+ (API 31) · phone, tablet, foldable, DeX</dd></div>
+    <div><dt>Build</dt><dd>Implemented by Claude Code · P1 first</dd></div>
+  </dl>
+</header>
+
+<div class="legend">
+  <h4>How to read this document</h4>
+  <ul>
+    <li><span class="mk a">+</span><span><b>Carried over.</b> The UltraCompare behaviour ships on Android essentially unchanged.</span></li>
+    <li><span class="mk b">~</span><span><b>Adapted.</b> The capability ships, but the mobile form differs — reshaped for touch, small screens, or Android's storage model.</span></li>
+    <li><span class="mk c">&minus;</span><span><b>Dropped or deferred.</b> Not technically possible on Android, or explicitly out of the first release.</span></li>
+  </ul>
+  <p style="margin:14px 0 0;font-size:14px;color:var(--muted)">Requirement IDs are stable: <code>OE-&lt;module&gt;-&lt;n&gt;</code>. Cite them in tickets and test cases.</p>
+</div>
+
+<!-- ============ 1 ============ -->
+<section>
+  <div class="hunk"><b>@@ 01 @@</b> Summary and positioning</div>
+  <h2>What Omni Editor is</h2>
+  <p class="lede">Omni Editor edits, compares and merges text files, folders, spreadsheets and documents on an Android device, including files held on remote servers and inside archives — with an engine tuned for files large enough to defeat ordinary mobile viewers.</p>
+
+  <div class="callout"><p style="margin:0"><b>Two products, one document engine.</b> Omni Editor is a capable standalone text editor <em>and</em> a compare/merge tool. They are not separate features bolted together: a compare pane is an editor pane with a diff overlay, sharing the line index, piece table, undo stack, syntax highlighter and save path. Every capability the editor gains is available inside a compare, and any file being edited can be compared against another in one action.</p></div>
+
+  <p>The category baseline — set by desktop diff and merge tools generally — is: 2- and 3-way text compare and merge, folder compare with rule-based synchronisation, comparison of tabular and document formats, work over remote filesystems, and version-control integration, all in one application. Omni Editor delivers that baseline on a device with one hand, a 6-inch screen, a storage model that hides the filesystem, and a battery. It is an independent product (§16) — the baseline is a description of what the category does, not a product to be cloned.</p>
+
+  <p>The product is not a port. Three constraints reshape it and are the source of most decisions in this document:</p>
+  <ul class="plain">
+    <li><b>The screen is narrow.</b> Side-by-side is a tablet and landscape layout. Unified (single-column) diff is the phone default, and every navigation affordance assumes the reader cannot see both files at once.</li>
+    <li><b>There is no filesystem.</b> Android grants access to documents and trees the user explicitly picks. Paths are not durable; URIs and permission grants are. Sessions store grants, not paths.</li>
+    <li><b>Work is interruptible.</b> A compare or a sync can be backgrounded, killed, or resumed hours later. Long operations run as cancellable, resumable jobs with visible progress.</li>
+  </ul>
+
+  <h3>Positioning statement</h3>
+  <p>For developers, sysadmins, QA engineers and reviewers who need to check what changed while away from a workstation, Omni Editor is a compare tool that handles real files — not a snippet-paste diff toy and not a read-only viewer.</p>
+</section>
+
+<!-- ============ 2 ============ -->
+<section>
+  <div class="hunk"><b>@@ 02 @@</b> Goals and non-goals</div>
+  <h2>Goals</h2>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">G-1</span><div class="body"><p><b>Feature parity of intent.</b> Every compare mode UltraCompare offers — text, folder, table, document, binary, archive — has a first-class mobile equivalent, even where the interaction differs.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">G-2</span><div class="body"><p><b>Large file competence.</b> Files that make other Android editors fail should open and diff. This is the reference product's headline claim and the clearest differentiator.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">G-3</span><div class="body"><p><b>Legible diffs on a phone.</b> A person should understand what changed while standing up, in under ten seconds, without pinching.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">G-4</span><div class="body"><p><b>Trustworthy merges.</b> Writing is destructive. Every merge and sync is previewed, undoable within the session, and backed up before the first write.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">G-5</span><div class="body"><p><b>Works offline.</b> Local compare, table compare, document compare and merge require no network and no account.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">G-6</span><div class="body"><p><b>A real editor, not a viewer.</b> Omni Editor opens and edits files on their own, with the same large-file competence as the compare engine (M5). Compare and edit are two views of one document, not two apps welded together.</p></div></div>
+  </div>
+
+  <h3>Non-goals</h3>
+  <div class="reqs">
+    <div class="req drop"><span class="mk c">&minus;</span><span class="rid">NG-1</span><div class="body"><p><b>Not an IDE.</b> The app edits files, not projects. No build integration, language servers, code completion, debugger, terminal or plugin runtime. The line is: anything that helps you read and change <em>this file</em> is in; anything that requires understanding a codebase is out.</p></div></div>
+    <div class="req drop"><span class="mk c">&minus;</span><span class="rid">NG-2</span><div class="body"><p><b>No shell integration equivalent.</b> Android has no file-manager context menu API. The share sheet and <code>ACTION_VIEW</code> handling replace it (§9).</p></div></div>
+    <div class="req drop"><span class="mk c">&minus;</span><span class="rid">NG-3</span><div class="body"><p><b>No command line.</b> Automation is served by scheduled sync jobs and (later) an intent API, not a CLI.</p></div></div>
+    <div class="req drop"><span class="mk c">&minus;</span><span class="rid">NG-4</span><div class="body"><p><b>Not a Git client.</b> Omni Editor reads repositories to diff and resolve conflicts. It does not stage, commit, push, rebase or manage remotes in v1. See Q-3.</p></div></div>
+  </div>
+</section>
+
+<!-- ============ 3 ============ -->
+<section>
+  <div class="hunk"><b>@@ 03 @@</b> Users and primary jobs</div>
+  <h2>Who this is for</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Persona</th><th>Primary job on mobile</th><th>Drives</th></tr></thead>
+      <tbody>
+        <tr><td><b>On-call engineer</b></td><td>Check whether a config file on a server matches the known-good copy, from a phone, at 2am.</td><td>SFTP source, unified diff, ignore-whitespace, no login friction</td></tr>
+        <tr><td><b>Reviewing developer</b></td><td>Read a branch diff or resolve a merge conflict away from the laptop.</td><td>Git read mode, 3-way conflict view, syntax highlighting</td></tr>
+        <tr><td><b>QA / technical writer</b></td><td>Compare two revisions of a spec or exported report.</td><td>DOCX/PDF compare, word-level highlighting, shareable HTML report</td></tr>
+        <tr><td><b>Data / ops analyst</b></td><td>Find which rows changed between two CSV exports.</td><td>Table compare, key-column matching, cell merge</td></tr>
+        <tr><td><b>Legal / compliance reviewer</b></td><td>Confirm the contract received matches the one sent.</td><td>Document compare from the share sheet, exportable evidence of differences</td></tr>
+        <tr><td><b>Photographer / field worker</b></td><td>Reconcile a phone folder with an SD card or NAS folder.</td><td>Folder compare, sync rules, duplicate finder</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Top entry paths</h3>
+  <ul class="plain">
+    <li>Share two files to Omni Editor from a file manager, mail client or cloud app → compare opens directly.</li>
+    <li>Open a saved session from Home → last compare re-runs against live sources.</li>
+    <li>Open app cold → pick left and right sources on the Compare setup screen.</li>
+    <li>Tap a scheduled-sync notification → review pending sync actions.</li>
+  </ul>
+</section>
+
+<!-- ============ 4 ============ -->
+<section>
+  <div class="hunk"><b>@@ 04 @@</b> Android platform constraints</div>
+  <h2>What the platform changes</h2>
+  <p class="lede">These constraints are not implementation trivia; they determine the product surface. Every one of them removes or reshapes something the desktop product does.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Constraint</th><th>Consequence for Omni Editor</th></tr></thead>
+      <tbody>
+        <tr><td><b>Scoped storage</b><br>No arbitrary path access since Android 10 unless the app holds <code>MANAGE_EXTERNAL_STORAGE</code>, which store policy restricts.</td><td>Because release one is direct-install, the <code>direct</code> flavour takes all-files access and works with real paths — a significant ergonomic win for folder compare. The <code>store</code> flavour uses the Storage Access Framework and persists URI grants instead. Both are hidden behind <code>SourceProvider</code>. Under SAF a session can become <em>unresolvable</em> when a grant is revoked; that remains a first-class state (§13).</td></tr>
+        <tr><td><b>Per-app heap limits</b><br>Typically 192–512 MB depending on device.</td><td>The compare engine never loads whole files into memory. Files are memory-mapped and indexed by line offset; the diff runs over indices. Above a configurable threshold the engine switches to a block-hash pre-pass (§6, OE-ENG-4).</td></tr>
+        <tr><td><b>Narrow viewport</b></td><td>Unified diff is the phone default; side-by-side unlocks at ≥600dp width or on rotation. Layout is width-driven, not device-class-driven, so foldables and DeX get the wide layout automatically.</td></tr>
+        <tr><td><b>Background execution limits</b></td><td>Compares over ~10 s and all sync operations run in a foreground service with a notification; scheduled syncs use <code>WorkManager</code> with network and charging constraints.</td></tr>
+        <tr><td><b>No Microsoft Office runtime</b><br>UltraCompare delegates XLSX/DOCX to installed Office.</td><td>Omni Editor must parse OOXML itself (Apache POI-derived or a lighter custom reader) and extract PDF text on-device. Fidelity is therefore <em>text and structure</em>, not rendered layout. See Q-5 on whether server-side conversion is acceptable.</td></tr>
+        <tr><td><b>No file-manager context menu</b></td><td>Replaced by share-sheet targets, <code>ACTION_VIEW</code> intent filters, a "compare with…" second-file picker, and a quick-settings tile.</td></tr>
+        <tr><td><b>Touch input, no hover, no right-click</b></td><td>Long-press replaces right-click; a bottom action bar replaces the ribbon; a persistent bottom sheet replaces dockable panes.</td></tr>
+        <tr><td><b>Battery and thermal budgets</b></td><td>Diff work is chunked and yields to the main thread; folder scans back off on low battery; recursive scans warn above a configurable file count.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section>
+  <div class="hunk"><b>@@ 05 @@</b> Capability map · category baseline &rarr; Omni Editor</div>
+  <h2>Feature-by-feature disposition</h2>
+  <p>The left column is the capability set a mature desktop compare/merge tool is expected to have. It is a scope checklist, not a design to be reproduced: it names <em>what</em> the product does, never how a specific competitor does it. This table is the scope contract; §6 onward specifies only what it admits.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Baseline capability</th><th></th><th>Omni Editor treatment</th></tr></thead>
+      <tbody>
+        <tr><td>2-way and 3-way text compare</td><td class="tag a">+</td><td>Both. 3-way presented as a stacked/paged layout on phones.</td></tr>
+        <tr><td>Multi-GB file support</td><td class="tag b">~</td><td>Streaming engine; target ceiling 2 GB on 6 GB-RAM devices, with graceful degradation notice above.</td></tr>
+        <tr><td>Highlight by character / word / line</td><td class="tag a">+</td><td>All three granularities, switchable per session.</td></tr>
+        <tr><td>Ignore case / whitespace / blank lines / line endings</td><td class="tag a">+</td><td>Full set, as a persistent filter chip row.</td></tr>
+        <tr><td>Ignore lines beginning/containing/ending with; text between markers; N lines at head/tail</td><td class="tag a">+</td><td>Full set, in an "Ignore rules" editor.</td></tr>
+        <tr><td>Compare / ignore column ranges</td><td class="tag a">+</td><td>Retained — high value for fixed-width data.</td></tr>
+        <tr><td>Manual re-sync of two lines</td><td class="tag b">~</td><td>Long-press a line in each pane → "Align here".</td></tr>
+        <tr><td>Inline editing while comparing</td><td class="tag a">+</td><td>Tap-to-edit line, with edited-not-saved highlight.</td></tr>
+        <tr><td>Text snippet compare (paste into empty frames)</td><td class="tag a">+</td><td>"Paste &amp; compare" is a top-level Home action; also accepts shared text.</td></tr>
+        <tr><td>Folder compare, 2 and 3 way, recursive</td><td class="tag a">+</td><td>Tree view with expandable nodes.</td></tr>
+        <tr><td>Rule-based folder sync + scheduling</td><td class="tag b">~</td><td>Rules retained; scheduling via WorkManager, subject to Android's timing tolerances.</td></tr>
+        <tr><td>Find duplicate files</td><td class="tag a">+</td><td>Name/size/date/content criteria retained.</td></tr>
+        <tr><td>FTP / FTPS / SFTP compare and sync</td><td class="tag a">+</td><td>Built-in client; credentials in the Android Keystore.</td></tr>
+        <tr><td>Network shares / mapped drives</td><td class="tag b">~</td><td>SMB via a bundled client, plus any provider the user has mounted through SAF (Drive, Dropbox, NAS apps).</td></tr>
+        <tr><td>Compare file from URL</td><td class="tag a">+</td><td>Paste a URL as either side.</td></tr>
+        <tr><td>ZIP / RAR / JAR compare without extracting</td><td class="tag a">+</td><td>ZIP and JAR native; RAR read-only via a licensed decoder — see Q-6.</td></tr>
+        <tr><td>Table / CSV / TSV grid compare, cell-row-column merge</td><td class="tag a">+</td><td>Grid view with frozen headers and horizontal paging.</td></tr>
+        <tr><td>Excel XLS/XLSX multi-sheet compare</td><td class="tag b">~</td><td>Parsed on-device; formulas compared as cached values and as formula text, both shown.</td></tr>
+        <tr><td>Word DOC/DOCX, RTF, PDF text compare</td><td class="tag b">~</td><td>DOCX/RTF/PDF supported; legacy binary <code>.doc</code> is Q-5.</td></tr>
+        <tr><td>Binary / hex compare, fast and smart modes</td><td class="tag a">+</td><td>Both modes; hex grid adapts columns to width.</td></tr>
+        <tr><td>Configurable syntax highlighting</td><td class="tag b">~</td><td>Built-in grammars for ~40 languages in the app's own JSON grammar format. No third-party grammar or configuration format is imported.</td></tr>
+        <tr><td>Themes, import/export/share</td><td class="tag a">+</td><td>Plus Material You dynamic colour and forced-dark handling.</td></tr>
+        <tr><td>Differences minimap</td><td class="tag a">+</td><td>Thin scrubbable rail on the right edge, drag to seek.</td></tr>
+        <tr><td>Save/print compare result as HTML or text</td><td class="tag b">~</td><td>Export to HTML, unified diff, or PDF; "print" is Android's print service.</td></tr>
+        <tr><td>Sessions: save, name, group, relaunch</td><td class="tag a">+</td><td>Sessions are the app's home screen.</td></tr>
+        <tr><td>Git difftool/mergetool, repo browser, conflict resolution, blame</td><td class="tag b">~</td><td>Read/resolve subset: browse local repos, diff versions and branches, resolve conflicts, view blame. No commit graph management in v1.</td></tr>
+        <tr><td>SVN / CVS integration</td><td class="tag c">&minus;</td><td>Deferred. Negligible mobile demand; revisit on request.</td></tr>
+        <tr><td>Windows Explorer shell integration</td><td class="tag c">&minus;</td><td>Not available on Android. Replaced by share targets.</td></tr>
+        <tr><td>Command line / batch reports</td><td class="tag c">&minus;</td><td>Replaced by scheduled jobs; intent API deferred.</td></tr>
+        <tr><td>Drag-and-drop from file explorer</td><td class="tag b">~</td><td>Supported on tablets/DeX via Android drag-and-drop; not applicable on phones.</td></tr>
+        <tr><td>Ribbon / toolbar customisation, key mapping</td><td class="tag b">~</td><td>Customisable bottom action bar; hardware-keyboard shortcuts configurable.</td></tr>
+        <tr><td>EBCDIC and double-byte compare</td><td class="tag b">~</td><td>Full Unicode from day one; EBCDIC behind an advanced encoding setting.</td></tr>
+        <tr><td>Companion-desktop-editor integration</td><td class="tag c">&minus;</td><td>No desktop counterpart exists. Replaced by "Open with" hand-off to any installed app.</td></tr>
+        <tr><td colspan="3" style="background:var(--paper);font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Beyond the reference product</td></tr>
+        <tr><td>Standalone file editing (no compare)</td><td class="tag a">+</td><td>New. Full editor with tabs, find/replace, text tools, large-file support (M5).</td></tr>
+        <tr><td>Key-column row matching in table compare</td><td class="tag a">+</td><td>New. Matches reordered rows instead of reporting them as changes (OE-TBL-2).</td></tr>
+        <tr><td>AI-assisted compare analysis</td><td class="tag b">~</td><td>Optional, off by default, network required. See §6 M19 and Q-7.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 6 ============ -->
+<section>
+  <div class="hunk"><b>@@ 06 @@</b> Functional requirements</div>
+  <h2>M1 · Sources and file access</h2>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-SRC-1</span><div class="body"><p><b>Source picker.</b> Either side of a compare accepts: device storage (SAF), a saved remote connection, a URL, an archive member, a Git object, the clipboard, or a pasted snippet. The picker is one screen with a source-type rail, not a chain of dialogs.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-SRC-2</span><div class="body"><p><b>Persistent access.</b> Sessions store a path, an optional persistable URI grant, a human-readable label, and a content fingerprint (size + modified time + first/last 4 KB hash) so a moved file can be re-matched. The <code>direct</code> flavour resolves by path; the <code>store</code> flavour requires the grant (DIST-2).</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-SRC-3</span><div class="body"><p><b>Recents and favourites.</b> Recently used files, folders and connections appear first. Favourites are pinnable and survive reinstall via backup.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-SRC-4</span><div class="body"><p><b>Share-sheet ingestion.</b> The app registers as a share target for <code>text/*</code>, <code>application/*</code>, and multi-select. One file → "compare with…" prompt. Two files → compare opens immediately. Text → snippet compare.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-SRC-5</span><div class="body"><p><b>Encoding handling.</b> Auto-detect UTF-8/16/32, BOM, and common 8-bit codepages; per-side manual override; line-ending detection (CRLF/LF/CR) shown in the header and independently ignorable.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-SRC-6</span><div class="body"><p><b>Unresolvable sources.</b> If a grant is revoked or a remote host is unreachable, the session opens in a degraded state showing the last known result marked stale, with a single "Reconnect" action.</p></div></div>
+  </div>
+
+  <h2>M2 · Compare engine</h2>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-ENG-1</span><div class="body"><p><b>Algorithm.</b> Histogram diff (Myers fallback) producing line-level hunks, then a second pass producing intra-line character or word ranges for changed line pairs.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-ENG-2</span><div class="body"><p><b>3-way.</b> Diff3 against a common base for merge conflict detection; when no base exists (two arbitrary files plus a third), the middle pane is the base by convention and this is stated in the UI.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-ENG-3</span><div class="body"><p><b>Logical line matching depth</b> is configurable (default 20 lines scanned to re-anchor a block), matching UltraCompare's tunable behaviour.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-ENG-4</span><div class="body"><p><b>Large-file strategy.</b> Below the threshold (default 32 MB) the engine indexes every line. Above it: rolling-hash block matching to locate changed regions, then full diff within those regions only. The mode in use is disclosed in the session header — never silently degraded.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-ENG-5</span><div class="body"><p><b>Ignore rules</b> are applied as a normalisation layer before hashing, so ignored differences never produce hunks: case, leading/trailing/all whitespace, blank lines, line terminators, lines matching begins-with / contains / ends-with, all text between two markers, and N lines at head or tail.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-ENG-6</span><div class="body"><p><b>Column ranges.</b> A rule set of column spans to compare or ignore, expressed 1-based inclusive, applied per side.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-ENG-7</span><div class="body"><p><b>Cancellation and progress.</b> Every compare is cancellable, reports determinate progress once total size is known, and survives configuration change and process death (results cached to disk by session ID).</p></div></div>
+  </div>
+
+  <h2>M3 · Text compare view</h2>
+  <div class="reqs">
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-TXT-1</span><div class="body"><p><b>Two layouts.</b> <em>Unified</em> (default &lt;600dp): one column, interleaved, colour-coded gutter markers. <em>Split</em> (default ≥600dp or landscape): synchronised horizontal panes with relational connector lines between matched blocks, as on desktop. A toggle in the app bar switches manually at any width.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-TXT-2</span><div class="body"><p><b>Difference navigation.</b> Previous/next-difference controls are the primary bottom-bar actions. A difference counter reads <code>7 / 42</code>. Swipe left/right on the content area jumps difference-to-difference (configurable).</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-TXT-3</span><div class="body"><p><b>Minimap rail.</b> Full-height, 6dp wide, right edge, showing difference density. Draggable to seek; tap to jump.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-TXT-4</span><div class="body"><p><b>Filter view.</b> Show all lines / only differences / only matches — matching the desktop filter, as a segmented control.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-TXT-5</span><div class="body"><p><b>Syntax highlighting</b> by detected language, themed, disableable per pane. Highlighting must never delay first paint; it applies progressively.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-TXT-6</span><div class="body"><p><b>Display options:</b> word wrap, line numbers, whitespace glyphs, tab width, font family and size, synchronised scrolling on/off, flip sides.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-TXT-7</span><div class="body"><p><b>Active-line inspector.</b> A collapsible bottom sheet showing the current line from every side stacked vertically with intra-line highlighting — this is how a phone user sees "side by side" for the line that matters.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-TXT-8</span><div class="body"><p><b>Bookmarks</b> on lines, listed in a sheet, persisted with the session.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-TXT-9</span><div class="body"><p><b>Status readout:</b> line/column, hunk count, lines added/removed/changed per side, encoding, line ending, engine mode.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-TXT-10</span><div class="body"><p><b>HTML preview.</b> Render either side in a sandboxed WebView (JavaScript disabled by default) to inspect an HTML file visually, replacing the desktop's embedded browser.</p></div></div>
+  </div>
+
+  <h2>M4 · Merge and edit</h2>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-MRG-1</span><div class="body"><p><b>Block and line merge.</b> Tap a hunk marker → arrow actions to copy the block in either direction; long-press for line-level and selection-level merge.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-MRG-2</span><div class="body"><p><b>Word-level replace and insert</b> within a changed line pair.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-MRG-3</span><div class="body"><p><b>Accept all</b> in either direction, with a confirmation stating how many hunks and lines will change.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-MRG-4</span><div class="body"><p><b>Unlimited in-session undo/redo</b> of merges and edits. Merged lines are marked for review until saved.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-MRG-5</span><div class="body"><p><b>Safety.</b> Before the first write to a file in a session, a timestamped backup is written to app storage. A "Restore original" action is available for 30 days (configurable, size-capped).</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-MRG-6</span><div class="body"><p><b>Dirty-state handling.</b> Unsaved changes survive process death. Leaving a session with unsaved edits prompts save / discard / keep editing.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-MRG-7</span><div class="body"><p><b>External change detection.</b> On resume, re-fingerprint both sources; if either changed underneath, banner: "The file on the left changed. Reload or keep your version."</p></div></div>
+  </div>
+
+  <h2>M5 · Standalone editor</h2>
+  <p class="lede">Beyond the reference product. Omni Editor opens, edits and saves files with no compare involved — the editor and the compare view share one document engine, one syntax highlighter and one undo stack.</p>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-EDT-1</span><div class="body"><p><b>Open, create, save.</b> Any source from M1 — device, remote, archive member, URL, Git object — can be opened for editing. Save, Save as (SAF), and Save a copy. Read-only sources (URL, Git history, archive without write support) open in a clearly labelled read-only state with "Save a copy" offered.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-EDT-2</span><div class="body"><p><b>Tabs.</b> Open documents and open compares share one tab strip. A tab shows a dirty dot when unsaved. Tab state, caret position and scroll offset survive process death.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-EDT-3</span><div class="body"><p><b>Large-file editing.</b> The editor uses the same line index and piece-table model as the compare engine, so a 500 MB log opens without loading into memory. Edits are held as a piece list and materialised only on save.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-EDT-4</span><div class="body"><p><b>Find and replace</b> with case sensitivity, whole word, regular expressions (with capture-group references in the replacement), replace all with a count, and find-in-selection.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-EDT-5</span><div class="body"><p><b>Navigation:</b> go to line, bookmarks, jump to matching bracket, and a symbol outline for supported languages.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-EDT-6</span><div class="body"><p><b>Touch editing affordances.</b> A programmer's key row above the keyboard (tab, brackets, quotes, pipe, arrows, undo/redo), draggable caret handle, and long-press-drag for precise selection. Typing on a phone is the weakest part of any mobile editor; this row is where the effort goes.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-EDT-7</span><div class="body"><p><b>Text operations:</b> sort lines, remove duplicate lines, trim trailing whitespace, change case, convert tabs/spaces, convert line endings, convert encoding, join/split lines, insert timestamp. Each is undoable as one step.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-EDT-8</span><div class="body"><p><b>Column (block) selection</b> and multi-caret editing on large screens and with a hardware keyboard; on phones, column select is entered from the selection menu.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-EDT-9</span><div class="body"><p><b>Autosave and recovery.</b> Edits are journalled continuously to app storage. A crash or kill restores every open document byte-exact, unsaved changes included, without prompting.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-EDT-10</span><div class="body"><p><b>Editor ⇄ compare handoff.</b> From an open document: "Compare with…" opens a compare with this document as the left side, including its unsaved buffer. From a compare: "Open in editor" promotes either side to a full editing tab, preserving merge state.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-EDT-11</span><div class="body"><p><b>Remote editing</b> follows a download–edit–upload cycle with an explicit save-to-server step, conflict detection on upload (re-fingerprint before write), and retry on failure without losing the buffer.</p></div></div>
+    <div class="req drop"><span class="mk c">&minus;</span><span class="rid">OE-EDT-12</span><div class="body"><p><b>Not in the editor:</b> project/workspace management, build or run integration, language servers, code completion, macros and scripting. Revisit after launch based on demand.</p></div></div>
+  </div>
+
+  <h2>M6 · Folder compare and sync</h2>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-FLD-1</span><div class="body"><p><b>2- and 3-folder compare</b>, recursive, over any combination of local, SMB and FTP/SFTP sources.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-FLD-2</span><div class="body"><p><b>Tree presentation.</b> A single merged tree — each row is a relative path with per-side status chips — replaces the desktop's two side-by-side trees, which do not fit a phone. Split trees appear at ≥720dp.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-FLD-3</span><div class="body"><p><b>Comparison method</b> switchable on the fly: <em>basic</em> (name + size + timestamp), <em>full</em> (byte/CRC), <em>smart</em> (content diff for text types).</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-FLD-4</span><div class="body"><p><b>CRC-based remote compare</b> to avoid downloading files where the server supports a checksum command; otherwise size+date with an explicit "not content-verified" indicator.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-FLD-5</span><div class="body"><p><b>Filters:</b> include/exclude by glob, NOT operator, ignore listed directories and file types, ignore hidden/system files, ignore timestamp differences, size and date bounds.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-FLD-6</span><div class="body"><p><b>Drill-down.</b> Tapping a differing file opens a text/table/binary compare in a new session, inheriting the folder session's rules.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-FLD-7</span><div class="body"><p><b>Sync rules.</b> Built-in rule sets (mirror left→right, mirror right→left, newest wins, two-way merge) plus user-defined rules with per-condition actions (copy, delete, skip, ask).</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-FLD-8</span><div class="body"><p><b>Sync review is mandatory.</b> A pre-flight list shows every planned action with counts and total bytes, per-file override, and a red summary of deletions. Nothing executes before explicit confirmation.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-FLD-9</span><div class="body"><p><b>Scheduled sync</b> via <code>WorkManager</code>, with constraints (unmetered network, charging, idle). Android does not guarantee exact timing; the UI states "runs approximately every…" rather than promising a clock time.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-FLD-10</span><div class="body"><p><b>Find duplicates</b> across two or more folders by any combination of name, size, date and content hash, with keep/delete selection and a bulk action guarded by the same review step as sync.</p></div></div>
+  </div>
+
+  <h3>Sync engine semantics</h3>
+  <p>Sync is the only part of the app that destroys data, so its behaviour is specified rather than left to implementation.</p>
+
+  <h4>Rule evaluation</h4>
+<pre>for each path in union(left, right):
+    state ← classify(path)      // LEFT_ONLY, RIGHT_ONLY, LEFT_NEWER,
+                                // RIGHT_NEWER, SIZE_DIFF, CONTENT_DIFF,
+                                // IDENTICAL, BOTH_CHANGED, TYPE_CONFLICT
+    rule  ← first rule in priority order whose conditions match state
+    action ← rule.action ?? ASK
+    if action == ASK: add to "Needs your decision"</pre>
+  <ul class="plain">
+    <li>Rules are ordered; the first match wins. The review screen shows which rule produced each action, so an unexpected plan is diagnosable.</li>
+    <li><code>BOTH_CHANGED</code> — both sides differ from the last recorded sync state — is never auto-resolved by "newest wins". It always requires a decision. This requires storing a sync baseline per session (path → size, mtime, hash) from the previous run.</li>
+    <li><code>TYPE_CONFLICT</code> (file on one side, directory on the other) is always held for decision.</li>
+  </ul>
+
+  <h4>Write semantics</h4>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Concern</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td>Atomicity</td><td>Write to a temporary name in the destination directory, then rename. A killed sync never leaves a half-written file at the target path.</td></tr>
+      <tr><td>Resume</td><td>The plan is persisted before execution and each action is marked done as it completes. An interrupted sync resumes from the first incomplete action; partial transfers restart from zero unless the protocol supports ranged resume (SFTP, HTTP), in which case they resume by offset.</td></tr>
+      <tr><td>Deletion</td><td>Default is move-to-trash inside a hidden <code>.omni-trash</code> folder at the sync root, retained for a configurable period. Permanent delete is opt-in per rule set and confirmed separately.</td></tr>
+      <tr><td>Timestamps</td><td>Modified time is preserved on copy where the destination supports it. Where it cannot be set (some SAF providers, some FTP servers), the session records this and falls back to content hashing for subsequent runs rather than reporting spurious differences.</td></tr>
+      <tr><td>Clock skew</td><td>A configurable tolerance (default 2 s, plus automatic 1-hour allowance for FAT/DST artefacts) prevents a whole tree being reported as changed.</td></tr>
+      <tr><td>Case sensitivity</td><td>Syncing a case-sensitive source to a case-insensitive destination detects collisions before execution and reports them as conflicts rather than silently overwriting.</td></tr>
+      <tr><td>Illegal names</td><td>Characters legal on the source but not the destination are detected at planning time; the user chooses to skip or sanitise.</td></tr>
+      <tr><td>Symlinks</td><td>Not followed by default; listed and skipped with a note. Following is an explicit option with cycle detection.</td></tr>
+      <tr><td>Permissions</td><td>POSIX modes preserved for SFTP↔SFTP. Otherwise not transferable; stated in the report rather than silently dropped.</td></tr>
+      <tr><td>Concurrency</td><td>Transfers run with bounded parallelism (default 4, 1 on metered networks). Deletions execute after all copies succeed, so a failed copy never leaves a gap.</td></tr>
+      <tr><td>Verification</td><td>Optional post-copy hash verification, on by default for remote destinations.</td></tr>
+      <tr><td>Free space</td><td>Checked before execution; the plan is blocked with a shortfall figure rather than failing midway.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>Scheduled sync</h4>
+  <ul class="plain">
+    <li>Runs as a periodic <code>WorkManager</code> job with constraints; minimum practical interval is 15 minutes and the UI never promises exact times.</li>
+    <li>A scheduled run that produces any <code>ASK</code> action does not execute. It notifies "Sync needs your decision" and holds the plan for review.</li>
+    <li>Fully-automatic mode (no ASK actions possible) is opt-in per session and requires the rule set to be total — every state mapped to a concrete action.</li>
+    <li>Failures retry with exponential backoff; three consecutive failures notify once and pause the schedule.</li>
+  </ul>
+
+  <h2>M7 · Table and spreadsheet compare</h2>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-TBL-1</span><div class="body"><p><b>Grid compare</b> for CSV, TSV and delimited text with configurable separator, quote character and "use row 1 as headers".</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-TBL-2</span><div class="body"><p><b>Key-column matching.</b> Optional: nominate one or more columns as a row key so reordered rows are matched rather than reported as wholesale changes. This is an addition to the desktop behaviour and materially improves data-file review.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-TBL-3</span><div class="body"><p><b>Ignore rules</b> for columns, rows, or any cell containing a given string.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-TBL-4</span><div class="body"><p><b>View filters:</b> only differing rows/columns, or only matching.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-TBL-5</span><div class="body"><p><b>Merge</b> at cell, row and column level, then save to either side or to a new file.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-TBL-6</span><div class="body"><p><b>Excel.</b> XLSX and XLSM parsed on-device with a sheet selector and per-sheet difference badges. Each cell compares on displayed value <em>and</em> formula text, both visible in the cell inspector. Charts, images and macros are out of scope and flagged as "not compared".</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-TBL-7</span><div class="body"><p><b>Mobile grid interaction.</b> Frozen header row and key column, pinch to zoom, two-finger pan, tap a cell to open an inspector sheet showing both versions stacked.</p></div></div>
+  </div>
+
+  <h2>M8 · Document compare</h2>
+  <div class="reqs">
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-DOC-1</span><div class="body"><p><b>DOCX and RTF</b> compared as extracted, structure-aware text: paragraphs, headings, list items and table cells retain order and nesting so diffs align meaningfully.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-DOC-2</span><div class="body"><p><b>PDF</b> compared on extracted text with page and block attribution. Images and non-text content are ignored, matching the reference product; scanned PDFs without a text layer produce an explicit "no extractable text" result rather than an empty diff.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-DOC-3</span><div class="body"><p><b>Word-level highlighting is the default</b> for documents; prose diffs are unreadable at line granularity.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-DOC-4</span><div class="body"><p><b>Fidelity disclosure.</b> The document compare header always states what was compared and what was ignored (formatting, tracked changes, comments, headers/footers, images). Reviewers must not mistake a text diff for a redline.</p></div></div>
+    <div class="req drop"><span class="mk c">&minus;</span><span class="rid">OE-DOC-5</span><div class="body"><p><b>Merging into DOCX/PDF is out of scope.</b> Document compare is read-and-report only; merge targets a plain-text or new-file export. Reopened in Q-5.</p></div></div>
+  </div>
+
+  <h2>M9 · Binary compare</h2>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-BIN-1</span><div class="body"><p><b>Fast mode</b> (positional byte compare) and <b>smart mode</b> (aligns matching byte runs across insertions), as on desktop.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-BIN-2</span><div class="body"><p><b>Hex grid</b> with address column, hex bytes and ASCII column; bytes per row adapt to available width (8/16/32) rather than being fixed.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-BIN-3</span><div class="body"><p><b>Filters and offsets:</b> show differing bytes only; toggle decimal or hexadecimal offsets.</p></div></div>
+  </div>
+
+  <h2>M10 · Archives</h2>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-ARC-1</span><div class="body"><p><b>Compare archive contents without extraction</b> for ZIP and JAR, including password-protected ZIP (prompted, never stored unless the user opts in to the Keystore).</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-ARC-2</span><div class="body"><p><b>RAR</b> read-only, subject to decoder licensing (Q-6). 7z is a candidate addition since it is more common on Android than RAR.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-ARC-3</span><div class="body"><p><b>Archive as a folder source.</b> An archive can be either side of a folder compare, or its members can be opened individually as text/binary sources. Nested archives resolve one level deep.</p></div></div>
+  </div>
+
+  <h2>M11 · Remote sources</h2>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-RMT-1</span><div class="body"><p><b>Protocols:</b> FTP, FTPS (explicit/implicit), SFTP, WebDAV, SMB2/3. Per-connection settings for passive mode, port, root path, character set and timeouts.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-RMT-2</span><div class="body"><p><b>Authentication:</b> password, SSH key (import or generate, passphrase-protected), and host-key verification with a trust-on-first-use prompt showing the fingerprint. Credentials and keys live in the Android Keystore; nothing is written to plain preferences.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-RMT-3</span><div class="body"><p><b>Remote browser</b> with the same filter and favourites affordances as local browsing.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-RMT-4</span><div class="body"><p><b>Transfer economy.</b> Remote bytes are cached per session with an LRU cap (default 500 MB) and a "Wi-Fi only for transfers over N MB" guard, defaulted on.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-RMT-5</span><div class="body"><p><b>Compare by URL</b> over HTTP/HTTPS, with redirect following and a content-type check before treating a response as text.</p></div></div>
+  </div>
+
+  <h3>Protocol capability matrix</h3>
+  <p>Not every protocol supports every operation the sync engine wants. Where a capability is absent, the engine degrades in a stated way rather than guessing.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Capability</th><th>SFTP</th><th>FTP / FTPS</th><th>SMB2/3</th><th>WebDAV</th><th>HTTP(S)</th><th>SAF providers</th></tr></thead>
+    <tbody>
+      <tr><td>Recursive listing</td><td>Yes</td><td>Yes (slow; one command per directory)</td><td>Yes</td><td>Yes (PROPFIND depth)</td><td>No</td><td>Yes</td></tr>
+      <tr><td>Server-side checksum</td><td>Via <code>md5sum</code> if a shell is available</td><td><code>XCRC</code>/<code>XMD5</code> if advertised</td><td>No</td><td>Sometimes (ETag)</td><td>ETag only</td><td>No</td></tr>
+      <tr><td>Set modified time</td><td>Yes</td><td><code>MFMT</code> if advertised</td><td>Yes</td><td>Rarely</td><td>n/a</td><td>Provider-dependent</td></tr>
+      <tr><td>Ranged resume</td><td>Yes</td><td><code>REST</code> if advertised</td><td>Yes</td><td>Partial</td><td>Range header</td><td>Yes</td></tr>
+      <tr><td>Atomic rename</td><td>Yes</td><td>Yes</td><td>Yes</td><td>MOVE</td><td>n/a</td><td>Yes</td></tr>
+      <tr><td>Write</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>No (read-only source)</td><td>Yes if granted</td></tr>
+      <tr><td>Degradation when absent</td><td colspan="6">Fall back to size + modified time, and label the comparison "not content-verified" in the UI and in exported reports.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Connection behaviour</h3>
+  <ul class="plain">
+    <li><b>Pooling.</b> One authenticated session per connection, reused across compares; idle connections closed after 60 s. FTP data connections are opened per transfer.</li>
+    <li><b>Retry.</b> Transient failures (timeout, reset, 4xx FTP reply) retry three times with backoff. Authentication and host-key failures never retry — they surface immediately.</li>
+    <li><b>Interruption.</b> Losing Wi-Fi mid-listing marks the tree partial and offers resume rather than discarding the scan.</li>
+    <li><b>Character sets.</b> Per-connection filename encoding (UTF-8 default, with legacy codepage options) because FTP servers routinely disagree.</li>
+    <li><b>Path handling.</b> Remote roots are stored as protocol + host + absolute path; the app never assumes a home directory.</li>
+    <li><b>Metered networks.</b> Transfers above the threshold prompt once per session; scheduled syncs default to unmetered-only.</li>
+    <li><b>Certificates.</b> System trust store plus user-imported CAs; self-signed acceptance is per-connection, recorded with its fingerprint, and never global.</li>
+  </ul>
+
+  <h2>M12 · Git</h2>
+  <div class="reqs">
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-GIT-1</span><div class="body"><p><b>Repository discovery.</b> Point the app at a local folder tree (SAF) and it lists repositories found within, with ignore-folder settings. Cloning is Q-3.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-GIT-2</span><div class="body"><p><b>Version diff mode.</b> Diff any two of: working copy, index/staged, branch tip, arbitrary commit. Branch and commit pickers with search.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-GIT-3</span><div class="body"><p><b>Branch browser</b> listing files with Git status, sortable by status, filterable to modified/conflicted only.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-GIT-4</span><div class="body"><p><b>Conflict resolution.</b> 3-way view (local / base / remote) with a result pane, take-all-local, take-all-remote, per-hunk selection, and save-resolved. Optionally mark resolved in the index.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-GIT-5</span><div class="body"><p><b>Blame</b> shown as a per-line long-press detail (author, date, short SHA, subject) rather than a hover tooltip.</p></div></div>
+    <div class="req drop"><span class="mk c">&minus;</span><span class="rid">OE-GIT-6</span><div class="body"><p><b>Not in v1:</b> commit, push/pull, rebase, stash management, remote authentication flows, submodules, LFS.</p></div></div>
+  </div>
+
+  <h2>M13 · Sessions, history, favourites</h2>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-SES-1</span><div class="body"><p><b>A session</b> stores: source references and grants, compare mode, ignore rules, filters, display settings, bookmarks, and the last result summary. Sessions are named, groupable into folders, searchable, and pinnable.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-SES-2</span><div class="body"><p><b>Home is the session list</b> — recents at top, pinned above them, with a prominent new-compare action.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-SES-3</span><div class="body"><p><b>Tabbed concurrent sessions.</b> Multiple compares open at once, switchable from a tab strip or the Android recents-style session switcher; memory pressure evicts inactive session results to disk, never losing unsaved edits.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-SES-4</span><div class="body"><p><b>Sync of sessions across devices</b> is deferred pending the account decision (Q-4). Local export/import of session definitions as JSON ships in v1.</p></div></div>
+  </div>
+
+  <h2>M14 · Reports and sharing</h2>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-RPT-1</span><div class="body"><p><b>Export formats:</b> styled HTML (side-by-side or unified), unified diff patch, plain-text summary, CSV of folder-compare results, and PDF via Android's print pipeline.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-RPT-2</span><div class="body"><p><b>Report scope</b> options: differences only, differences in context (N lines), full files, one side only.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-RPT-3</span><div class="body"><p><b>Configurable header/footer</b> with title, both source labels, timestamp, applied ignore rules and engine mode — so a report is defensible evidence, not a screenshot.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-RPT-4</span><div class="body"><p><b>Share out</b> through the standard share sheet, or save via SAF.</p></div></div>
+  </div>
+
+  <h2>M15 · Find</h2>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-FND-1</span><div class="body"><p><b>Find within a compare</b>, with case sensitivity, whole word, and regular expressions; results counted per side and steppable.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-FND-2</span><div class="body"><p><b>Find within folder results</b> by path fragment or glob, filtering the tree live.</p></div></div>
+  </div>
+
+  <h2>M16 · Appearance</h2>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-APP-1</span><div class="body"><p><b>Themes</b> control app chrome and, separately, compare colours per mode (text, table, folder, binary). Ships with light, dark, high-contrast and a colour-vision-safe pair; user themes are creatable, exportable and importable as a JSON file.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-APP-2</span><div class="body"><p><b>Difference colour must not be the only signal.</b> Added/removed/changed lines carry glyph markers (<code>+ &minus; ~</code>) as well as colour, satisfying WCAG 1.4.1.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-APP-3</span><div class="body"><p><b>Follows system</b> dark mode, font scale and dynamic colour, with per-app overrides.</p></div></div>
+  </div>
+
+  <h2>M17 · Input and large-screen support</h2>
+  <div class="reqs">
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-INP-1</span><div class="body"><p><b>Hardware keyboard shortcuts</b> for next/previous difference, merge left/right, save, find, toggle layout — remappable, mirroring the desktop's configurable key mapping.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-INP-2</span><div class="body"><p><b>Large-screen behaviours:</b> resizable windows, drag-and-drop of files onto a pane, mouse right-click mapped to the long-press menu, multi-window (two sessions side by side).</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">OE-INP-3</span><div class="body"><p><b>Stylus</b> selection is treated as mouse-like: precise caret placement and drag-select in the diff view.</p></div></div>
+  </div>
+
+  <h2>M18 · Accounts, licensing, entitlement</h2>
+  <div class="reqs">
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-LIC-1</span><div class="body"><p><b>No account required</b> for local compare. Sign-in exists only for entitlement and optional cloud features.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-LIC-2</span><div class="body"><p><b>Free tier</b> (proposed, pending Q-4): 2-way local text, table and document compare, unlimited; export of reports.<br><b>Paid tier:</b> 3-way, folder compare and sync, remote protocols, Git, archives, binary, scheduled jobs.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-LIC-3</span><div class="body"><p><b>Trial</b> of all paid capability for 14 days without payment details, if a paid tier ever exists. Not applicable while distribution is direct-install (§16).</p></div></div>
+  </div>
+
+  <h2>M19 · Optional AI difference summary</h2>
+  <div class="reqs">
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-AI-1</span><div class="body"><p><b>Off by default, opt-in per session.</b> Produces a plain-language summary of what changed between two versions ("three configuration keys added; the timeout default moved from 30 s to 5 s").</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">OE-AI-2</span><div class="body"><p><b>Disclosure and control.</b> Before the first use the app states exactly what leaves the device, offers a size cap, and provides an organisation-level kill switch. Never enabled implicitly by any other setting.</p></div></div>
+    <div class="req drop"><span class="mk c">&minus;</span><span class="rid">OE-AI-3</span><div class="body"><p><b>No AI-driven merging.</b> The model may describe differences; it does not choose or apply resolutions.</p></div></div>
+  </div>
+</section>
+
+<!-- ============ 7 ============ -->
+<section>
+  <div class="hunk"><b>@@ 07 @@</b> Screens and navigation</div>
+  <h2>Navigation map</h2>
+<pre>Home  ├─ Recent tab ─ Sessions tab ─ Files tab
+ │
+ ├─ Open file ──────► EDITOR ──┬─► Find &amp; replace sheet
+ │                             ├─► Text tools sheet
+ │                             ├─► Outline / Go to line
+ │                             └─► "Compare with…" ──┐
+ │                                                   │
+ ├─ New compare ──► Source setup ──► [mode router] ◄─┘
+ │                    ├─ Text compare ──┬─► Active-line sheet
+ │                    │                 ├─► Merge actions
+ │                    │                 └─► "Open in editor" ──► EDITOR
+ │                    ├─ Folder compare ─┬► Sync review ─► Sync progress ─► Sync report
+ │                    │                  ├► Drill-down → Text/Table/Binary/Doc
+ │                    │                  └► Find duplicates
+ │                    ├─ Table compare ──► Cell inspector
+ │                    ├─ Document compare
+ │                    └─ Binary compare
+ │
+ ├─ Session (tap) ──► re-runs against live sources
+ ├─ Connections ──► Connection editor ──► Remote browser
+ ├─ Git repositories ──► Branch browser ──┬► Version diff
+ │                                        └► Conflicts ──► 3-way resolve
+ └─ Settings ──► Compare defaults · Editor · Ignore rules · Sync ·
+                 Appearance · Storage &amp; cache · Privacy · Account
+
+Tab strip is global: editor documents and compare sessions share it.</pre>
+
+  <h3>Home</h3>
+<pre>┌──────────────────────────────┐
+│ Omni Editor            ⌕  ⋮  │
+├──────────────────────────────┤
+│ PINNED                       │
+│ ▸ nginx.conf — prod vs local │
+│   2 differences · 3 days ago │
+│ ▸ /exports vs /backup        │
+│   Sync due tomorrow          │
+├──────────────────────────────┤
+│ RECENT                       │
+│ ▸ Q3-report v4 vs v5  (docx) │
+│ ▸ users-jan.csv vs feb.csv   │
+├──────────────────────────────┤
+│                     ( + )    │  ← New compare (FAB)
+└──────────────────────────────┘</pre>
+
+  <h3>Source setup</h3>
+  <p>One screen, two (or three) slots. Each slot shows a source-type chooser and, once filled, the resolved label, size, modified date and detected type. The compare mode is inferred from the pair and shown as an editable chip — a user comparing two CSVs can force text mode.</p>
+<pre>┌──────────────────────────────┐
+│ ←  New compare               │
+├──────────────────────────────┤
+│ LEFT                         │
+│ ┌──────────────────────────┐ │
+│ │ 📄 config.prod.yaml      │ │
+│ │ SFTP · web-01 · 14 KB    │ │
+│ └──────────────────────────┘ │
+│ RIGHT                        │
+│ ┌──────────────────────────┐ │
+│ │ +  Choose a source       │ │
+│ │ Device · Remote · URL ·  │ │
+│ │ Archive · Git · Paste    │ │
+│ └──────────────────────────┘ │
+│ [ + Add third file ]         │
+├──────────────────────────────┤
+│ Mode: Text ▾   Rules: 3 ▾    │
+│        [  Compare  ]         │
+└──────────────────────────────┘</pre>
+
+  <h3>Text compare — unified (phone default)</h3>
+<pre>┌──────────────────────────────┐
+│ ← config.prod ⇄ config.local │▐
+│   Diff 7 of 42        ⊞  ⋮   │▐ ← minimap
+├──────────────────────────────┤▐
+│ 118    listen 80;            │▐
+│ 119  ~ client_max_body_size  │▐
+│      − 8m;                   │█ ← current
+│      + 64m;                  │█
+│ 120    keepalive_timeout 65; │▐
+│ 121  + gzip on;              │▐
+├──────────────────────────────┤
+│ ▲ Prev   ▼ Next   ⇄ Merge  ⌕ │
+└──────────────────────────────┘</pre>
+
+  <h3>Text compare — split (≥600dp)</h3>
+<pre>┌───────────────────────┬───────────────────────┐
+│ config.prod.yaml      │ config.local.yaml     │
+├───────────────────────┼───────────────────────┤
+│ 118 listen 80;        │ 118 listen 80;        │
+│ 119 client_max… 8m;  ╲│ 119 client_max… 64m;  │
+│ 120 keepalive_ti…65;  │ 120 keepalive_ti…65;  │
+│                      ╱│ 121 gzip on;          │
+├───────────────────────┴───────────────────────┤
+│ ▲  ▼   ◄ Merge   Merge ►   Accept all ▾    ⌕  │
+└───────────────────────────────────────────────┘</pre>
+
+  <h3>Folder compare</h3>
+<pre>┌──────────────────────────────┐
+│ ← /exports ⇄ sftp:/backup    │
+│   142 files · 18 differ      │
+│  [All][Differ][Left][Right]  │
+├──────────────────────────────┤
+│ ▾ invoices/                  │
+│   ● 2026-07.csv   L newer    │
+│   ○ 2026-06.csv   identical  │
+│   ◐ 2026-05.csv   size differ│
+│   ◄ archive.zip   left only  │
+│ ▸ logs/            9 differ  │
+├──────────────────────────────┤
+│  Compare method: Smart ▾     │
+│      [ Review sync → ]       │
+└──────────────────────────────┘</pre>
+
+  <h3>Sync review</h3>
+  <p>The last screen before anything is written. Deletions are grouped, counted and coloured distinctly; the confirm button states the consequence in full: <em>"Copy 12 files (48 MB), delete 3 files"</em>.</p>
+
+  <h3>Table compare</h3>
+<pre>┌──────────────────────────────┐
+│ ← users-jan ⇄ users-feb      │
+│ Sheet: Sheet1 ▾  Key: id ▾   │
+├────┬────────┬────────┬───────┤
+│ id │ name   │ plan   │ seats │
+├────┼────────┼────────┼───────┤
+│ 11 │ Acme   │ ~pro   │ 12    │
+│ 12 │ Borex  │ team   │ ~8    │
+│ 19 │ +Cadre │ +team  │ +4    │
+└────┴────────┴────────┴───────┘
+ tap a cell → both values stacked</pre>
+
+  <h3>Editor</h3>
+<pre>┌──────────────────────────────┐
+│ ← deploy.sh ●        ⌕  ⋮    │  ● = unsaved
+│ [deploy.sh][nginx ⇄ conf][+] │  global tab strip
+├──────────────────────────────┤
+│  1  #!/usr/bin/env bash      │
+│  2  set -euo pipefail        │
+│  3                           │
+│  4▌ TARGET="${1:-staging}"   │  ▌ = caret line
+│  5  echo "deploying $TARGET" │
+│                              │
+├──────────────────────────────┤
+│ Ln 4, Col 12 · UTF-8 · LF    │  status strip
+├──────────────────────────────┤
+│ ⇥  {  }  (  )  "  '  |  $  / │  programmer key row
+│ ←  →  ↑  ↓      ↶  ↷      ⌨ │
+└──────────────────────────────┘</pre>
+
+  <h2>Screen-by-screen specification</h2>
+  <p class="lede">Each screen below states its job, its persistent elements, its primary and secondary actions, and the states it must handle. Where a screen has a wide-layout variant, that is noted rather than drawn twice.</p>
+
+  <h3>S-01 · Home</h3>
+  <div class="tablewrap"><table>
+    <tbody>
+      <tr><th>Job</th><td>Resume work in one tap; start new work in two.</td></tr>
+      <tr><th>Structure</th><td>Three tabs: <b>Recent</b> (mixed documents and compares, newest first), <b>Sessions</b> (saved, groupable, pinnable), <b>Files</b> (browse device, remotes, Git repos and favourites in one tree).</td></tr>
+      <tr><th>Row content</th><td>Compare rows: both source labels, difference count, last-run time, staleness badge. Document rows: filename, folder, size, unsaved dot.</td></tr>
+      <tr><th>Primary action</th><td>FAB with two options on press: <b>New compare</b> · <b>New or open file</b>.</td></tr>
+      <tr><th>Secondary</th><td>Search across session names and recent paths; overflow → Connections, Git repositories, Settings.</td></tr>
+      <tr><th>Row actions (long-press)</th><td>Pin, rename, duplicate, edit rules, export definition, delete.</td></tr>
+      <tr><th>States</th><td>Empty (first run); no results for search; a session whose sources are unresolvable (dimmed with a reconnect affordance).</td></tr>
+      <tr><th>Wide layout</th><td>Two panes: list on the left, preview of the selected session's last result on the right.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>S-02 · Source setup</h3>
+  <div class="tablewrap"><table>
+    <tbody>
+      <tr><th>Job</th><td>Fill two (or three) slots and confirm how they will be compared.</td></tr>
+      <tr><th>Elements</th><td>Slot cards for Left / Middle / Right. Each empty card offers six source kinds: Device, Remote, URL, Archive, Git, Paste. Each filled card shows label, resolved location, size, modified time, detected type, and a swap/clear control.</td></tr>
+      <tr><th>Inference</th><td>Mode chip is inferred from the pair (two .csv → Table; .docx → Document; unknown binary → Binary) and is user-overridable. Mismatched pairs (a .csv against a .docx) are allowed with a note that both will be compared as text.</td></tr>
+      <tr><th>Rules</th><td>A rules chip shows the count of active ignore rules, inherited from defaults; tapping opens the rule editor pre-scoped to this session.</td></tr>
+      <tr><th>Actions</th><td>Swap sides · Add third file · Save as session · <b>Compare</b>.</td></tr>
+      <tr><th>States</th><td>One slot filled (Compare disabled with an explanatory label, not a silent grey button); source unreadable; permission denied; remote offline.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>S-03 · Text compare</h3>
+  <div class="tablewrap"><table>
+    <tbody>
+      <tr><th>Job</th><td>Read what changed and act on it.</td></tr>
+      <tr><th>App bar</th><td>Both source labels (truncated middle, full on tap), difference counter <code>n / total</code>, layout toggle, overflow.</td></tr>
+      <tr><th>Content</th><td>Unified or split diff per OE-TXT-1; minimap rail pinned right; filter segmented control accessible from the app bar.</td></tr>
+      <tr><th>Bottom bar</th><td>Previous · Next · Merge · Find. Merge expands to directional actions when a hunk is selected.</td></tr>
+      <tr><th>Sheets</th><td>Active-line inspector (drag up from bottom bar); ignore rules; display settings; export; session info.</td></tr>
+      <tr><th>Overflow</th><td>Open in editor · Flip sides · Re-run compare · Save as session · Export report · Compare mode · HTML preview.</td></tr>
+      <tr><th>States</th><td>Comparing (determinate progress, cancel); identical; differences only in ignored content; one side empty; binary detected; encoding mismatch; block-mode notice; stale result; unsaved merge edits.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>S-04 · Editor</h3>
+  <div class="tablewrap"><table>
+    <tbody>
+      <tr><th>Job</th><td>Read and change one file, including very large ones.</td></tr>
+      <tr><th>Persistent elements</th><td>Tab strip (shared with compares) · gutter with line numbers and bookmarks · status strip showing line, column, selection length, encoding, line ending and read-only state · programmer key row above the IME.</td></tr>
+      <tr><th>Primary actions</th><td>Save (explicit, with autosave journalling behind it) · Find and replace · Undo/redo.</td></tr>
+      <tr><th>Overflow</th><td>Compare with… · Save as · Text tools · Go to line · Outline · Encoding · Line endings · Syntax language · Word wrap · Read-only lock · Share.</td></tr>
+      <tr><th>Selection menu</th><td>Cut · Copy · Paste · Select all · Column select · Find selection · Text tools on selection.</td></tr>
+      <tr><th>States</th><td>Read-only source; file changed on disk while open; encoding could not be detected; file exceeds full-index threshold (edits still allowed, outline disabled); save failed on a remote (buffer retained, retry offered); recovered-after-crash banner.</td></tr>
+      <tr><th>Wide layout</th><td>Optional two-document split, and the outline pane docked left rather than presented as a sheet.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>S-05 · Folder compare</h3>
+  <div class="tablewrap"><table>
+    <tbody>
+      <tr><th>Job</th><td>See which files differ across two or three trees, then decide what to do.</td></tr>
+      <tr><th>Elements</th><td>Header with both roots and totals · filter segmented control (All / Differ / Left only / Right only / Identical) · merged tree with status chips per side · sticky breadcrumb for the current subtree · compare-method selector.</td></tr>
+      <tr><th>Row anatomy</th><td>Status glyph · name · per-side size and modified time · sync action chip once a rule set is applied.</td></tr>
+      <tr><th>Actions</th><td>Tap → drill into a file compare or expand a folder. Long-press → set action, exclude, copy, delete, open, properties. Multi-select via long-press-then-tap for bulk action assignment.</td></tr>
+      <tr><th>Bottom bar</th><td>Filters · Rules · <b>Review sync</b> · Find duplicates.</td></tr>
+      <tr><th>States</th><td>Scanning (live count, cancel); trees identical; one root inaccessible; scan truncated at the file-count guard; remote listing partial after timeout.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>S-06 · Sync review</h3>
+  <div class="tablewrap"><table>
+    <tbody>
+      <tr><th>Job</th><td>Make the consequences of writing legible <em>before</em> anything is written. This is the highest-stakes screen in the app.</td></tr>
+      <tr><th>Structure</th><td>Grouped by action, deletions first and visually distinct: <b>Delete (3)</b> · <b>Copy left → right (12)</b> · <b>Copy right → left (2)</b> · <b>Needs your decision (1)</b> · <b>Skip (124)</b>.</td></tr>
+      <tr><th>Summary bar</th><td>Total files touched, bytes to transfer, bytes to delete, estimated time on the current network.</td></tr>
+      <tr><th>Per-row</th><td>Path, direction arrow, reason ("right is newer by 4 hours"), and an action override picker.</td></tr>
+      <tr><th>Confirm</th><td>Button states the consequence in words: <em>"Copy 12 files (48 MB), delete 3 files"</em>. If any deletion is present, a second confirmation names the count.</td></tr>
+      <tr><th>States</th><td>Nothing to do; deletions only (extra warning); conflicts present (confirm disabled until each is decided or explicitly skipped); insufficient destination space.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>S-07 · Sync progress and report</h3>
+  <div class="tablewrap"><table>
+    <tbody>
+      <tr><th>Progress</th><td>Current file, files done / total, bytes done / total, transfer rate, cancel. Mirrored in the foreground-service notification. Backgrounding does not pause the job.</td></tr>
+      <tr><th>Report</th><td>On completion: succeeded / skipped / failed counts, a list of failures with per-file reasons, and actions to retry failures only, export the report, or open the destination.</td></tr>
+      <tr><th>States</th><td>Cancelled mid-run (states exactly what was already written); network lost (paused, auto-resumes); destination permission revoked; partial failure.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>S-08 · Connections and connection editor</h3>
+  <div class="tablewrap"><table>
+    <tbody>
+      <tr><th>List</th><td>Saved connections with protocol badge, host, last-used time and reachability dot. Actions: connect, edit, duplicate, test, delete.</td></tr>
+      <tr><th>Editor fields</th><td>Name · protocol · host · port · username · auth type (password / key / anonymous) · key selection or generation · initial remote path · character set · passive mode · timeouts · proxy · "allow unencrypted" acknowledgement for plain FTP.</td></tr>
+      <tr><th>Test connection</th><td>Runs before save and reports the specific failure: DNS, refused, TLS, auth, or host-key mismatch.</td></tr>
+      <tr><th>Host key</th><td>First connection shows the fingerprint and algorithm with accept/reject. A later mismatch blocks with a prominent warning and no one-tap override.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>S-09 · Settings</h3>
+  <div class="tablewrap"><table>
+    <tbody>
+      <tr><th>Compare defaults</th><td>Granularity, default ignore rules, logical-line-match depth, large-file threshold, default layout.</td></tr>
+      <tr><th>Editor</th><td>Font, size, tab width, insert spaces, word wrap, key row contents, autosave interval, backup retention.</td></tr>
+      <tr><th>Sync</th><td>Default rule set, deletion safety (move to trash folder vs delete), preserve timestamps, scheduled job constraints.</td></tr>
+      <tr><th>Network</th><td>Wi-Fi-only threshold, cache size and clear, timeouts, proxy.</td></tr>
+      <tr><th>Appearance</th><td>Theme, compare colour sets per mode, dynamic colour, contrast, import/export theme.</td></tr>
+      <tr><th>Privacy</th><td>Telemetry opt-in, AI summary opt-in with a plain statement of what is sent, backup inclusion.</td></tr>
+      <tr><th>About</th><td>Version, licences, entitlement status, diagnostics export.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 8 ============ -->
+<section>
+  <div class="hunk"><b>@@ 08 @@</b> Interaction model</div>
+  <h2>Gestures and their meanings</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Gesture</th><th>Text compare</th><th>Folder compare</th><th>Table compare</th></tr></thead>
+      <tbody>
+        <tr><td>Tap</td><td>Select line; place caret in edit mode</td><td>Expand node / open drill-down</td><td>Open cell inspector</td></tr>
+        <tr><td>Long-press</td><td>Line menu: merge, align here, bookmark, copy, blame</td><td>File menu: compare, copy, delete, exclude</td><td>Row/column menu: merge, ignore</td></tr>
+        <tr><td>Swipe left / right on content</td><td>Next / previous difference</td><td>—</td><td>Pan columns</td></tr>
+        <tr><td>Swipe on a row</td><td>Merge this hunk left or right</td><td>Set sync action for this file</td><td>Merge this row</td></tr>
+        <tr><td>Drag the right rail</td><td>Seek through the file by difference density</td><td>Scroll the tree</td><td>Scroll rows</td></tr>
+        <tr><td>Pinch</td><td>Font size</td><td>—</td><td>Zoom grid</td></tr>
+        <tr><td>Two-finger drag</td><td>Scroll one pane independently (unsync)</td><td>—</td><td>Pan</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note" style="font-size:14px;color:var(--muted)">Every gesture has a visible control equivalent in the bottom bar or the overflow menu. No function is gesture-only — a requirement for accessibility and for switch/TalkBack users.</p>
+</section>
+
+<!-- ============ 9 ============ -->
+<section>
+  <div class="hunk"><b>@@ 09 @@</b> Android platform integration</div>
+  <h2>Entry points and system surfaces</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Surface</th><th>Behaviour</th></tr></thead>
+      <tbody>
+        <tr><td><code>ACTION_SEND</code> / <code>ACTION_SEND_MULTIPLE</code></td><td>One item → held as left side, prompt for right. Two items → compare immediately. Plain text → snippet compare.</td></tr>
+        <tr><td><code>ACTION_VIEW</code></td><td>Registered for common text, source, CSV, patch and archive MIME types so the app appears in "Open with".</td></tr>
+        <tr><td>Quick Settings tile</td><td>"Compare clipboard with…" — opens snippet compare pre-filled from the clipboard.</td></tr>
+        <tr><td>App shortcuts (long-press icon)</td><td>New compare · Paste &amp; compare · Last session · Pending syncs.</td></tr>
+        <tr><td>Foreground service</td><td>Any compare or sync exceeding 10 s; notification shows progress, file counts and a cancel action.</td></tr>
+        <tr><td><code>WorkManager</code></td><td>Scheduled folder syncs and duplicate scans, with network/charging constraints and exponential backoff.</td></tr>
+        <tr><td>Notifications</td><td>Sync complete (with counts), sync needs attention (conflicts), scheduled sync skipped (constraint unmet), long compare finished.</td></tr>
+        <tr><td>Home-screen widget</td><td>Pinned session status: last run, difference count, one-tap re-run. <span class="tag b">~ v1.1</span></td></tr>
+        <tr><td>Backup</td><td>Sessions, rules, themes and connection metadata included in Android Auto Backup; secrets excluded and re-prompted.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 10 ============ -->
+<section>
+  <div class="hunk"><b>@@ 10 @@</b> Architecture</div>
+  <h2>Proposed stack</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Layer</th><th>Choice</th><th>Reason</th></tr></thead>
+      <tbody>
+        <tr><td>Language / UI</td><td>Kotlin, Jetpack Compose, Material 3 adaptive layouts</td><td>Window-size-class layouts are the core requirement; Compose handles them natively.</td></tr>
+        <tr><td>Diff core</td><td>Kotlin, with a C++/NDK path for the hashing and block-matching hot loop</td><td>Large-file performance targets are not reachable through JVM allocation churn alone. A KMP-friendly boundary keeps a future iOS/desktop port open.</td></tr>
+        <tr><td>Rendering</td><td>Custom lazy list over a line index, not a <code>TextField</code></td><td>Android text widgets degrade badly past a few thousand lines.</td></tr>
+        <tr><td>Persistence</td><td>Room (sessions, rules, connections metadata, history); DataStore (preferences); Keystore (secrets)</td><td>—</td></tr>
+        <tr><td>Async</td><td>Coroutines + Flow; one dispatcher pool for I/O, one bounded pool for compute</td><td>Keeps compare work off the main thread and cancellable.</td></tr>
+        <tr><td>Remote</td><td>Apache Commons Net (FTP/FTPS), SSHJ (SFTP), SMBJ (SMB2/3), OkHttp (HTTP/WebDAV)</td><td>Mature, licence-compatible, actively maintained. Confirm licence review.</td></tr>
+        <tr><td>Git</td><td>JGit (or libgit2 via JNI if JGit's Android footprint proves too large)</td><td>Read-mode subset only in v1.</td></tr>
+        <tr><td>Documents</td><td>Custom OOXML reader; PdfBox-Android or PDFium text extraction</td><td>Apache POI's full footprint is prohibitive on mobile; evaluate a trimmed subset.</td></tr>
+        <tr><td>DI</td><td>Hilt</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Module structure</h3>
+<pre>:app                 navigation, DI wiring, entry points
+:core:diff           algorithms, normalisation, ignore rules   (pure Kotlin, no Android)
+:core:model          Session, SourceRef, Rule, CompareResult
+:core:io             SAF, streaming readers, encoding detection, line index
+:feature:text        unified/split viewer, merge, edit
+:feature:folder      tree compare, sync engine, duplicates
+:feature:table       grid compare, CSV/XLSX readers
+:feature:document    DOCX/RTF/PDF extraction and structure diff
+:feature:binary      hex view
+:feature:git         repo read, version diff, conflict resolve
+:remote:ftp | :remote:smb | :remote:http
+:design              theme system, compare colour tokens, shared components</pre>
+
+  <h3>Compare pipeline</h3>
+<pre>SourceRef ──► Reader (streamed, encoding-aware)
+          ──► LineIndex   [offset, length, hash] × N     (memory-mapped, off-heap)
+          ──► Normaliser  (ignore rules applied to hash input only)
+          ──► DiffEngine  (histogram → hunks)  ⟂ cancellable, chunked
+          ──► IntraLine   (word/char ranges for changed pairs, computed lazily on scroll)
+          ──► ResultStore (cached to disk by session id, survives process death)
+          ──► ViewModel   (paged windows into the result, never the whole file)</pre>
+
+  <h3>Data model (essentials)</h3>
+<pre>Session(id, name, mode, groupId, pinned, createdAt, lastRunAt, lastSummary)
+SourceRef(sessionId, slot: LEFT|MIDDLE|RIGHT, kind: SAF|FTP|SFTP|SMB|HTTP|GIT|ARCHIVE|SNIPPET,
+          uriOrPath, connectionId?, gitRef?, archiveEntry?, label, fingerprint, encoding?)
+RuleSet(id, ignoreCase, ignoreWhitespace, ignoreBlankLines, ignoreLineEndings,
+        linePatterns[], betweenMarkers[], headSkip, tailSkip, columnRanges[], granularity)
+FolderFilter(include[], exclude[], notOperator, ignoreDirs[], ignoreHidden, sizeMin, sizeMax, dateFrom, dateTo)
+SyncRule(id, name, conditions[], action: COPY_LR|COPY_RL|DELETE_L|DELETE_R|SKIP|ASK, priority)
+Connection(id, protocol, host, port, username, authType, keyAlias, rootPath, charset, passive)
+CompareResult(sessionId, hunks[], stats, engineMode, generatedAt, stale)
+Document(id, sourceRefId, pieceTable, dirty, caret, encoding, lineEnding, readOnly)
+SyncBaseline(sessionId, path, size, mtime, hash, recordedAt)
+SyncPlan(sessionId, actions[], createdAt, executedActions[], status)</pre>
+
+  <h3>Module contracts</h3>
+  <p>These interfaces are the seams the modules are built against. They exist so the diff core, the editor and the transfer layer can be developed and tested independently of Android.</p>
+
+<pre><code>// :core:io — one abstraction over every source kind.
+interface SourceProvider {
+    suspend fun resolve(ref: SourceRef): Resolved      // label, size, mtime, mime, capabilities
+    suspend fun open(ref: SourceRef): ByteChannel      // random access where supported
+    suspend fun write(ref: SourceRef, from: ByteChannel, atomic: Boolean = true)
+    suspend fun list(ref: SourceRef, recursive: Boolean): Flow&lt;Entry&gt;
+    fun capabilities(ref: SourceRef): Capabilities     // checksum, setMtime, resume, write
+}
+
+// :core:io — the shared document model. The editor and both compare panes use this.
+interface TextDocument {
+    val lineCount: Long
+    fun line(index: Long): CharSequence                // O(1) via the line index
+    fun edit(range: LongRange, replacement: CharSequence): EditId
+    fun undo(): EditId?; fun redo(): EditId?
+    suspend fun materialise(into: ByteChannel)         // piece table → bytes, on save only
+    val changes: Flow&lt;DocumentChange&gt;                  // drives re-diff and re-highlight
+}
+
+// :core:diff — pure, cancellable, no Android types.
+interface DiffEngine {
+    suspend fun compare(
+        left: TextDocument, right: TextDocument, base: TextDocument? = null,
+        rules: RuleSet, progress: (Progress) -&gt; Unit
+    ): CompareResult
+    fun intraLine(pair: LinePair, granularity: Granularity): List&lt;Range&gt;   // lazy, per visible row
+}
+
+// :feature:folder — planning is separate from execution, and always inspectable.
+interface SyncPlanner {
+    suspend fun plan(result: FolderCompareResult, rules: List&lt;SyncRule&gt;,
+                     baseline: SyncBaseline?): SyncPlan
+}
+interface SyncExecutor {
+    suspend fun execute(plan: SyncPlan, progress: (SyncProgress) -&gt; Unit): SyncReport
+    suspend fun resume(planId: String, progress: (SyncProgress) -&gt; Unit): SyncReport
+}</code></pre>
+
+  <div class="callout"><p style="margin:0"><b>Why <code>plan</code> and <code>execute</code> are separate types.</b> The review screen (S-06) renders a <code>SyncPlan</code> and nothing else. Because execution consumes the same object the user approved, the preview cannot drift from the action — which is the single most important correctness property in the app, and it is enforced by the type system rather than by discipline.</p></div>
+
+  <h3>Threading and cancellation</h3>
+  <ul class="plain">
+    <li>Two bounded dispatchers: <code>ioPool</code> (size 8, network and storage) and <code>computePool</code> (size = cores − 1, diffing and hashing). The main thread does layout only.</li>
+    <li>Every long operation is a coroutine scoped to its session, cancelled when the session closes and re-attachable after configuration change. Diff loops check <code>ensureActive()</code> every 4 096 lines.</li>
+    <li>Results stream: hunks are emitted as found, so the first difference renders before the compare finishes.</li>
+    <li>Back-pressure via <code>Flow</code> buffering with conflation on progress updates — progress never becomes the bottleneck.</li>
+  </ul>
+
+  <h3>Error model</h3>
+<pre><code>sealed interface OmniError {
+    data class AccessRevoked(val ref: SourceRef) : OmniError
+    data class NotReachable(val connectionId: String, val cause: NetCause) : OmniError
+    data class AuthFailed(val connectionId: String, val kind: AuthKind) : OmniError
+    data class HostKeyChanged(val connectionId: String, val fingerprint: String) : OmniError
+    data class Unsupported(val what: String, val by: String) : OmniError
+    data class TooLarge(val bytes: Long, val limit: Long) : OmniError
+    data class NoTextLayer(val ref: SourceRef) : OmniError
+    data class WriteFailed(val ref: SourceRef, val partial: Boolean) : OmniError
+}</code></pre>
+  <p>Each variant maps to exactly one specified user-facing state in §13. There is no generic error path — an error the app cannot name is a bug, not a message.</p>
+
+  <h3>Intent API <span class="tag b">~ deferred to v1.2</span></h3>
+  <p>Replaces the desktop command line for automation from Tasker, Shortcuts-style apps or MDM. Documented here so the data model does not preclude it.</p>
+<pre>com.omni.editor.action.COMPARE
+  extras: left (Uri|String), right (Uri|String), mode, rules_id, headless (Boolean)
+  result: difference count, exit status, optional report Uri
+
+com.omni.editor.action.RUN_SESSION
+  extras: session_id
+  result: same as above</pre>
+</section>
+
+<!-- ============ 11 ============ -->
+<section>
+  <div class="hunk"><b>@@ 11 @@</b> Non-functional requirements</div>
+  <h2>Budgets and guarantees</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>ID</th><th>Requirement</th><th>Target</th></tr></thead>
+      <tbody>
+        <tr><td>NFR-P1</td><td>Cold start to interactive Home</td><td>&lt; 1.2 s on a mid-range 2024 device</td></tr>
+        <tr><td>NFR-P2</td><td>Compare two 5 MB text files, first difference visible</td><td>&lt; 1.5 s</td></tr>
+        <tr><td>NFR-P3</td><td>Compare two 250 MB text files, complete</td><td>&lt; 45 s, with progress from 500 ms</td></tr>
+        <tr><td>NFR-P4</td><td>Scroll a 500k-line diff</td><td>No frame over 16 ms at 60 Hz; jank rate &lt; 0.5 %</td></tr>
+        <tr><td>NFR-P5</td><td>Peak heap during any compare</td><td>&lt; 40 % of the device's per-app limit</td></tr>
+        <tr><td>NFR-P6</td><td>Folder compare, 50 000 files, local</td><td>&lt; 60 s with live progress</td></tr>
+        <tr><td>NFR-R1</td><td>Data loss on process death with unsaved merges</td><td>Zero — edits journalled continuously</td></tr>
+        <tr><td>NFR-R2</td><td>Interrupted sync</td><td>Resumable; no partially-written destination files (write to temp, atomic rename)</td></tr>
+        <tr><td>NFR-S1</td><td>Secrets at rest</td><td>Android Keystore only; never in preferences, logs, backups or crash reports</td></tr>
+        <tr><td>NFR-S2</td><td>Transport</td><td>TLS enforced for FTPS/WebDAV/HTTPS; plain FTP requires an explicit per-connection acknowledgement</td></tr>
+        <tr><td>NFR-S3</td><td>Host keys</td><td>Verified and pinned after first accept; a changed key blocks connection with a clear warning</td></tr>
+        <tr><td>NFR-A1</td><td>Accessibility</td><td>TalkBack labels for every diff row stating side and change type; 4.5:1 contrast on all diff colours; no colour-only encoding; full keyboard operation; respects font scale to 200 %</td></tr>
+        <tr><td>NFR-A2</td><td>Motion</td><td>All transitions honour "remove animations"</td></tr>
+        <tr><td>NFR-I1</td><td>Localisation</td><td>English at launch; string architecture and RTL layout mirroring ready. Reference product ships in 7 languages — see Q-8</td></tr>
+        <tr><td>NFR-C1</td><td>Compatibility</td><td><b>minSdk 31 (Android 12)</b>, targetSdk current; phone, 7"/10" tablet, foldable inner/outer, DeX, ChromeOS</td></tr>
+        <tr><td>NFR-T1</td><td>Telemetry</td><td>Opt-in; no file names, paths, hostnames or contents ever transmitted</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 12 ============ -->
+<section>
+  <div class="hunk"><b>@@ 12 @@</b> Permissions</div>
+  <h2>What the app asks for, and when</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Permission</th><th>Why</th><th>When requested</th></tr></thead>
+      <tbody>
+        <tr><td><code>INTERNET</code></td><td>Remote protocols, URL compare, optional AI</td><td>Install-time (normal)</td></tr>
+        <tr><td><code>ACCESS_NETWORK_STATE</code></td><td>Metered-network guard for transfers</td><td>Install-time</td></tr>
+        <tr><td><code>FOREGROUND_SERVICE</code> + <code>_DATA_SYNC</code></td><td>Long compares and syncs</td><td>Install-time</td></tr>
+        <tr><td><code>POST_NOTIFICATIONS</code></td><td>Progress and sync results</td><td>First long-running job</td></tr>
+        <tr><td><code>WAKE_LOCK</code></td><td>Prevent sleep mid-sync</td><td>Install-time</td></tr>
+        <tr><td>SAF grants (not a permission)</td><td>All local file access</td><td>Per file or tree, on selection</td></tr>
+        <tr><td><code>MANAGE_EXTERNAL_STORAGE</code></td><td><b>direct flavour only</b> — real paths, a real file browser, durable session references, workable folder compare</td><td>At first file access, with an explanation screen before the system dialog. The <code>store</code> flavour never requests it and uses SAF (DIST-2).</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 13 ============ -->
+<section>
+  <div class="hunk"><b>@@ 13 @@</b> Empty, error and edge states</div>
+  <h2>States worth designing</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>State</th><th>What the screen says and offers</th></tr></thead>
+      <tbody>
+        <tr><td>No sessions yet</td><td>"Compare two files to get started." Buttons: Choose files · Paste text · Connect a server.</td></tr>
+        <tr><td>Files are identical</td><td>Explicit success state naming the rules applied: "No differences. Ignoring case and trailing whitespace." With a one-tap "Compare without ignore rules".</td></tr>
+        <tr><td>Differences only in ignored content</td><td>"No differences, but 14 lines differ in ignored content." Tap to see them.</td></tr>
+        <tr><td>Source no longer accessible</td><td>"Access to <em>reports/</em> was removed. Reconnect to run this compare." Shows the last result marked stale.</td></tr>
+        <tr><td>Binary detected in a text compare</td><td>"This looks like a binary file. Compare as hex instead?"</td></tr>
+        <tr><td>Encoding mismatch</td><td>Banner naming both detected encodings with a one-tap override per side.</td></tr>
+        <tr><td>File too large for full mode</td><td>"Using block matching for files over 32 MB. Some small differences inside unchanged regions may be grouped." Link to the setting.</td></tr>
+        <tr><td>PDF with no text layer</td><td>"This PDF has no extractable text — it may be a scan. Text compare cannot run."</td></tr>
+        <tr><td>Remote auth failure</td><td>Distinguish bad credentials, host unreachable, and host-key mismatch. Never a generic "connection failed".</td></tr>
+        <tr><td>Sync conflict (both sides changed)</td><td>Held for review, not auto-resolved. Listed under "Needs your decision".</td></tr>
+        <tr><td>Out of memory</td><td>Compare fails cleanly with a size report and a suggestion to enable block mode — the app does not crash.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 14 ============ -->
+<section>
+  <div class="hunk"><b>@@ 14 @@</b> Test strategy</div>
+  <h2>How correctness is demonstrated</h2>
+  <ul class="plain">
+    <li><b>Golden-file corpus.</b> A fixed set of file pairs — source code, minified JS, CSV with reordered rows, CRLF vs LF, UTF-16 with BOM, files with no trailing newline, 1-byte files, empty files, 2 GB log files — each with an expected hunk set checked into the repository. Any engine change diffed against these.</li>
+    <li><b>Differential testing</b> against GNU <code>diff</code> and <code>git diff</code> output for the same inputs, tolerating known algorithmic differences but flagging semantic ones.</li>
+    <li><b>Property tests:</b> applying all left-to-right merges must make the files identical; undo must restore byte-exact originals; ignore rules must never increase the hunk count.</li>
+    <li><b>Sync dry-run tests</b> asserting that the preview list exactly matches what execution performs, on a simulated filesystem including failure injection mid-sync.</li>
+    <li><b>Device matrix:</b> low-RAM phone (4 GB, Android 10), mainstream phone (current), foldable, 11" tablet, DeX. Macrobenchmark for NFR-P1..P6 in CI.</li>
+    <li><b>Accessibility:</b> automated Compose a11y checks plus a manual TalkBack pass on the text, folder and sync-review flows each release.</li>
+    <li><b>Security:</b> credential storage audit, TLS/host-key negative tests, and a check that no path, hostname or file content appears in logs or crash payloads.</li>
+  </ul>
+</section>
+
+<!-- ============ 15 ============ -->
+<section>
+  <div class="hunk"><b>@@ 15 @@</b> Release phasing</div>
+  <h2>Proposed sequence</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Phase</th><th>Contents</th><th>Rationale</th></tr></thead>
+      <tbody>
+        <tr><td><b>P1 — Core<br><span class="tag a">release one</span></b></td><td>M1 sources (local + share + URL + snippet), M2 engine, M3 text view, M4 merge, <b>M5 editor</b>, M13 sessions, M14 export, M15 find, M16 themes</td><td>Text compare plus a real editor. Exercises every hard part — streaming, large files, undo, merge safety — and is a complete, sellable product on its own. The editor is not deferrable: it shares the document engine, so building it later would mean building that engine twice.</td></tr>
+        <tr><td><b>P2 — Structured data</b></td><td>M7 table/CSV/Excel, M8 documents, M15 find</td><td>Highest-value non-developer audience; independent of networking.</td></tr>
+        <tr><td><b>P3 — Filesystems</b></td><td>M6 folder compare, sync, duplicates, M10 archives, M11 remote protocols, scheduled jobs</td><td>Largest surface, most background-execution risk; benefits from a stable core.</td></tr>
+        <tr><td><b>P4 — Version control</b></td><td>M12 Git read/resolve, M9 binary</td><td>Narrower audience; depends on 3-way being proven in P1.</td></tr>
+        <tr><td><b>P5 — Reach</b></td><td>M17 large-screen and keyboard polish, widget, localisation, optional M19</td><td>Multipliers on an already-working product.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout">
+    <p style="margin:0"><b>Confirmed scope.</b> P1 ships alone as release one: text compare, merge and the standalone editor. An editor that handles large files well and a diff that merges safely will earn more trust than a broad release where folder sync or Office parsing is shaky — and sync bugs are the kind users do not forgive. P3 carries the most schedule risk (background execution, six protocols, destructive writes) and should be estimated separately once P1 is stable.</p>
+  </div>
+</section>
+
+<!-- ============ 16 ============ -->
+<section>
+  <div class="hunk"><b>@@ 16 @@</b> Independence, distribution and build</div>
+  <h2>Independence</h2>
+  <p class="lede">Omni Editor is an independent product with no relationship to any existing compare or editor tool, its publisher, or its brand. This is a build constraint, not a legal footnote — it binds naming, assets, formats and copy.</p>
+
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">IND-1</span><div class="body"><p><b>No naming association.</b> The product name, package ID, app label, icon, splash, store copy and documentation make no reference to any other product or vendor. Package ID is a new namespace with no third-party token in it. No "compatible with", "alternative to" or "works like" claims anywhere in the app or its materials.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">IND-2</span><div class="body"><p><b>No third-party assets.</b> No icons, colour schemes, theme files, screenshots, help text, marketing copy or documentation from another product. All UI copy is written for this product; all icons are original or from a permissively licensed set with attribution recorded.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">IND-3</span><div class="body"><p><b>No third-party file formats.</b> Themes, syntax grammars, ignore rules, sync rules and session definitions all use formats designed for this app. The app does not read, write, import or claim compatibility with any other tool's configuration format. This is the reason OE-TXT-5 dropped its grammar-import path.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">IND-4</span><div class="body"><p><b>Independent interface design.</b> The UI is derived from Material 3 and the mobile constraints in §4, not from another product's layout. Diff colour conventions (green added, red removed) and standard terminology (hunk, 3-way merge, unified diff) are industry-wide conventions and remain fine to use.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">IND-5</span><div class="body"><p><b>Dependency licence hygiene.</b> Every third-party library is checked before adoption: Apache-2.0, MIT, BSD acceptable; LGPL only if dynamically linked and documented; <b>GPL and AGPL excluded</b>. A generated <code>licenses.md</code> and an in-app licences screen are part of the definition of done. Two specific checks: the RAR decoder (Q-6) and any document-parsing library, which is where restrictive licences cluster.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">IND-6</span><div class="body"><p><b>No AI-generated code that reproduces a specific implementation.</b> Claude Code implements from this specification and from public algorithm literature (Myers, histogram diff, piece tables). If any generated code appears to reproduce an identifiable third-party implementation, it is rewritten.</p></div></div>
+  </div>
+
+  <h2>Distribution</h2>
+  <p>Release one is installed directly as an APK, not published to a store. That changes three decisions that were previously made under Play policy constraints.</p>
+
+  <div class="reqs">
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">DIST-1</span><div class="body"><p><b>Two build flavours from one codebase.</b> <code>direct</code> and <code>store</code>. They differ only in a manifest, a permission, and one implementation of <code>SourceProvider</code>. Keeping both from day one costs little; retrofitting the store flavour later would mean reworking every file-access path.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">DIST-2</span><div class="body"><p><b>Storage model reverses for the direct flavour.</b> With <code>MANAGE_EXTERNAL_STORAGE</code>, the app gets real paths and a real file browser — no per-file SAF picker, durable path-based sessions, and far better folder-compare ergonomics. The <code>store</code> flavour keeps SAF. <code>SourceProvider</code> (§10) already abstracts this; the two flavours supply different implementations and the rest of the app is unaware.</p>
+      <p class="note">Consequence: sessions store a <em>path plus an optional URI grant</em>. The direct flavour prefers the path; the store flavour requires the grant. Session export between flavours degrades gracefully rather than failing.</p></div></div>
+    <div class="req adapt"><span class="mk b">~</span><span class="rid">DIST-3</span><div class="body"><p><b>No billing, no accounts, no entitlement in P1.</b> Module M18 becomes a no-op: everything is unlocked. The tier split in OE-LIC-2 is retained in this document only as a record of what a future paid split could be. No account SDK, no licence check, no phone-home.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">DIST-4</span><div class="body"><p><b>Signing and updates.</b> A release keystore is generated once and kept out of the repository; the same key must be used for every build so sideloaded updates install over the previous version. Version code is monotonic; version name is <code>major.minor.patch</code>. An in-app "check for update" is out of scope — updates are delivered as APKs.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">DIST-5</span><div class="body"><p><b>Store-readiness is maintained, not deferred.</b> The <code>store</code> flavour must build and pass tests in CI from the first sprint, even though it is not shipped. Data-safety-relevant behaviour (no telemetry by default, no secrets in backups) holds in both flavours.</p></div></div>
+  </div>
+
+  <h2>Build conventions for Claude Code</h2>
+  <p>The implementation is generated by Claude Code, which changes how this specification should be consumed: requirement IDs become the unit of work, and acceptance criteria matter more than prose.</p>
+  <ul class="plain">
+    <li>A <code>CLAUDE.md</code> at the repository root carries the non-negotiables: module boundaries, the independence rules above, the licence policy, the "no generic error path" rule, and the instruction that <code>:core:*</code> modules must not import Android types.</li>
+    <li>Work is tracked by requirement ID. A commit message references the IDs it satisfies; a requirement is done when its acceptance criteria pass in CI.</li>
+    <li>Every module lands with tests in the same change. The golden-file corpus (§14) is created before the diff engine, not after.</li>
+    <li>Architecture decisions that deviate from §10 are recorded as short ADRs in <code>docs/adr/</code> rather than silently absorbed.</li>
+    <li>The detailed P1 task sequence, repo scaffold and per-task acceptance criteria live in the companion build plan document.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="hunk"><b>@@ 17 @@</b> Assumptions this draft makes</div>
+  <h2>Stated so they can be corrected</h2>
+  <ul class="plain">
+    <li>Omni Editor is a wholly independent product with no relationship to any existing tool or vendor (§16).</li>
+    <li>Release one is distributed as a directly-installed APK; a store release is possible later and the codebase stays ready for it (§16).</li>
+    <li>Phone-first, tablet-capable — not tablet-first.</li>
+    <li>All compare processing happens on-device except the optional AI summary.</li>
+    <li>English-only at launch; minSdk 31 (Android 12), so every target device has scoped storage, dynamic colour, the splash-screen API and typed foreground services.</li>
+    <li>No enterprise MDM, SSO or policy-management requirement in v1.</li>
+    <li>The implementation is produced by Claude Code against the requirement IDs in this document.</li>
+    <li>Scope is measured against the full category baseline in §5, not a reduced variant.</li>
+  </ul>
+</section>
+
+<!-- ============ 17 ============ -->
+<section>
+  <div class="hunk"><b>@@ 18 @@</b> Open questions</div>
+  <h2>Answers that would change this document</h2>
+  <p class="lede">Ordered by how much of the spec each one moves.</p>
+
+  <h3>Decisions taken</h3>
+  <div class="reqs">
+    <div class="req add"><span class="mk a">+</span><span class="rid">D-1</span><div class="body"><p><b>Omni Editor is a full text editor as well as a compare tool.</b> Resolves former Q-1. Adds module M5, goal G-6, screen S-04, and the shared document engine in §10. Non-goal NG-1 narrowed: files, not projects.</p></div></div>
+    <div class="req add"><span class="mk a">+</span><span class="rid">D-2</span><div class="body"><p><b>Release one is text compare, merge and the editor.</b> Resolves former Q-2. Folder compare, sync, remote protocols, archives, Git, binary and documents follow in phases P2–P5 (§15). No fixed date recorded yet — see Q-2b.</p></div></div>
+  </div>
+
+  <h3>Still open</h3>
+
+  <div class="q"><span class="qn">Q-2b</span><div>
+    <p><b>Is there a date on release one, and a team size?</b> The phasing in §15 is a sequence, not a schedule. Estimation needs to know whether P1 is being targeted at a specific quarter and how many engineers are on it.</p>
+  </div></div>
+
+  <div class="q"><span class="qn">Q-3</span><div>
+    <p><b>How far should Git go?</b> Read-and-resolve only (this draft), or clone, fetch, commit and push — which brings credential storage, OAuth for hosting providers, and a very different app.</p>
+  </div></div>
+
+  <div class="q"><span class="qn">Q-4</span><div>
+    <p><b>Is monetisation ever in scope?</b> P1 has no billing and no accounts (DIST-3). If a paid tier is intended eventually, the tier split in OE-LIC-2 should be validated now, because it affects nothing in the code but everything in how features are grouped. If the app is permanently private or internal, module M18 can be deleted rather than stubbed.</p>
+  </div></div>
+
+  <div class="q"><span class="qn">Q-5</span><div>
+    <p><b>Document fidelity, and may files leave the device?</b> Android has no Office runtime, so DOCX/XLSX/PDF must be parsed on-device — giving text-and-structure comparison, not rendered-layout redlines. If true visual document compare is required, a server-side conversion service is the only route. Is off-device processing acceptable for any customer segment? And is legacy binary <code>.doc</code> in scope?</p>
+  </div></div>
+
+  <div class="q"><span class="qn">Q-6</span><div>
+    <p><b>Archive formats.</b> RAR needs a licensed decoder. Confirm RAR is genuinely needed on mobile, or substitute 7z and tar.gz, which are more common in an Android context.</p>
+  </div></div>
+
+  <div class="q"><span class="qn">Q-7</span><div>
+    <p><b>AI difference summaries — in or out?</b> Plain-language summaries of what changed are increasingly expected in this category. Should Omni Editor ship one, given it requires sending file content off-device?</p>
+  </div></div>
+
+  <div class="q"><span class="qn">Q-8</span><div>
+    <p><b>Localisation.</b> Which languages are required, and by when? English-only at launch is assumed. (Minimum version resolved: API 31.)</p>
+  </div></div>
+
+  <div class="q"><span class="qn">Q-9</span><div>
+    <p><b>Enterprise requirements.</b> Any MDM/Intune deployment, SSO, audit logging, or policy control over remote connections and AI features?</p>
+  </div></div>
+
+  <div class="q"><span class="qn">Q-10</span><div>
+    <p><b>Design system and brand.</b> Is there an existing visual identity, colour palette or component library Omni Editor must adopt, or is Material 3 with a new identity acceptable?</p>
+  </div></div>
+
+  <div class="q"><span class="qn">Q-11</span><div>
+    <p><b>What does this spec need to be for?</b> Estimation, an engineering build, an RFP, or an internal pitch? A build spec would want acceptance criteria per requirement and API-level contracts; a pitch would want less of §10 and more of §3.</p>
+  </div></div>
+</section>
+
+<!-- ============ 18 ============ -->
+<section>
+  <div class="hunk"><b>@@ 19 @@</b> Appendix</div>
+  <h2>Glossary</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Term</th><th>Meaning in this document</th></tr></thead>
+      <tbody>
+        <tr><td>Hunk</td><td>A contiguous run of lines that differ, plus its position on each side.</td></tr>
+        <tr><td>Granularity</td><td>Whether intra-line differences are marked by character, word, or not at all (line only).</td></tr>
+        <tr><td>Ignore rule</td><td>A normalisation applied before hashing, so matching content never produces a hunk.</td></tr>
+        <tr><td>Session</td><td>A saved compare definition: sources, mode, rules, display settings and last result.</td></tr>
+        <tr><td>Source ref</td><td>A durable pointer to one side of a compare — a URI grant, remote path, Git object or archive entry.</td></tr>
+        <tr><td>Block mode</td><td>The large-file engine path that locates changed regions by rolling hash before diffing within them.</td></tr>
+        <tr><td>Stale result</td><td>A cached result shown when a source cannot currently be read.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Provenance of §5</h3>
+  <p>The capability checklist in §5 was assembled by surveying what desktop compare and merge tools in this category publicly advertise, in order to avoid scope gaps. Capability names are generic descriptions of function ("3-way merge", "folder sync"), which are not protectable. No third-party code, assets, interface copy, file formats or configuration schemas were consulted for design purposes or are reproduced anywhere in this document or in the product. See §16 for the independence rules that bind the implementation.</p>
+</section>
+
+<footer>
+  <p><b>OE-SPEC-001 · v1.2</b> — Omni Editor, Android editor, compare and merge application.</p>
+  <p>Revision 3 adds §16 (independence, direct-install distribution, build conventions for Claude Code), reverses the storage model for the direct flavour, and removes every association with any third-party product. The companion build plan sequences P1 into implementable tasks.</p>
+</footer>
+
+</div>
+</body>
+</html>

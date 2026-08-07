@@ -1,0 +1,22 @@
+build:
+  maxIssues: 0
+
+complexity:
+  LongMethod:
+    threshold: 60
+  TooManyFunctions:
+    active: false
+
+style:
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    maxLineLength: 120
+  ReturnCount:
+    active: false
+
+exceptions:
+  TooGenericExceptionCaught:
+    # Deliberate: CLAUDE.md forbids a generic error path. Catching broadly is only
+    # allowed at a boundary that maps the failure onto an OmniError variant.
+    active: true
