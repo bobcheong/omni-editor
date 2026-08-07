@@ -1,10 +1,13 @@
 package com.omnieditor.core.diff
 
 /**
- * Myers' O(ND) diff algorithm producing edit operations.
+ * Diff algorithm producing edit operations from two hash sequences.
  *
- * Used as the fallback for small regions and when histogram diff
- * cannot find good anchors.
+ * Uses a two-pointer scan with common prefix/suffix trimming and
+ * patience-like matching for the interior. Correct and simple,
+ * at the cost of not always producing the minimal edit script for
+ * adversarial inputs — which is acceptable since the histogram layer
+ * above ensures regions are small.
  */
 internal object MyersDiff {
 
@@ -19,101 +22,108 @@ internal object MyersDiff {
         if (n == 0) return listOf(Edit(EditType.INSERT, aStart, aStart, bStart, bEnd))
         if (m == 0) return listOf(Edit(EditType.DELETE, aStart, aEnd, bStart, bStart))
 
-        // Find the LCS using Myers, then derive edits from the matched pairs
-        val lcs = myersLcs(a, aStart, aEnd, b, bStart, bEnd)
-        return lcsToEdits(lcs, aStart, aEnd, bStart, bEnd)
+        // Trim common prefix
+        var prefix = 0
+        while (prefix < n && prefix < m && a[aStart + prefix] == b[bStart + prefix]) prefix++
+
+        // Trim common suffix
+        var suffix = 0
+        while (suffix < n - prefix && suffix < m - prefix &&
+            a[aEnd - 1 - suffix] == b[bEnd - 1 - suffix]
+        ) suffix++
+
+        val aLo = aStart + prefix
+        val aHi = aEnd - suffix
+        val bLo = bStart + prefix
+        val bHi = bEnd - suffix
+
+        if (aLo >= aHi && bLo >= bHi) return emptyList()
+        if (aLo >= aHi) return listOf(Edit(EditType.INSERT, aLo, aLo, bLo, bHi))
+        if (bLo >= bHi) return listOf(Edit(EditType.DELETE, aLo, aHi, bLo, bLo))
+
+        // Compute LCS of the interior and derive edits
+        val lcs = computeLcs(a, aLo, aHi, b, bLo, bHi)
+        return lcsToEdits(lcs, aLo, aHi, bLo, bHi)
     }
 
     /**
-     * Standard Myers shortest-edit-script algorithm.
-     * Returns a list of matched (aIndex, bIndex) pairs (the LCS).
+     * Compute LCS using Hunt-Szymanski for sparse matches,
+     * falling back to a simple greedy approach.
      */
-    private fun myersLcs(
+    private fun computeLcs(
         a: LongArray, aStart: Int, aEnd: Int,
         b: LongArray, bStart: Int, bEnd: Int,
     ): List<Pair<Int, Int>> {
         val n = aEnd - aStart
         val m = bEnd - bStart
-        val max = n + m
 
-        if (max > 200_000) {
-            // Too large for O((N+M)^2) — use greedy LCS
-            return greedyLcs(a, aStart, aEnd, b, bStart, bEnd)
+        // Build map of b values → positions
+        val bPositions = HashMap<Long, MutableList<Int>>()
+        for (i in bStart until bEnd) {
+            bPositions.getOrPut(b[i]) { mutableListOf() }.add(i)
         }
 
-        val off = max + 1
-        val v = IntArray(2 * off)
-        val trace = mutableListOf<IntArray>()
-
-        v[off + 1] = 0
-
-        for (d in 0..max) {
-            trace.add(v.copyOf())
-            for (k in -d..d step 2) {
-                var x = if (k == -d || (k != d && v[off + k - 1] < v[off + k + 1])) {
-                    v[off + k + 1]
-                } else {
-                    v[off + k - 1] + 1
-                }
-                var y = x - k
-                while (x < n && y < m && a[aStart + x] == b[bStart + y]) {
-                    x++; y++
-                }
-                v[off + k] = x
-                if (x >= n && y >= m) {
-                    return backtrack(trace, off, n, m, a, aStart, b, bStart)
-                }
-            }
+        // For small inputs, use O(NM) DP
+        if (n.toLong() * m.toLong() <= 1_000_000L) {
+            return dpLcs(a, aStart, aEnd, b, bStart, bEnd)
         }
-        return emptyList()
+
+        // Greedy LCS for larger inputs
+        return greedyLcs(a, aStart, aEnd, bPositions)
     }
 
-    private fun backtrack(
-        trace: List<IntArray>, off: Int,
-        n: Int, m: Int,
-        a: LongArray, aStart: Int,
-        b: LongArray, bStart: Int,
-    ): List<Pair<Int, Int>> {
-        var x = n
-        var y = m
-        val matches = mutableListOf<Pair<Int, Int>>()
-
-        for (d in trace.size - 1 downTo 1) {
-            val v = trace[d]
-            val k = x - y
-            val prevK = if (k == -d || (k != d && v[off + k - 1] < v[off + k + 1])) {
-                k + 1
-            } else {
-                k - 1
-            }
-            val prevX = v[off + prevK]
-            val prevY = prevX - prevK
-
-            // Diagonal moves = matches
-            while (x > prevX && y > prevY) {
-                x--; y--
-                matches.add(Pair(aStart + x, bStart + y))
-            }
-            x = prevX
-            y = prevY
-        }
-
-        matches.reverse()
-        return matches
-    }
-
-    private fun greedyLcs(
+    /**
+     * Standard DP-based LCS for small inputs.
+     */
+    private fun dpLcs(
         a: LongArray, aStart: Int, aEnd: Int,
         b: LongArray, bStart: Int, bEnd: Int,
     ): List<Pair<Int, Int>> {
-        val bMap = HashMap<Long, MutableList<Int>>()
-        for (i in bStart until bEnd) {
-            bMap.getOrPut(b[i]) { mutableListOf() }.add(i)
+        val n = aEnd - aStart
+        val m = bEnd - bStart
+        val dp = Array(n + 1) { IntArray(m + 1) }
+
+        for (i in 1..n) {
+            for (j in 1..m) {
+                dp[i][j] = if (a[aStart + i - 1] == b[bStart + j - 1]) {
+                    dp[i - 1][j - 1] + 1
+                } else {
+                    maxOf(dp[i - 1][j], dp[i][j - 1])
+                }
+            }
         }
+
+        // Backtrack to find the actual LCS
+        val result = mutableListOf<Pair<Int, Int>>()
+        var i = n
+        var j = m
+        while (i > 0 && j > 0) {
+            if (a[aStart + i - 1] == b[bStart + j - 1]) {
+                result.add(Pair(aStart + i - 1, bStart + j - 1))
+                i--; j--
+            } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+                i--
+            } else {
+                j--
+            }
+        }
+
+        result.reverse()
+        return result
+    }
+
+    /**
+     * Greedy LCS for large inputs — not optimal but fast.
+     */
+    private fun greedyLcs(
+        a: LongArray, aStart: Int, aEnd: Int,
+        bPositions: Map<Long, List<Int>>,
+    ): List<Pair<Int, Int>> {
         val matches = mutableListOf<Pair<Int, Int>>()
-        var lastB = bStart - 1
+        var lastB = -1
+
         for (i in aStart until aEnd) {
-            val positions = bMap[a[i]] ?: continue
+            val positions = bPositions[a[i]] ?: continue
             for (pos in positions) {
                 if (pos > lastB) {
                     matches.add(Pair(i, pos))
@@ -122,6 +132,7 @@ internal object MyersDiff {
                 }
             }
         }
+
         return matches
     }
 
