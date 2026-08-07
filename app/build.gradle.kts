@@ -96,6 +96,7 @@ dependencies {
     implementation(project(":core:io"))
     implementation(project(":core:diff"))
     implementation(project(":design"))
+    implementation(project(":feature:editor"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
