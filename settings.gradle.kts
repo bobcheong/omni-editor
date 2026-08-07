@@ -18,5 +18,5 @@ include(":core:diff")
 include(":core:io")
 include(":design")
 include(":feature:editor")
-// Remaining feature modules added at the task that needs them (T-17 compare,
-// T-23 setup, T-24 home).
+include(":feature:compare")
+// Remaining feature modules added at the task that needs them (T-23 setup, T-24 home).
