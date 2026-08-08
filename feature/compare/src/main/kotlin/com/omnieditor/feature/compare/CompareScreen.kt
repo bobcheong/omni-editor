@@ -76,7 +76,7 @@ fun CompareScreen(
             }
         },
     ) { padding ->
-        Column(modifier = modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding())) {
+        Column(modifier = modifier.fillMaxSize()) {
             if (state != null) {
                 // Filter segmented control
                 FilterBar(

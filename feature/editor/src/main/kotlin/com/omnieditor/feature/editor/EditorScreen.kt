@@ -79,7 +79,6 @@ fun EditorScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = padding.calculateBottomPadding())
                 .imePadding(),
         ) {
             // Tab strip

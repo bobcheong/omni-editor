@@ -95,10 +95,30 @@ fun OmniNavGraph(
                     navController.navigate("setup")
                 },
                 onSessionTap = { sessionId ->
-                    // Re-open from recents — look up cached content
+                    // Try cached content first
                     val cached = ContentCache.get(sessionId)
                     if (cached != null) {
                         navController.navigate("editor/$sessionId")
+                    } else {
+                        // Try to re-read from stored URI in recents
+                        scope.launch {
+                            val recents = recentsStore.getRecents()
+                            val ref = recents.find { it.id == sessionId }
+                            val uri = ref?.uriGrant
+                            if (uri != null) {
+                                try {
+                                    val key = ContentCache.readAndCache(
+                                        context, Uri.parse(uri)
+                                    )
+                                    navController.navigate("editor/$key")
+                                } catch (_: Exception) {
+                                    // Permission expired — open picker instead
+                                    openFileLauncher.launch(arrayOf("*/*"))
+                                }
+                            } else {
+                                openFileLauncher.launch(arrayOf("*/*"))
+                            }
+                        }
                     }
                 },
                 onSettings = {
