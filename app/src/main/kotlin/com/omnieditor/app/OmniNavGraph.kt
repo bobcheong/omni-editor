@@ -139,9 +139,9 @@ fun OmniNavGraph(
             }
 
             EditorScreen(
+                fileName = cached?.label ?: "",
                 onNavigateBack = { navController.popBackStack() },
                 onCompareWith = {
-                    // Navigate to setup with this file as the left side
                     navController.navigate("setup?leftKey=$contentKey")
                 },
                 viewModel = viewModel,

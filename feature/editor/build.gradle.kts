@@ -17,6 +17,7 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:io"))
+    implementation(project(":core:diff"))
     implementation(project(":design"))
 
     implementation(platform(libs.compose.bom))

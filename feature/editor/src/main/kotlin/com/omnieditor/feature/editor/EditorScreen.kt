@@ -27,36 +27,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 
-/**
- * Full editor screen (S-04) composing all chrome:
- * - Top app bar with file name and actions
- * - Tab strip (shared with compares)
- * - Editor content (lazy line list from T-13)
- * - Status strip (line, column, encoding, line ending)
- * - Programmer key row (above the IME)
- *
- * States handled (from spec S-04):
- * - Read-only source
- * - File changed on disk while open (banner)
- * - Encoding could not be detected
- * - File exceeds full-index threshold
- * - Save failed (buffer retained, retry offered)
- * - Recovered-after-crash banner
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(
+    fileName: String = "",
     tabs: List<TabInfo> = emptyList(),
     selectedTabId: String? = null,
     onTabSelected: (String) -> Unit = {},
     onTabClosed: (String) -> Unit = {},
     onNewTab: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
-    onFindRequested: () -> Unit = {},
     onCompareWith: () -> Unit = {},
     viewModel: EditorViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var showFind by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -64,14 +49,14 @@ fun EditorScreen(
                 title = when (val state = uiState) {
                     is EditorUiState.Loaded -> {
                         val dirty = if (state.editorState.document.dirty) " ●" else ""
-                        "Editor$dirty"
+                        (fileName.ifBlank { "Editor" }) + dirty
                     }
                     else -> "Editor"
                 },
                 onNavigateBack = onNavigateBack,
-                onFind = onFindRequested,
+                onFind = { showFind = !showFind },
                 onCompareWith = onCompareWith,
-                onSave = { viewModel.save { /* callback handled by caller */ } },
+                onSave = { viewModel.save { } },
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
             )
@@ -88,9 +73,8 @@ fun EditorScreen(
                     ProgrammerKeyRow(
                         onKey = { key ->
                             when (key) {
-                                "LEFT", "RIGHT", "UP", "DOWN", "HOME", "END" -> {
+                                "LEFT", "RIGHT", "UP", "DOWN", "HOME", "END" ->
                                     handleNavKey(state.editorState, key)
-                                }
                                 else -> state.editorState.insertAtCaret(key)
                             }
                         },
@@ -101,19 +85,28 @@ fun EditorScreen(
             }
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             if (tabs.isNotEmpty()) {
-                TabStrip(
-                    tabs = tabs,
-                    selectedTabId = selectedTabId,
-                    onTabSelected = onTabSelected,
-                    onTabClosed = onTabClosed,
-                    onNewTab = onNewTab,
-                )
+                TabStrip(tabs, selectedTabId, onTabSelected, onTabClosed, onNewTab)
+            }
+
+            // Find/Replace bar
+            if (showFind) {
+                val state = uiState
+                if (state is EditorUiState.Loaded) {
+                    FindReplaceBar(
+                        visible = true,
+                        matchCount = 0,
+                        currentMatch = 0,
+                        onSearch = { },
+                        onReplace = { },
+                        onReplaceAll = { },
+                        onPrevious = { },
+                        onNext = { },
+                        onClose = { showFind = false },
+                        onOptionsChanged = { _, _, _ -> },
+                    )
+                }
             }
 
             when (val state = uiState) {
@@ -125,6 +118,7 @@ fun EditorScreen(
                     EditorContent(
                         state = state.editorState,
                         modifier = Modifier.weight(1f),
+                        fileName = fileName,
                     )
                 }
             }
@@ -146,7 +140,7 @@ private fun EditorTopBar(
     var menuExpanded by remember { mutableStateOf(false) }
 
     TopAppBar(
-        title = { Text(title) },
+        title = { Text(title, maxLines = 1) },
         navigationIcon = {
             IconButton(onClick = onNavigateBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -190,16 +184,8 @@ private fun handleNavKey(state: EditorState, key: String) {
                 state.moveCaret(state.caretLine + 1, 0)
             }
         }
-        "UP" -> {
-            if (state.caretLine > 0) {
-                state.moveCaret(state.caretLine - 1, state.caretColumn)
-            }
-        }
-        "DOWN" -> {
-            if (state.caretLine < state.lineCount - 1) {
-                state.moveCaret(state.caretLine + 1, state.caretColumn)
-            }
-        }
+        "UP" -> if (state.caretLine > 0) state.moveCaret(state.caretLine - 1, state.caretColumn)
+        "DOWN" -> if (state.caretLine < state.lineCount - 1) state.moveCaret(state.caretLine + 1, state.caretColumn)
         "HOME" -> state.moveCaret(state.caretLine, 0)
         "END" -> {
             val line = state.document.line(state.caretLine)

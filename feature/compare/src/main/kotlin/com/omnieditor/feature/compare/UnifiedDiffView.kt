@@ -1,6 +1,7 @@
 package com.omnieditor.feature.compare
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,7 +27,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.omnieditor.design.LocalCompareColors
@@ -122,7 +123,7 @@ private fun UnifiedDiffRow(
             maxLines = 1,
         )
 
-        // Content
+        // Content with horizontal scroll
         Text(
             text = row.text,
             color = if (row.type == RowType.CONTEXT) {
@@ -133,8 +134,10 @@ private fun UnifiedDiffRow(
             fontFamily = FontFamily.Monospace,
             fontSize = 13.sp,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
+            softWrap = false,
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState()),
         )
     }
 }
