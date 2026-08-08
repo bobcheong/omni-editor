@@ -43,11 +43,13 @@ fun EditorContent(
 ) {
     val listState = rememberLazyListState()
     val compareColors = LocalCompareColors.current
-    val textStyle = remember {
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val textStyle = remember(onSurface) {
         TextStyle(
             fontFamily = FontFamily.Monospace,
             fontSize = 14.sp,
             lineHeight = 20.sp,
+            color = onSurface,
         )
     }
 

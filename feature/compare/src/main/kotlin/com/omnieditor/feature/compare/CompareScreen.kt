@@ -76,7 +76,7 @@ fun CompareScreen(
             }
         },
     ) { padding ->
-        Column(modifier = modifier.fillMaxSize()) {
+        Column(modifier = modifier.fillMaxSize().padding(padding)) {
             if (state != null) {
                 // Filter segmented control
                 FilterBar(
@@ -88,7 +88,6 @@ fun CompareScreen(
                 AdaptiveDiffView(
                     state = state,
                     modifier = Modifier.weight(1f),
-                    contentPadding = padding,
                 )
 
                 // Status readout

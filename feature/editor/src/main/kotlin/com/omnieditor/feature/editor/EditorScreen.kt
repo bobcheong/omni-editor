@@ -75,49 +75,15 @@ fun EditorScreen(
                 onRedo = { viewModel.redo() },
             )
         },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .imePadding(),
-        ) {
-            // Tab strip
-            if (tabs.isNotEmpty()) {
-                TabStrip(
-                    tabs = tabs,
-                    selectedTabId = selectedTabId,
-                    onTabSelected = onTabSelected,
-                    onTabClosed = onTabClosed,
-                    onNewTab = onNewTab,
-                )
-            }
-
-            when (val state = uiState) {
-                is EditorUiState.Empty -> {
-                    // Empty state — nothing open
-                }
-                is EditorUiState.Error -> {
-                    Text(
-                        text = state.message,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-                is EditorUiState.Loaded -> {
-                    // Editor content (weight fills available space)
-                    EditorContent(
-                        state = state.editorState,
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(top = padding.calculateTopPadding()),
-                    )
-
-                    // Status strip
+        bottomBar = {
+            val state = uiState
+            if (state is EditorUiState.Loaded) {
+                Column(modifier = Modifier.imePadding()) {
                     StatusStrip(
                         state = state.editorState,
                         encoding = "UTF-8",
                         lineEnding = "LF",
                     )
-
-                    // Programmer key row (above IME)
                     ProgrammerKeyRow(
                         onKey = { key ->
                             when (key) {
@@ -129,6 +95,35 @@ fun EditorScreen(
                         },
                         onUndo = { viewModel.undo() },
                         onRedo = { viewModel.redo() },
+                    )
+                }
+            }
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
+            if (tabs.isNotEmpty()) {
+                TabStrip(
+                    tabs = tabs,
+                    selectedTabId = selectedTabId,
+                    onTabSelected = onTabSelected,
+                    onTabClosed = onTabClosed,
+                    onNewTab = onNewTab,
+                )
+            }
+
+            when (val state = uiState) {
+                is EditorUiState.Empty -> {}
+                is EditorUiState.Error -> {
+                    Text(text = state.message, modifier = Modifier.fillMaxSize())
+                }
+                is EditorUiState.Loaded -> {
+                    EditorContent(
+                        state = state.editorState,
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
