@@ -140,15 +140,26 @@ fun OmniNavGraph(
 
             EditorScreen(
                 onNavigateBack = { navController.popBackStack() },
+                onCompareWith = {
+                    // Navigate to setup with this file as the left side
+                    navController.navigate("setup?leftKey=$contentKey")
+                },
                 viewModel = viewModel,
             )
         }
 
         // ── Source Setup ──
-        composable("setup") {
-            var leftSource by remember { mutableStateOf<SourceRef?>(null) }
+        composable("setup?leftKey={leftKey}") { backStackEntry ->
+            val prefilledLeftKey = backStackEntry.arguments?.getString("leftKey")
+            val prefilledLeft = prefilledLeftKey?.let { ContentCache.get(it) }
+
+            var leftSource by remember {
+                mutableStateOf(prefilledLeft?.let {
+                    SourceRef(id = prefilledLeftKey!!, kind = SourceKind.LOCAL, uriGrant = it.uri, label = it.label)
+                })
+            }
             var rightSource by remember { mutableStateOf<SourceRef?>(null) }
-            var leftKey by remember { mutableStateOf<String?>(null) }
+            var leftKey by remember { mutableStateOf(prefilledLeftKey) }
             var rightKey by remember { mutableStateOf<String?>(null) }
             val scope = rememberCoroutineScope()
 
