@@ -81,11 +81,14 @@ private fun DrawScope.drawContent(
     style: TextStyle,
 ) {
     if (text.isEmpty()) return
-    // Limit the measured text to what's visible to prevent measuring very long lines
     val visibleChars = ((size.width / (style.fontSize.toPx() * 0.6f)).toInt() + 10)
         .coerceAtMost(text.length)
     val displayText = if (visibleChars < text.length) text.substring(0, visibleChars) else text.toString()
-    val layoutResult = measurer.measure(displayText, style)
+    // Ensure color is explicitly set — some devices ignore TextStyle.color in Canvas
+    val effectiveStyle = if (style.color == Color.Unspecified) {
+        style.copy(color = Color(0xFF000000))
+    } else style
+    val layoutResult = measurer.measure(displayText, effectiveStyle)
     val y = (size.height - layoutResult.size.height) / 2f
     drawText(layoutResult, topLeft = Offset(8.dp.toPx(), y))
 }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -78,7 +79,7 @@ fun EditorScreen(
         bottomBar = {
             val state = uiState
             if (state is EditorUiState.Loaded) {
-                Column(modifier = Modifier.imePadding()) {
+                Column(modifier = Modifier.navigationBarsPadding().imePadding()) {
                     StatusStrip(
                         state = state.editorState,
                         encoding = "UTF-8",
