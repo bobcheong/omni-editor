@@ -1,7 +1,6 @@
 package com.omnieditor.feature.editor
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -13,6 +12,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -42,6 +42,7 @@ fun EditorScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showFind by remember { mutableStateOf(false) }
+    var lastSearchQuery by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
@@ -59,6 +60,15 @@ fun EditorScreen(
                 onSave = { viewModel.save { } },
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
+                onSortLines = { viewModel.sortLines() },
+                onDeduplicate = { viewModel.deduplicateLines() },
+                onTrimTrailing = { viewModel.trimTrailing() },
+                onUpperCase = { viewModel.toUpperCase() },
+                onLowerCase = { viewModel.toLowerCase() },
+                onReverseLines = { viewModel.reverseLines() },
+                onRemoveBlankLines = { viewModel.removeBlankLines() },
+                onTabsToSpaces = { viewModel.tabsToSpaces() },
+                onSpacesToTabs = { viewModel.spacesToTabs() },
             )
         },
         bottomBar = {
@@ -90,23 +100,23 @@ fun EditorScreen(
                 TabStrip(tabs, selectedTabId, onTabSelected, onTabClosed, onNewTab)
             }
 
-            // Find/Replace bar
+            // Find/Replace bar — connected to ViewModel
             if (showFind) {
-                val state = uiState
-                if (state is EditorUiState.Loaded) {
-                    FindReplaceBar(
-                        visible = true,
-                        matchCount = 0,
-                        currentMatch = 0,
-                        onSearch = { },
-                        onReplace = { },
-                        onReplaceAll = { },
-                        onPrevious = { },
-                        onNext = { },
-                        onClose = { showFind = false },
-                        onOptionsChanged = { _, _, _ -> },
-                    )
-                }
+                FindReplaceBar(
+                    visible = true,
+                    matchCount = viewModel.findMatches.size,
+                    currentMatch = viewModel.currentMatchIndex,
+                    onSearch = { query ->
+                        lastSearchQuery = query
+                        viewModel.search(query)
+                    },
+                    onReplace = { replacement -> viewModel.replaceOne(replacement) },
+                    onReplaceAll = { replacement -> viewModel.replaceAll(lastSearchQuery, replacement) },
+                    onPrevious = { viewModel.findPrev() },
+                    onNext = { viewModel.findNext() },
+                    onClose = { showFind = false },
+                    onOptionsChanged = { cs, ww, rx -> viewModel.updateFindOptions(cs, ww, rx) },
+                )
             }
 
             when (val state = uiState) {
@@ -136,31 +146,55 @@ private fun EditorTopBar(
     onSave: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
+    onSortLines: () -> Unit,
+    onDeduplicate: () -> Unit,
+    onTrimTrailing: () -> Unit,
+    onUpperCase: () -> Unit,
+    onLowerCase: () -> Unit,
+    onReverseLines: () -> Unit,
+    onRemoveBlankLines: () -> Unit,
+    onTabsToSpaces: () -> Unit,
+    onSpacesToTabs: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    var textToolsExpanded by remember { mutableStateOf(false) }
 
     TopAppBar(
         title = { Text(title, maxLines = 1) },
         navigationIcon = {
             IconButton(onClick = onNavigateBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
             }
         },
         actions = {
             IconButton(onClick = onFind) {
-                Icon(Icons.Default.Search, contentDescription = "Find")
+                Icon(Icons.Default.Search, "Find & Replace")
             }
             IconButton(onClick = { menuExpanded = true }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "More")
+                Icon(Icons.Default.MoreVert, "More")
             }
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false },
-            ) {
+            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                 DropdownMenuItem(text = { Text("Save") }, onClick = { menuExpanded = false; onSave() })
                 DropdownMenuItem(text = { Text("Undo") }, onClick = { menuExpanded = false; onUndo() })
                 DropdownMenuItem(text = { Text("Redo") }, onClick = { menuExpanded = false; onRedo() })
+                HorizontalDivider()
+                DropdownMenuItem(text = { Text("Text tools ▸") }, onClick = {
+                    menuExpanded = false; textToolsExpanded = true
+                })
+                HorizontalDivider()
                 DropdownMenuItem(text = { Text("Compare with…") }, onClick = { menuExpanded = false; onCompareWith() })
+            }
+            DropdownMenu(expanded = textToolsExpanded, onDismissRequest = { textToolsExpanded = false }) {
+                DropdownMenuItem(text = { Text("Sort lines") }, onClick = { textToolsExpanded = false; onSortLines() })
+                DropdownMenuItem(text = { Text("Remove duplicates") }, onClick = { textToolsExpanded = false; onDeduplicate() })
+                DropdownMenuItem(text = { Text("Trim trailing spaces") }, onClick = { textToolsExpanded = false; onTrimTrailing() })
+                DropdownMenuItem(text = { Text("UPPERCASE") }, onClick = { textToolsExpanded = false; onUpperCase() })
+                DropdownMenuItem(text = { Text("lowercase") }, onClick = { textToolsExpanded = false; onLowerCase() })
+                DropdownMenuItem(text = { Text("Reverse lines") }, onClick = { textToolsExpanded = false; onReverseLines() })
+                DropdownMenuItem(text = { Text("Remove blank lines") }, onClick = { textToolsExpanded = false; onRemoveBlankLines() })
+                HorizontalDivider()
+                DropdownMenuItem(text = { Text("Tabs → Spaces") }, onClick = { textToolsExpanded = false; onTabsToSpaces() })
+                DropdownMenuItem(text = { Text("Spaces → Tabs") }, onClick = { textToolsExpanded = false; onSpacesToTabs() })
             }
         },
     )
@@ -169,27 +203,20 @@ private fun EditorTopBar(
 private fun handleNavKey(state: EditorState, key: String) {
     when (key) {
         "LEFT" -> {
-            if (state.caretColumn > 0) {
-                state.moveCaret(state.caretLine, state.caretColumn - 1)
-            } else if (state.caretLine > 0) {
-                val prevLine = state.document.line(state.caretLine - 1)
-                state.moveCaret(state.caretLine - 1, prevLine.length)
+            if (state.caretColumn > 0) state.moveCaret(state.caretLine, state.caretColumn - 1)
+            else if (state.caretLine > 0) {
+                val prev = state.document.line(state.caretLine - 1)
+                state.moveCaret(state.caretLine - 1, prev.length)
             }
         }
         "RIGHT" -> {
-            val currentLine = state.document.line(state.caretLine)
-            if (state.caretColumn < currentLine.length) {
-                state.moveCaret(state.caretLine, state.caretColumn + 1)
-            } else if (state.caretLine < state.lineCount - 1) {
-                state.moveCaret(state.caretLine + 1, 0)
-            }
+            val cur = state.document.line(state.caretLine)
+            if (state.caretColumn < cur.length) state.moveCaret(state.caretLine, state.caretColumn + 1)
+            else if (state.caretLine < state.lineCount - 1) state.moveCaret(state.caretLine + 1, 0)
         }
         "UP" -> if (state.caretLine > 0) state.moveCaret(state.caretLine - 1, state.caretColumn)
         "DOWN" -> if (state.caretLine < state.lineCount - 1) state.moveCaret(state.caretLine + 1, state.caretColumn)
         "HOME" -> state.moveCaret(state.caretLine, 0)
-        "END" -> {
-            val line = state.document.line(state.caretLine)
-            state.moveCaret(state.caretLine, line.length)
-        }
+        "END" -> state.moveCaret(state.caretLine, state.document.line(state.caretLine).length)
     }
 }
