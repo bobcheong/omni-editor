@@ -4,7 +4,7 @@ plugins {
 }
 android {
     namespace = "com.omnieditor.design"
-    compileSdk = 35
+    compileSdk = 37
     defaultConfig { minSdk = 31 }
     buildFeatures { compose = true }
     compileOptions {
