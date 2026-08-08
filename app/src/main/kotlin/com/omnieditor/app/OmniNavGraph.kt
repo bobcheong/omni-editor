@@ -4,8 +4,10 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -17,6 +19,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.omnieditor.app.home.HomeScreen
+import com.omnieditor.core.io.RecentsStore
+import com.omnieditor.core.model.CompareMode
+import com.omnieditor.core.model.Session
 import com.omnieditor.core.model.SourceKind
 import com.omnieditor.core.model.SourceRef
 import com.omnieditor.feature.compare.CompareScreen
@@ -28,44 +33,77 @@ import com.omnieditor.feature.setup.SourceSetupScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.UUID
 
-/**
- * Top-level navigation graph.
- *
- * File content is read immediately when the SAF picker returns (while
- * the temporary permission is active) and cached via [ContentCache].
- * This solves permission denial for Google Drive and other cloud providers.
- */
 @Composable
 fun OmniNavGraph(
     navController: NavHostController = rememberNavController(),
     initialAction: IntentRouter.IntentAction = IntentRouter.IntentAction.ShowHome,
 ) {
+    val context = LocalContext.current
+    val recentsStore = remember {
+        RecentsStore(File(context.filesDir, "recents.json"))
+    }
+
     NavHost(navController = navController, startDestination = "home") {
 
         // ── Home ──
         composable("home") {
-            val context = LocalContext.current
+            val scope = rememberCoroutineScope()
+            val recentSessions = remember { mutableStateListOf<Session>() }
+
+            // Load recents
+            LaunchedEffect(Unit) {
+                val recents = recentsStore.getRecents()
+                recentSessions.clear()
+                recentSessions.addAll(recents.map { ref ->
+                    Session(
+                        id = ref.id,
+                        name = ref.label,
+                        mode = CompareMode.EDITOR,
+                        createdAt = System.currentTimeMillis(),
+                    )
+                })
+            }
 
             val openFileLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.OpenDocument()
             ) { uri: Uri? ->
                 if (uri != null) {
-                    // Read immediately while permission is active
                     val key = ContentCache.readAndCache(context, uri)
+                    val cached = ContentCache.get(key)
+                    // Track in recents
+                    scope.launch {
+                        recentsStore.addRecent(SourceRef(
+                            id = key,
+                            kind = SourceKind.LOCAL,
+                            uriGrant = uri.toString(),
+                            label = cached?.label ?: "file",
+                        ))
+                    }
                     navController.navigate("editor/$key")
                 }
             }
 
             HomeScreen(
+                recentSessions = recentSessions,
                 onOpenFile = {
                     openFileLauncher.launch(arrayOf("*/*"))
                 },
                 onNewCompare = {
                     navController.navigate("setup")
                 },
-                onSessionTap = { },
+                onSessionTap = { sessionId ->
+                    // Re-open from recents — look up cached content
+                    val cached = ContentCache.get(sessionId)
+                    if (cached != null) {
+                        navController.navigate("editor/$sessionId")
+                    }
+                },
+                onSettings = {
+                    navController.navigate("settings")
+                },
             )
         }
 
@@ -88,11 +126,11 @@ fun OmniNavGraph(
 
         // ── Source Setup ──
         composable("setup") {
-            val context = LocalContext.current
             var leftSource by remember { mutableStateOf<SourceRef?>(null) }
             var rightSource by remember { mutableStateOf<SourceRef?>(null) }
             var leftKey by remember { mutableStateOf<String?>(null) }
             var rightKey by remember { mutableStateOf<String?>(null) }
+            val scope = rememberCoroutineScope()
 
             val leftPicker = rememberLauncherForActivityResult(
                 ActivityResultContracts.OpenDocument()
@@ -139,6 +177,11 @@ fun OmniNavGraph(
                     val lk = leftKey
                     val rk = rightKey
                     if (lk != null && rk != null) {
+                        // Track both in recents
+                        scope.launch {
+                            leftSource?.let { recentsStore.addRecent(it) }
+                            rightSource?.let { recentsStore.addRecent(it) }
+                        }
                         navController.navigate("compare/$lk/$rk")
                     }
                 },
@@ -179,6 +222,13 @@ fun OmniNavGraph(
                 state = compareState,
                 leftLabel = leftCached?.label ?: "left",
                 rightLabel = rightCached?.label ?: "right",
+                onNavigateBack = { navController.popBackStack() },
+            )
+        }
+
+        // ── Settings ──
+        composable("settings") {
+            SettingsScreen(
                 onNavigateBack = { navController.popBackStack() },
             )
         }

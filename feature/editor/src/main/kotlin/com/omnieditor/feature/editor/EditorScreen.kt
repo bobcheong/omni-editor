@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
@@ -78,6 +79,7 @@ fun EditorScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(bottom = padding.calculateBottomPadding())
                 .imePadding(),
         ) {
             // Tab strip

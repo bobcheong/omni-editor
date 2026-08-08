@@ -2,6 +2,7 @@ package com.omnieditor.feature.compare
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
@@ -75,7 +76,7 @@ fun CompareScreen(
             }
         },
     ) { padding ->
-        Column(modifier = modifier.fillMaxSize()) {
+        Column(modifier = modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding())) {
             if (state != null) {
                 // Filter segmented control
                 FilterBar(
