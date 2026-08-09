@@ -55,7 +55,7 @@ class PieceTableDocumentTest {
     @Test
     fun `undo reverses an insert`() {
         val doc = PieceTableDocument.create("hello")
-        doc.edit(0L..0L, "XXX\n")
+        doc.edit(0L..0L, "XXX")
         doc.undo()
         doc.text() shouldBe "hello"
     }
@@ -63,7 +63,7 @@ class PieceTableDocumentTest {
     @Test
     fun `redo re-applies an undone edit`() {
         val doc = PieceTableDocument.create("hello")
-        doc.edit(0L..0L, "XXX\n")
+        doc.edit(0L..0L, "XXX")
         val afterEdit = doc.text()
         doc.undo()
         doc.text() shouldBe "hello"
@@ -86,10 +86,10 @@ class PieceTableDocumentTest {
     @Test
     fun `new edit clears redo stack`() {
         val doc = PieceTableDocument.create("hello")
-        doc.edit(0L..0L, "A\n")
+        doc.edit(0L..0L, "A")
         doc.undo()
         doc.redoCount shouldBe 1
-        doc.edit(0L..0L, "B\n")
+        doc.edit(0L..0L, "B")
         doc.redoCount shouldBe 0
     }
 
@@ -108,7 +108,7 @@ class PieceTableDocumentTest {
     @Test
     fun `journal is written on edit`() {
         val doc = PieceTableDocument.create("hello", journalDir = journalDir, documentId = "doc1")
-        doc.edit(0L..0L, "X\n")
+        doc.edit(0L..0L, "X")
         val journalFile = File(journalDir, "doc1.journal")
         journalFile.exists() shouldBe true
         journalFile.readLines().isNotEmpty() shouldBe true
@@ -133,7 +133,7 @@ class PieceTableDocumentTest {
     fun `recover with undo entries`() {
         val original = "hello"
         val doc = PieceTableDocument.create(original, journalDir = journalDir, documentId = "doc3")
-        doc.edit(0L..0L, "X\n")
+        doc.edit(0L..0L, "X")
         doc.undo()
         // After undo, document should be back to original
 
@@ -271,14 +271,14 @@ class PieceTableDocumentTest {
     @Test
     fun `dirty is true after edit`() {
         val doc = PieceTableDocument.create("hello")
-        doc.edit(0L..0L, "X\n")
+        doc.edit(0L..0L, "X")
         doc.dirty shouldBe true
     }
 
     @Test
     fun `dirty is false after full undo`() {
         val doc = PieceTableDocument.create("hello")
-        doc.edit(0L..0L, "X\n")
+        doc.edit(0L..0L, "X")
         doc.undo()
         doc.dirty shouldBe false
     }

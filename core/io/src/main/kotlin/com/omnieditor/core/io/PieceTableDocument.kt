@@ -43,10 +43,29 @@ class PieceTableDocument private constructor(
         return table.line(index.toInt())
     }
 
+    /**
+     * Replace the content of lines [range] with [replacement].
+     *
+     * The range is **terminator-excluded**: `edit(2..2, "new")` replaces the
+     * content of line 2 but preserves its line terminator. A replacement
+     * containing `\n` creates new lines; the original terminator follows
+     * the last line of the replacement.
+     */
     override fun edit(range: LongRange, replacement: CharSequence): Long {
         val editId = ++editIdCounter
         val offset = lineToOffset(range.first)
-        val endOffset = if (range.last >= lineCount) table.length else lineToOffset(range.last + 1)
+        val endOffset = if (range.last >= lineCount - 1) {
+            // Last line has no terminator — replace to end of document
+            table.length
+        } else {
+            // Exclude the terminator: end at lineStart + lineContentLength
+            val nextLineStart = lineToOffset(range.last + 1)
+            val text = table.text()
+            var end = nextLineStart
+            if (end > 0 && text[end - 1] == '\n') end--
+            if (end > 0 && text[end - 1] == '\r') end--
+            end
+        }
         val count = endOffset - offset
         val text = replacement.toString()
 
