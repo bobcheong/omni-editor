@@ -3,6 +3,7 @@ package com.omnieditor.app
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import java.io.IOException
 
 /**
  * Reads file content immediately while SAF permission is active.
@@ -26,7 +27,7 @@ object ContentCache {
             context.contentResolver.openInputStream(uri)?.use {
                 it.bufferedReader().readText()
             } ?: ""
-        } catch (e: Exception) {
+        } catch (e: IOException) {
             "Error reading file: ${e.message}"
         }
 

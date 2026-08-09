@@ -4,8 +4,8 @@ plugins {
 }
 android {
     namespace = "com.omnieditor.design"
-    compileSdk = 37
-    defaultConfig { minSdk = 31 }
+    compileSdk = libs.versions.compileSdk.get().toInt()
+    defaultConfig { minSdk = libs.versions.minSdk.get().toInt() }
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21

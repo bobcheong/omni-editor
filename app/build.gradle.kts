@@ -29,12 +29,12 @@ fun signingValue(key: String, env: String): String? =
 
 android {
     namespace = "com.omnieditor.app"
-    compileSdk = 37
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
         applicationId = "com.omnieditor"
-        minSdk = 31          // Android 12. Decision recorded: OE-SPEC-001 §11 NFR-C1.
-        targetSdk = 35
+        minSdk = libs.versions.minSdk.get().toInt()          // Android 12. Decision recorded: OE-SPEC-001 §11 NFR-C1.
+        targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

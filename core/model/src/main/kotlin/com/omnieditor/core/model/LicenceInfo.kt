@@ -23,9 +23,12 @@ object LicenceInfo {
         LicenceEntry("Jetpack Compose", "2026.06.01", "Apache-2.0", "https://developer.android.com/jetpack/compose"),
         LicenceEntry("Material 3", "via Compose BOM", "Apache-2.0", "https://m3.material.io"),
         LicenceEntry("Hilt / Dagger", "2.60.1", "Apache-2.0", "https://dagger.dev/hilt"),
-        LicenceEntry("Hilt Navigation Compose", "1.4.0", "Apache-2.0", "https://developer.android.com/jetpack/androidx"),
+        LicenceEntry(
+            "Hilt Navigation Compose", "1.4.0", "Apache-2.0",
+            "https://developer.android.com/jetpack/androidx",
+        ),
     )
 
-    val appVersion = "0.1.0"
-    val appVersionCode = 1
+    const val appVersion = "0.1.0"
+    const val appVersionCode = 1
 }

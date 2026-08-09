@@ -5,8 +5,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.IOException
 
 /**
  * Caches [CompareResult] to disk by session ID so results survive process death.
@@ -46,7 +48,10 @@ class ResultStore(private val cacheDir: File) {
                     val data = json.encodeToString(CompareResult.serializer(), result)
                     tmpFile.writeText(data)
                     tmpFile.renameTo(file)
-                } catch (e: Exception) {
+                } catch (e: IOException) {
+                    tmpFile.delete()
+                    throw e
+                } catch (e: SerializationException) {
                     tmpFile.delete()
                     throw e
                 }
@@ -66,8 +71,12 @@ class ResultStore(private val cacheDir: File) {
                 try {
                     val data = file.readText()
                     json.decodeFromString(CompareResult.serializer(), data)
-                } catch (e: Exception) {
-                    // Corrupted cache — delete and return null
+                } catch (e: IOException) {
+                    // Corrupted or unreadable cache — delete and return null
+                    file.delete()
+                    null
+                } catch (e: SerializationException) {
+                    // Corrupted cache format — delete and return null
                     file.delete()
                     null
                 }

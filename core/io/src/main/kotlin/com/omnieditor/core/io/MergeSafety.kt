@@ -4,6 +4,7 @@ import com.omnieditor.core.model.Fingerprint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 
 /**
@@ -41,7 +42,7 @@ object MergeSafety {
         try {
             sourceFile.copyTo(backupFile, overwrite = false)
             backupFile
-        } catch (e: Exception) {
+        } catch (e: IOException) {
             null
         }
     }
@@ -74,7 +75,7 @@ object MergeSafety {
         try {
             backup.file.copyTo(targetFile, overwrite = true)
             true
-        } catch (e: Exception) {
+        } catch (e: IOException) {
             false
         }
     }
@@ -141,7 +142,7 @@ object MergeSafety {
             }
 
             md.digest().joinToString("") { "%02x".format(it) }.take(16)
-        } catch (e: Exception) {
+        } catch (e: IOException) {
             "error"
         }
 

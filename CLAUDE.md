@@ -25,8 +25,13 @@ This product has no relationship to any existing compare or editor tool or vendo
   `./gradlew checkCorePurity` enforces this and is wired into `check`.
 - All file access goes through `SourceProvider`. No `java.io.File`, no `ContentResolver`
   outside `core/io` and the flavour source sets.
-- The editor and both compare panes share one `TextDocument`. Never load a whole file
-  into a `String`. Never assume a file fits in memory.
+- The editor and both compare panes share one `TextDocument`.
+- Documents above `DocumentLimits.EDITOR_MAX_BYTES` are refused with `OmniError.TooLarge`.
+  Within the ceiling a file may be held in memory. **No code path may be O(file) per
+  keystroke or per rendered row** — the ceiling does not excuse that. See
+  `docs/adr/003-size-ceiling.md`.
+- Line count is `newlines + 1`. A file ending in a terminator has a real, caret-placeable
+  empty final line. See `docs/adr/007-line-model.md`.
 - Long operations are cancellable coroutines scoped to a session, calling `ensureActive()`
   at least every 4096 lines, reporting determinate progress once a total is known.
 - **No generic error path.** Every failure maps to an `OmniError` variant and to one named
@@ -34,6 +39,13 @@ This product has no relationship to any existing compare or editor tool or vendo
   and its UI state in the same change — not widening an existing one.
 - Compose only. No XML layouts, no Fragments.
 - Both flavours (`direct`, `store`) must build and pass tests before a task is done.
+- No UI control may exist without behaviour. A menu item, button or switch that does
+  nothing is a defect, not a placeholder.
+- No production code uses reflection to reach private state.
+- Every UI task's acceptance criteria include semantics, touch-target size and contrast.
+  Accessibility is not a later phase.
+- State the test tier for every criterion. Never assert a test passed on a tier this
+  environment does not have.
 
 ## Working method
 
@@ -58,6 +70,9 @@ This product has no relationship to any existing compare or editor tool or vendo
 4. `./gradlew detekt lintDirectDebug` clean.
 5. No new dependency without a line in `docs/licenses.md`.
 6. Requirement IDs referenced in the commit message.
+7. If a task names an ADR, the ADR file exists, states the decision, the alternatives
+   and the trigger to revisit, and is referenced in the commit. A task naming an ADR is
+   not done without it.
 
 ## Two hard-won points about this product
 

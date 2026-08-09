@@ -254,6 +254,8 @@ object EditRecordSerializer : kotlinx.serialization.KSerializer<EditRecord> {
 
     override fun deserialize(decoder: kotlinx.serialization.encoding.Decoder): EditRecord {
         val surrogate = decoder.decodeSerializableValue(SerializableEditRecord.serializer())
-        return EditRecord(EditRecord.Type.valueOf(surrogate.type), surrogate.offset, surrogate.deleted, surrogate.inserted)
+        return EditRecord(
+            EditRecord.Type.valueOf(surrogate.type), surrogate.offset, surrogate.deleted, surrogate.inserted,
+        )
     }
 }
