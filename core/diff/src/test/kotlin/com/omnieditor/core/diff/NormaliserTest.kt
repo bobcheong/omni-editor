@@ -123,6 +123,30 @@ class NormaliserTest {
         norm("line9", rules, lineIndex = 9, totalLines = 10).skipped shouldBe true
     }
 
+    // ── R-06: tailSkip under newlines + 1 model ──
+
+    @Test
+    fun `R-06 tailSkip 1 on newline-terminated file skips trailing empty line`() {
+        // "a\nb\nc\n" is 4 lines under D-7: "a", "b", "c", ""
+        // tailSkip = 1 skips lineIndex >= totalLines - 1 = 3, i.e., the empty trailing line.
+        // A difference on line "c" (index 2) is still reported.
+        val rules = RuleSet(tailSkip = 1)
+        // Line 2 ("c") is NOT skipped — it's a content line
+        norm("c", rules, lineIndex = 2, totalLines = 4).skipped shouldBe false
+        // Line 3 ("") IS skipped — it's the trailing empty line
+        norm("", rules, lineIndex = 3, totalLines = 4).skipped shouldBe true
+    }
+
+    @Test
+    fun `R-06 tailSkip 2 on newline-terminated file skips last content line and trailing empty`() {
+        // "a\nb\nc\n" is 4 lines: "a"(0), "b"(1), "c"(2), ""(3)
+        // tailSkip = 2 skips lineIndex >= 4 - 2 = 2, i.e., lines 2 and 3
+        val rules = RuleSet(tailSkip = 2)
+        norm("b", rules, lineIndex = 1, totalLines = 4).skipped shouldBe false
+        norm("c", rules, lineIndex = 2, totalLines = 4).skipped shouldBe true
+        norm("", rules, lineIndex = 3, totalLines = 4).skipped shouldBe true
+    }
+
     // ── Line pattern exclusion ──
 
     @Test

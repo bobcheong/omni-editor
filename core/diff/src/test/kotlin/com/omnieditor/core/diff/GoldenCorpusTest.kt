@@ -111,9 +111,12 @@ class GoldenCorpusTest {
     }
 
     @Test
-    fun `corpus - no trailing newline has no hunks with default rules`() {
+    fun `corpus - no trailing newline has one ADDED hunk under line model`() {
+        // R-06 / D-7: "line one\nline two" is 2 lines, "line one\nline two\n" is 3 lines.
+        // The trailing empty line is real, so it appears as an addition.
         val (_, _, expected) = loadCase("no-trailing-newline")
-        expected.hunks.size shouldBe 0
+        expected.hunks.size shouldBe 1
+        expected.hunks[0].type shouldBe "ADDED"
     }
 
     @Test

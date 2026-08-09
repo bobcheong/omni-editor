@@ -113,8 +113,9 @@ write_expected "$GOLDEN/utf8-vs-utf16le-bom"
 # ── 8. no-trailing-newline ──
 printf "line one\nline two" > "$GOLDEN/no-trailing-newline/left"
 printf "line one\nline two\n" > "$GOLDEN/no-trailing-newline/right"
-# The last line differs (one has \n, one doesn't). With ignoreLineEndings=true, no hunks.
-write_expected "$GOLDEN/no-trailing-newline"
+# D-7 / R-06: left is 2 lines ["line one", "line two"], right is 3 lines
+# ["line one", "line two", ""]. The trailing empty line is real and ADDED.
+write_expected "$GOLDEN/no-trailing-newline" "2,2,2,3,ADDED"
 
 # ── 9. empty-vs-nonempty ──
 > "$GOLDEN/empty-vs-nonempty/left"

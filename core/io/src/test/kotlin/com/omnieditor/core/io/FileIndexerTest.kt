@@ -18,13 +18,15 @@ class FileIndexerTest {
 
     @Test
     fun `indexes a simple text file`() = runTest {
+        // D-7: "hello\nworld\n" has 2 newlines → 3 lines
         val file = tempFile("hello\nworld\n".toByteArray())
         val result = FileIndexer.index(file)
-        result.index.lineCount shouldBe 2
+        result.index.lineCount shouldBe 3
         result.encoding.charset shouldBe "UTF-8"
         result.index.lineEnding shouldBe LineEnding.LF
         result.index.length(0) shouldBe 5
         result.index.length(1) shouldBe 5
+        result.index.length(2) shouldBe 0 // trailing empty line
     }
 
     @Test
@@ -51,7 +53,8 @@ class FileIndexerTest {
         val file = tempFile("line1\r\nline2\r\n".toByteArray())
         val result = FileIndexer.index(file)
         result.index.lineEnding shouldBe LineEnding.CRLF
-        result.index.lineCount shouldBe 2
+        // D-7: "line1\r\nline2\r\n" has 2 newlines → 3 lines
+        result.index.lineCount shouldBe 3
     }
 
     @Test

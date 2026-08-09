@@ -93,19 +93,12 @@ class LineIndex internal constructor(
 
                 if (isLineEnd) {
                     val lineLen = pos - lineStart
-                    // Only add a line if we have content OR we're not at the very end
-                    // (handles files ending with a newline — the last "line" is empty only
-                    //  if there is actual content before it)
-                    if (!atEnd || lineLen > 0 || linesFound == 0L) {
-                        if (atEnd && lineLen == 0 && linesFound > 0) {
-                            // File ends with a newline — don't add a phantom empty line
-                        } else {
-                            offsets.add(lineStart.toLong())
-                            lengths.add(lineLen)
-                            hashes.add(hashLine(bytes, lineStart, lineLen))
-                            linesFound++
-                        }
-                    }
+                    // D-7 / ADR-007: lineCount = newlines + 1. A file ending in
+                    // a terminator has a real, caret-placeable empty final line.
+                    offsets.add(lineStart.toLong())
+                    lengths.add(lineLen)
+                    hashes.add(hashLine(bytes, lineStart, lineLen))
+                    linesFound++
 
                     pos += when {
                         isCrlf -> 2

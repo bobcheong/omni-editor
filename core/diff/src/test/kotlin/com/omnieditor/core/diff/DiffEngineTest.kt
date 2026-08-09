@@ -359,6 +359,29 @@ class DiffEngineTest {
         result.hunks[0].type shouldBe HunkType.CHANGED
     }
 
+    // ── R-06: line model — newlines + 1 ──
+
+    @Test
+    fun `R-06 no-trailing-newline - a vs a-newline is a one-line addition`() = runTest {
+        // "a" is 1 line ["a"], "a\n" is 2 lines ["a", ""] under D-7.
+        // The diff should show the empty line as added.
+        val result = diff(lines("a"), lines("a", ""))
+        result.hunks.size shouldBe 1
+        result.hunks[0].type shouldBe HunkType.ADDED
+    }
+
+    @Test
+    fun `R-06 final line participates in diff`() = runTest {
+        // "x\ny" vs "x\nz" — the second line differs
+        val r1 = diff(lines("x", "y"), lines("x", "z"))
+        r1.hunks.size shouldBe 1
+
+        // "x\ny\n" vs "x\nz\n" — same with trailing newlines
+        // Both are 3 lines: "x", "y"/"z", ""
+        val r2 = diff(lines("x", "y", ""), lines("x", "z", ""))
+        r2.hunks.size shouldBe 1
+    }
+
     // ── Helpers ──
 
     private val goldenRoot: java.io.File by lazy {
@@ -369,10 +392,19 @@ class DiffEngineTest {
         java.io.File(dir, "testfixtures/golden")
     }
 
+    /**
+     * Split file content into lines matching the D-7 line model (newlines + 1).
+     * Unlike [java.io.File.readLines] which drops the trailing empty line,
+     * this preserves it: "a\nb\n" → ["a", "b", ""].
+     */
+    private fun splitLines(text: String): List<String> = text.lines()
+
     private suspend fun diffGolden(name: String, rules: RuleSet = RuleSet.DEFAULT): com.omnieditor.core.model.CompareResult {
         val dir = java.io.File(goldenRoot, name)
-        val leftLines = java.io.File(dir, "left").readLines()
-        val rightLines = java.io.File(dir, "right").readLines()
+        // R-06: use String.lines() instead of File.readLines() to preserve
+        // the trailing empty line, matching the newlines + 1 model.
+        val leftLines = splitLines(java.io.File(dir, "left").readText())
+        val rightLines = splitLines(java.io.File(dir, "right").readText())
         return DiffEngine.compare(
             leftLineCount = leftLines.size.toLong(),
             rightLineCount = rightLines.size.toLong(),

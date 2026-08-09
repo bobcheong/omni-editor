@@ -15,13 +15,15 @@ class LineIndexTest {
 
     @Test
     fun `indexes simple LF-terminated file`() = runTest {
+        // D-7: lineCount = newlines + 1. "alpha\nbeta\ngamma\n" has 3 newlines → 4 lines.
         val bytes = "alpha\nbeta\ngamma\n".toByteArray()
         val index = LineIndex.build(bytes)
-        index.lineCount shouldBe 3
+        index.lineCount shouldBe 4
         index.hash(0) shouldNotBe index.hash(1)
         index.length(0) shouldBe 5 // "alpha"
         index.length(1) shouldBe 4 // "beta"
         index.length(2) shouldBe 5 // "gamma"
+        index.length(3) shouldBe 0 // trailing empty line
     }
 
     @Test
@@ -51,19 +53,22 @@ class LineIndexTest {
 
     @Test
     fun `indexes CRLF file`() = runTest {
+        // D-7: "alpha\r\nbeta\r\ngamma\r\n" has 3 newlines → 4 lines
         val bytes = "alpha\r\nbeta\r\ngamma\r\n".toByteArray()
         val index = LineIndex.build(bytes)
-        index.lineCount shouldBe 3
+        index.lineCount shouldBe 4
         index.length(0) shouldBe 5
         index.length(1) shouldBe 4
         index.length(2) shouldBe 5
+        index.length(3) shouldBe 0 // trailing empty line
     }
 
     @Test
     fun `indexes CR-only file`() = runTest {
+        // D-7: "alpha\rbeta\rgamma\r" has 3 CRs → 4 lines
         val bytes = "alpha\rbeta\rgamma\r".toByteArray()
         val index = LineIndex.build(bytes)
-        index.lineCount shouldBe 3
+        index.lineCount shouldBe 4
     }
 
     // ── BOM handling ──
@@ -74,8 +79,10 @@ class LineIndexTest {
         val content = "hello\n".toByteArray()
         val bytes = bom + content
         val index = LineIndex.build(bytes, bomSkip = 3)
-        index.lineCount shouldBe 1
+        // D-7: "hello\n" has 1 newline → 2 lines: "hello" and ""
+        index.lineCount shouldBe 2
         index.length(0) shouldBe 5 // "hello", not the BOM
+        index.length(1) shouldBe 0 // trailing empty line
         index.bomLength shouldBe 3
     }
 
@@ -148,14 +155,17 @@ class LineIndexTest {
 
     @Test
     fun `indexes 10k lines correctly`() = runTest {
+        // D-7: 10000 content lines + trailing \n → 10001 lines (last is empty)
         val lines = (0 until 10000).joinToString("\n") { "line %05d: common content here".format(it) } + "\n"
         val bytes = lines.toByteArray()
         val index = LineIndex.build(bytes)
-        index.lineCount shouldBe 10000
+        index.lineCount shouldBe 10001
         // Spot-check: line 4999 should have correct content hash
         val line4999 = "line 04999: common content here"
         val expectedHash = LineIndex.hashLine(line4999.toByteArray(), 0, line4999.length)
         index.hash(4999) shouldBe expectedHash
+        // Last line is empty
+        index.length(10000) shouldBe 0
     }
 
     // ── One-byte and edge cases ──
@@ -170,20 +180,23 @@ class LineIndexTest {
 
     @Test
     fun `indexes file that is just a newline`() = runTest {
+        // D-7: "\n" has 1 newline → 2 lines: "" and ""
         val bytes = "\n".toByteArray()
         val index = LineIndex.build(bytes)
-        // A file containing just "\n" has one empty line
-        index.lineCount shouldBe 1
+        index.lineCount shouldBe 2
         index.length(0) shouldBe 0
+        index.length(1) shouldBe 0
     }
 
     @Test
     fun `indexes consecutive newlines`() = runTest {
+        // D-7: "a\n\nb\n" has 3 newlines → 4 lines: "a", "", "b", ""
         val bytes = "a\n\nb\n".toByteArray()
         val index = LineIndex.build(bytes)
-        index.lineCount shouldBe 3
+        index.lineCount shouldBe 4
         index.length(0) shouldBe 1 // "a"
         index.length(1) shouldBe 0 // empty
         index.length(2) shouldBe 1 // "b"
+        index.length(3) shouldBe 0 // trailing empty line
     }
 }
