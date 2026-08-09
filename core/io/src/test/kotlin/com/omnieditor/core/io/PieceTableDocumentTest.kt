@@ -243,6 +243,23 @@ class PieceTableDocumentTest {
         (redoField.get(doc) as MutableList<*>).clear()
     }
 
+    // ── R-04: mid-line insert line count bug ──
+
+    @Test
+    fun `R-04 mid-line insert preserves line count`() {
+        // A 5-line file: editing line 2 to append "X" should keep 5 lines.
+        // Bug: edit() computes endOffset = lineToOffset(range.last + 1), which includes
+        // the trailing \n terminator of line 2. The replacement "cccX" has no \n,
+        // so line 2 and line 3 merge — the document ends up with 4 lines instead of 5.
+        val doc = PieceTableDocument.create("aaa\nbbb\nccc\nddd\neee")
+        val line2 = doc.line(2).toString()          // "ccc"
+        val newLine2 = line2 + "X"                  // "cccX"
+        doc.edit(2L..2L, newLine2)
+        // Bug causes this to be 4, not 5
+        doc.lineCount shouldBe 5
+        doc.line(2).toString() shouldBe "cccX"
+    }
+
     // ── Dirty state ──
 
     @Test

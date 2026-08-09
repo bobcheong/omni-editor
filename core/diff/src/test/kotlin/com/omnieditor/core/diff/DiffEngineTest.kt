@@ -243,6 +243,32 @@ class DiffEngineTest {
         // This test verifies the cancellation path doesn't crash.
     }
 
+    // ── R-08: supplied hash functions are ignored ──
+
+    @Test
+    fun `R-08 compare uses supplied hash functions`() = runTest {
+        // The leftHash / rightHash parameters exist on DiffEngine.compare() but are never
+        // read by the implementation — it always calls ::hashString directly inside
+        // Normaliser.normaliseHashes(). The supplied lambdas are dead code.
+        //
+        // This test supplies hash lambdas that set a flag when invoked. After compare()
+        // returns, the flag must be true. If the bug is present, it stays false.
+        var hashCalled = false
+        val lines = (0 until 1000).map { "line $it" }
+
+        DiffEngine.compare(
+            leftLineCount = lines.size.toLong(),
+            rightLineCount = lines.size.toLong(),
+            leftLine = { lines[it.toInt()] },
+            rightLine = { lines[it.toInt()] },
+            leftHash = { idx -> hashCalled = true; lines[idx.toInt()].hashCode().toLong() },
+            rightHash = { idx -> hashCalled = true; lines[idx.toInt()].hashCode().toLong() },
+        )
+
+        // Bug: hash functions are declared but never called.
+        hashCalled shouldBe true
+    }
+
     // ── Golden corpus integration ──
 
     @Test
