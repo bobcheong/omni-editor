@@ -69,6 +69,10 @@ class CompareState(
         var hunkIdx = 0
 
         while (leftIdx < leftLines.size || rightIdx < rightLines.size) {
+            val prevLeft = leftIdx
+            val prevRight = rightIdx
+            val prevHunk = hunkIdx
+
             val hunk = if (hunkIdx < result.hunks.size) result.hunks[hunkIdx] else null
 
             if (hunk != null && leftIdx == hunk.leftStart) {
@@ -123,6 +127,44 @@ class CompareState(
                     leftIdx++
                     rightIdx++
                 }
+
+                // Drain trailing right-only lines when hunks are exhausted
+                if (hunk == null) {
+                    while (rightIdx < rightLines.size) {
+                        if (filterMode != FilterMode.DIFFS_ONLY) {
+                            rows.add(
+                                UnifiedRow(
+                                    side = Side.RIGHT,
+                                    lineNumber = rightIdx,
+                                    text = rightLines[rightIdx.toInt()],
+                                    type = RowType.CONTEXT,
+                                    hunkIndex = -1,
+                                )
+                            )
+                        }
+                        rightIdx++
+                    }
+                    // Drain trailing left-only lines when hunks are exhausted
+                    while (leftIdx < leftLines.size) {
+                        if (filterMode != FilterMode.DIFFS_ONLY) {
+                            rows.add(
+                                UnifiedRow(
+                                    side = Side.LEFT,
+                                    lineNumber = leftIdx,
+                                    text = leftLines[leftIdx.toInt()],
+                                    type = RowType.CONTEXT,
+                                    hunkIndex = -1,
+                                )
+                            )
+                        }
+                        leftIdx++
+                    }
+                }
+            }
+
+            // Defensive guard: if nothing advanced, break to prevent infinite loop from future bugs
+            if (leftIdx == prevLeft && rightIdx == prevRight && hunkIdx == prevHunk) {
+                break
             }
         }
 
