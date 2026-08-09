@@ -58,13 +58,14 @@ object DiffEngine {
         // hashes and LineIndex byte-level hashes.
         val rulesChangeText = rules != RuleSet.DEFAULT
 
-        val leftNorm = if (!rulesChangeText && leftHash != null) {
-            buildNormalisedFile(leftLineCount, leftLine, leftHash)
+        val useSuppliedHashes = !rulesChangeText && leftHash != null && rightHash != null
+        val leftNorm = if (useSuppliedHashes) {
+            buildNormalisedFile(leftLineCount, leftLine, leftHash!!)
         } else {
             Normaliser.normaliseHashes(leftLineCount, leftLine, ::hashString, rules)
         }
-        val rightNorm = if (!rulesChangeText && rightHash != null) {
-            buildNormalisedFile(rightLineCount, rightLine, rightHash)
+        val rightNorm = if (useSuppliedHashes) {
+            buildNormalisedFile(rightLineCount, rightLine, rightHash!!)
         } else {
             Normaliser.normaliseHashes(rightLineCount, rightLine, ::hashString, rules)
         }
