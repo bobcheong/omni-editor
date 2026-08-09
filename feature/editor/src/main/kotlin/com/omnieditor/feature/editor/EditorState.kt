@@ -120,7 +120,7 @@ class EditorState(
         val anchorLine = selectionAnchorLine ?: return
         val anchorCol = selectionAnchorColumn ?: return
 
-        val (startLine, startCol, endLine, _) = if (
+        val (startLine, startCol, endLine, endCol) = if (
             anchorLine < caretLine || (anchorLine == caretLine && anchorCol < caretColumn)
         ) {
             listOf(anchorLine, anchorCol.toLong(), caretLine, caretColumn.toLong())
@@ -128,7 +128,10 @@ class EditorState(
             listOf(caretLine, caretColumn.toLong(), anchorLine, anchorCol.toLong())
         }
 
-        document.edit(startLine..endLine, document.line(startLine).substring(0, startCol.toInt()))
+        val prefix = document.line(startLine).substring(0, startCol.toInt())
+        val endLineText = document.line(endLine)
+        val suffix = endLineText.substring(endCol.toInt().coerceAtMost(endLineText.length))
+        document.edit(startLine..endLine, prefix + suffix)
         caretLine = startLine
         caretColumn = startCol.toInt()
         clearSelection()
