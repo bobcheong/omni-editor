@@ -137,7 +137,7 @@ class CompareState(
                                     side = Side.RIGHT,
                                     lineNumber = rightIdx,
                                     text = rightLines[rightIdx.toInt()],
-                                    type = RowType.CONTEXT,
+                                    type = RowType.ADDED,
                                     hunkIndex = -1,
                                 )
                             )
@@ -152,7 +152,7 @@ class CompareState(
                                     side = Side.LEFT,
                                     lineNumber = leftIdx,
                                     text = leftLines[leftIdx.toInt()],
-                                    type = RowType.CONTEXT,
+                                    type = RowType.REMOVED,
                                     hunkIndex = -1,
                                 )
                             )

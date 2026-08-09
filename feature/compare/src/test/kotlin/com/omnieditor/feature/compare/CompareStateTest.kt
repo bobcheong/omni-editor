@@ -98,43 +98,84 @@ class CompareStateTest {
             )
 
             val state = CompareState(result, leftLines, rightLines)
-            // Must not hang; result size must be non-negative
+            // Must not hang; every input line must appear exactly once in the output.
             val rows = state.buildUnifiedRows()
-            check(rows.size >= 0) { "Negative row count" }
+            val leftRowCount = rows.count { it.side == Side.LEFT || it.side == Side.BOTH }
+            val rightRowCount = rows.count { it.side == Side.RIGHT || it.side == Side.BOTH }
+            leftRowCount shouldBe leftSize
+            rightRowCount shouldBe rightSize
         }
     }
 
     /**
-     * Generate a list of non-overlapping, sorted hunks within the given left/right bounds.
-     * Hunks are created by picking random intervals and filtering to avoid overlaps.
+     * Generate a list of non-overlapping, well-formed hunks within the given left/right bounds.
+     *
+     * "Well-formed" means:
+     * - Context gaps between hunks are equal length on both left and right, matching the
+     *   invariant that buildUnifiedRows() advances leftIdx and rightIdx in lockstep through
+     *   context regions.
+     * - Any lines not covered by a hunk are trailing context and are equal on both sides,
+     *   so the final reconciliation (every input line appears exactly once) holds.
+     *
+     * To enforce this, the generator picks a shared context budget and allocates it as
+     * leading context + inter-hunk gaps, leaving equal trailing context on both sides.
+     * Any asymmetry between left and right is expressed only within hunk spans.
      */
     private fun generateRandomHunks(rng: Random, leftSize: Int, rightSize: Int): List<Hunk> {
-        if (leftSize == 0 && rightSize == 0) return emptyList()
+        // Determine how many lines will be shared context (same on both sides)
+        val maxShared = minOf(leftSize, rightSize)
+        // The remaining lines on each side must go into hunks
+        val leftOnlyTotal = leftSize - maxShared  // at least this many left lines must be in hunks
+        val rightOnlyTotal = rightSize - maxShared // at least this many right lines must be in hunks
 
-        val hunkCount = rng.nextInt(5)  // 0..4 hunks
-        if (hunkCount == 0) return emptyList()
+        // Choose shared context count: some portion of maxShared (the rest also goes to hunks)
+        val sharedContext = if (maxShared > 0) rng.nextInt(maxShared + 1) else 0
+        // Lines that must appear in hunks on each side (beyond purely left/right-only)
+        val leftInHunks = leftSize - sharedContext   // = leftOnlyTotal + (maxShared - sharedContext)
+        val rightInHunks = rightSize - sharedContext
 
-        val candidates = mutableListOf<Hunk>()
-        repeat(hunkCount * 3) {  // generate more than needed, then filter
-            val lStart = if (leftSize > 0) rng.nextInt(leftSize) else 0
-            val lEnd = if (leftSize > 0) rng.nextInt(leftSize + 1).coerceAtLeast(lStart) else 0
-            val rStart = if (rightSize > 0) rng.nextInt(rightSize) else 0
-            val rEnd = if (rightSize > 0) rng.nextInt(rightSize + 1).coerceAtLeast(rStart) else 0
-            val type = HunkType.entries[rng.nextInt(HunkType.entries.size)]
-            candidates.add(Hunk(lStart.toLong(), lEnd.toLong(), rStart.toLong(), rEnd.toLong(), type))
-        }
+        if (leftInHunks == 0 && rightInHunks == 0) return emptyList()
 
-        // Sort by leftStart, then filter to non-overlapping on both left and right
-        val sorted = candidates.sortedWith(compareBy({ it.leftStart }, { it.rightStart }))
+        val hunkCount = rng.nextInt(5).coerceAtLeast(1)
         val result = mutableListOf<Hunk>()
         var nextLeft = 0L
         var nextRight = 0L
-        for (h in sorted) {
-            if (h.leftStart >= nextLeft && h.rightStart >= nextRight) {
-                result.add(h)
-                nextLeft = h.leftEnd
-                nextRight = h.rightEnd
+        var leftBudget = leftInHunks
+        var rightBudget = rightInHunks
+        var contextBudget = sharedContext  // shared context lines not yet used as inter-hunk gaps
+
+        repeat(hunkCount) { idx ->
+            val isLast = (idx == hunkCount - 1)
+            if (leftBudget <= 0 && rightBudget <= 0) return@repeat
+
+            // Inter-hunk context gap (equal on both sides)
+            val maxCtx = if (isLast) 0 else contextBudget
+            val ctxGap = if (maxCtx > 0) rng.nextInt(maxCtx + 1) else 0
+            val lStart = nextLeft + ctxGap
+            val rStart = nextRight + ctxGap
+            contextBudget -= ctxGap
+
+            // Hunk span — must consume at least 1 line total; last hunk must consume all remaining budget
+            val lSpan: Int
+            val rSpan: Int
+            if (isLast) {
+                lSpan = leftBudget
+                rSpan = rightBudget
+            } else {
+                lSpan = if (leftBudget > 0) rng.nextInt(leftBudget + 1) else 0
+                rSpan = if (rightBudget > 0) rng.nextInt(rightBudget + 1) else 0
+                if (lSpan == 0 && rSpan == 0 && (leftBudget > 0 || rightBudget > 0)) return@repeat
             }
+            if (lSpan == 0 && rSpan == 0) return@repeat
+
+            val lEnd = lStart + lSpan
+            val rEnd = rStart + rSpan
+            val type = HunkType.entries[rng.nextInt(HunkType.entries.size)]
+            result.add(Hunk(lStart, lEnd, rStart, rEnd, type))
+            nextLeft = lEnd
+            nextRight = rEnd
+            leftBudget -= lSpan
+            rightBudget -= rSpan
         }
         return result
     }
