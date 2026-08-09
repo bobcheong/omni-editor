@@ -14,10 +14,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavType
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.omnieditor.app.home.HomeScreen
 import com.omnieditor.core.io.RecentsStore
 import com.omnieditor.core.model.CompareMode
@@ -134,8 +136,10 @@ fun OmniNavGraph(
             val viewModel: EditorViewModel = hiltViewModel()
             val uiState by viewModel.uiState.collectAsState()
 
-            if (uiState is EditorUiState.Empty && cached != null) {
-                viewModel.openDocument(cached.text)
+            LaunchedEffect(contentKey) {
+                if (uiState is EditorUiState.Empty && cached != null) {
+                    viewModel.openDocument(cached.text)
+                }
             }
 
             EditorScreen(
@@ -149,7 +153,16 @@ fun OmniNavGraph(
         }
 
         // ── Source Setup ──
-        composable("setup?leftKey={leftKey}") { backStackEntry ->
+        composable(
+            route = "setup?leftKey={leftKey}",
+            arguments = listOf(
+                navArgument("leftKey") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            ),
+        ) { backStackEntry ->
             val prefilledLeftKey = backStackEntry.arguments?.getString("leftKey")
             val prefilledLeft = prefilledLeftKey?.let { ContentCache.get(it) }
 
@@ -224,18 +237,16 @@ fun OmniNavGraph(
         composable("compare/{leftKey}/{rightKey}") { backStackEntry ->
             val leftKey = backStackEntry.arguments?.getString("leftKey") ?: ""
             val rightKey = backStackEntry.arguments?.getString("rightKey") ?: ""
-            val scope = rememberCoroutineScope()
 
             val leftCached = ContentCache.get(leftKey)
             val rightCached = ContentCache.get(rightKey)
 
             var compareState by remember { mutableStateOf<CompareState?>(null) }
 
-            if (compareState == null && leftCached != null && rightCached != null) {
-                scope.launch {
+            LaunchedEffect(leftKey, rightKey) {
+                if (leftCached != null && rightCached != null) {
                     val leftLines = leftCached.text.lines()
                     val rightLines = rightCached.text.lines()
-
                     val result = withContext(Dispatchers.Default) {
                         com.omnieditor.core.diff.DiffEngine.compare(
                             leftLineCount = leftLines.size.toLong(),
@@ -244,7 +255,6 @@ fun OmniNavGraph(
                             rightLine = { rightLines[it.toInt()] },
                         )
                     }
-
                     compareState = CompareState(result, leftLines, rightLines)
                 }
             }
