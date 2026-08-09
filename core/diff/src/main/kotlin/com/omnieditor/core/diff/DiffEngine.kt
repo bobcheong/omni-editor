@@ -49,13 +49,25 @@ object DiffEngine {
         val total = leftLineCount + rightLineCount
         progress?.invoke(Progress(0, total, Phase.NORMALISING))
 
-        // Normalise hashes
-        val leftNorm = Normaliser.normaliseHashes(
-            leftLineCount, leftLine, ::hashString, rules,
-        )
-        val rightNorm = Normaliser.normaliseHashes(
-            rightLineCount, rightLine, ::hashString, rules,
-        )
+        // Use supplied hashes when available and rules don't change text content.
+        // When rules normalise text (case folding, whitespace, patterns, markers,
+        // column ranges, head/tail skip), we must hash the normalised text, so
+        // pre-computed hashes are inapplicable. When rules are DEFAULT (no text
+        // transformation), the caller's pre-computed hashes are correct and avoid
+        // per-line string allocation and hash-space mixing between UTF-8 re-encode
+        // hashes and LineIndex byte-level hashes.
+        val rulesChangeText = rules != RuleSet.DEFAULT
+
+        val leftNorm = if (!rulesChangeText && leftHash != null) {
+            buildNormalisedFile(leftLineCount, leftLine, leftHash)
+        } else {
+            Normaliser.normaliseHashes(leftLineCount, leftLine, ::hashString, rules)
+        }
+        val rightNorm = if (!rulesChangeText && rightHash != null) {
+            buildNormalisedFile(rightLineCount, rightLine, rightHash)
+        } else {
+            Normaliser.normaliseHashes(rightLineCount, rightLine, ::hashString, rules)
+        }
 
         progress?.invoke(Progress(total / 3, total, Phase.DIFFING))
         coroutineContext.ensureActive()
@@ -211,6 +223,30 @@ object DiffEngine {
             linesChanged = changed,
             hunkCount = hunks.size,
         )
+    }
+
+    /**
+     * Build a [NormalisedFile] directly from pre-computed per-line hashes.
+     *
+     * Used when normalisation rules don't change text content (i.e. rules are
+     * DEFAULT). The caller's hash function already incorporates line-terminator
+     * stripping, so we only need to check whether the raw line is blank.
+     *
+     * [R-08]
+     */
+    private fun buildNormalisedFile(
+        lineCount: Long,
+        lineReader: (Long) -> CharSequence,
+        lineHashFn: (Long) -> Long,
+    ): NormalisedFile {
+        val hashes = LongArray(lineCount.toInt())
+        val isBlank = BooleanArray(lineCount.toInt())
+        for (i in 0 until lineCount.toInt()) {
+            hashes[i] = lineHashFn(i.toLong())
+            // A line is blank when its content (minus line terminators) is empty.
+            isBlank[i] = lineReader(i.toLong()).trimEnd('\r', '\n').isEmpty()
+        }
+        return NormalisedFile(hashes, isBlank)
     }
 
     /**
