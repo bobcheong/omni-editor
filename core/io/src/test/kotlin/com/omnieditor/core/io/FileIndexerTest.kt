@@ -98,6 +98,14 @@ class FileIndexerTest {
         result.index.length(0) shouldBe 15  // 15 A's, no terminator
         result.index.length(1) shouldBe 10  // "SecondLine"
         result.index.length(2) shouldBe 0   // trailing empty line
+
+        // Cross-validate: small-file path should produce identical results
+        val smallResult = FileIndexer.index(file)
+        smallResult.index.lineCount shouldBe result.index.lineCount
+        smallResult.index.lineEnding shouldBe result.index.lineEnding
+        for (i in 0 until result.index.lineCount) {
+            smallResult.index.length(i) shouldBe result.index.length(i)
+        }
     }
 
     @Test
