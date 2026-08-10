@@ -282,4 +282,54 @@ class PieceTableDocumentTest {
         doc.undo()
         doc.dirty shouldBe false
     }
+
+    @Test
+    fun `markSaved clears dirty after edit`() {
+        val doc = PieceTableDocument.create("hello")
+        doc.edit(0L..0L, "X")
+        doc.dirty shouldBe true
+        doc.markSaved()
+        doc.dirty shouldBe false
+    }
+
+    @Test
+    fun `dirty is true after edit following markSaved`() {
+        val doc = PieceTableDocument.create("hello")
+        doc.edit(0L..0L, "X")
+        doc.markSaved()
+        doc.edit(0L..0L, "Y")
+        doc.dirty shouldBe true
+    }
+
+    @Test
+    fun `undo back to saved depth clears dirty`() {
+        // Edit → markSaved → edit again → undo: dirty should be false again
+        val doc = PieceTableDocument.create("hello")
+        doc.edit(0L..0L, "A")
+        doc.markSaved()
+        doc.edit(0L..0L, "B")
+        doc.dirty shouldBe true
+        doc.undo()
+        doc.dirty shouldBe false
+    }
+
+    @Test
+    fun `undo past saved depth keeps dirty true`() {
+        // No markSaved, so savedDepth == 0. After edit+undo the depth is 0 again → clean.
+        // Make two edits, markSaved after first, undo both → dirty because we're below saved depth.
+        val doc = PieceTableDocument.create("hello")
+        doc.edit(0L..0L, "A") // depth 1
+        doc.markSaved()        // savedDepth = 1
+        doc.undo()             // depth 0 — below saved depth → dirty
+        doc.dirty shouldBe true
+    }
+
+    @Test
+    fun `markSaved at creation point means fresh document is clean`() {
+        // A brand-new document with no edits — dirty should be false (savedDepth 0 == stackSize 0).
+        val doc = PieceTableDocument.create()
+        doc.dirty shouldBe false
+        doc.markSaved() // no-op effectively
+        doc.dirty shouldBe false
+    }
 }

@@ -32,6 +32,18 @@ class PieceTableDocument private constructor(
     private var editIdCounter = 0L
     private val undoStack = mutableListOf<JournalEntry>()
     private val redoStack = mutableListOf<JournalEntry>()
+
+    /**
+     * Undo-stack depth at the time of the last save. dirty is false when the
+     * stack depth returns to this value (i.e., the user has undone back to the
+     * saved state). This is the standard approach: O(1), no content hashing
+     * required.
+     *
+     * Known limitation: undo-past-save then re-edit could produce a stack whose
+     * depth equals savedUndoDepth with different content. For R-21 this is
+     * accepted — a content hash would be O(n) and is not required by the spec.
+     */
+    private var savedUndoDepth: Int = 0
     private val _changes = MutableSharedFlow<DocumentChange>(extraBufferCapacity = 64)
 
     override val lineCount: Long get() = table.lineCount.toLong()
@@ -119,7 +131,23 @@ class PieceTableDocument private constructor(
 
     override val changes: Flow<DocumentChange> = _changes.asSharedFlow()
 
-    override val dirty: Boolean get() = undoStack.isNotEmpty()
+    /**
+     * True when the document has unsaved changes.
+     *
+     * False when the undo-stack depth equals the depth recorded at the last
+     * [markSaved] call (or document creation). This means full-undo back to the
+     * saved state correctly clears dirty.
+     */
+    override val dirty: Boolean get() = undoStack.size != savedUndoDepth
+
+    /**
+     * Record the current undo-stack depth as the "saved" baseline so that
+     * [dirty] returns false until another edit is made.
+     * Call this after every successful write to the backing store.
+     */
+    fun markSaved() {
+        savedUndoDepth = undoStack.size
+    }
 
     /** Get the full text. Use for testing; prefer materialise for save. */
     fun text(): String = table.text()

@@ -78,10 +78,13 @@ class EditorViewModel @Inject constructor() : ViewModel() {
                 val baos = ByteArrayOutputStream()
                 state.document.materialise(Channels.newChannel(baos))
                 fn(baos.toByteArray())
+                state.document.markSaved()
                 _uiState.value = EditorUiState.Loaded(state)
             } catch (e: IOException) {
                 _uiState.value = EditorUiState.Error("Save failed: ${e.message}")
-            } catch (e: Exception) {
+            } catch (e: SecurityException) {
+                _uiState.value = EditorUiState.Error("Save failed: ${e.message}")
+            } catch (e: IllegalStateException) {
                 _uiState.value = EditorUiState.Error("Save failed: ${e.message}")
             }
         }
@@ -201,4 +204,11 @@ sealed interface EditorUiState {
         val fileBytes: Long,
         val limitBytes: Long,
     ) : EditorUiState
+    /**
+     * A crash-recovery journal was found for this document (S-04 in spec §13).
+     * The UI should offer to restore the unsaved changes from the previous session.
+     * Detection and recovery logic are deferred to Journal integration; this state
+     * variant is stubbed here so the sealed interface is complete.
+     */
+    data class RecoveryAvailable(val documentId: String) : EditorUiState
 }

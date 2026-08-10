@@ -1,7 +1,9 @@
 package com.omnieditor.feature.editor
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -14,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -24,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -53,6 +57,40 @@ fun EditorScreen(
     val uiState by viewModel.uiState.collectAsState()
     var showFind by remember { mutableStateOf(false) }
     var lastSearchQuery by remember { mutableStateOf("") }
+    var showUnsavedDialog by remember { mutableStateOf(false) }
+
+    val isDirty = (uiState as? EditorUiState.Loaded)?.editorState?.document?.dirty == true
+
+    // Intercept the system back gesture/button when there are unsaved changes.
+    BackHandler(enabled = isDirty) {
+        showUnsavedDialog = true
+    }
+
+    if (showUnsavedDialog) {
+        AlertDialog(
+            onDismissRequest = { showUnsavedDialog = false },
+            title = { Text("Unsaved changes") },
+            text = { Text("Do you want to save your changes before leaving?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.save()
+                    showUnsavedDialog = false
+                    onNavigateBack()
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        showUnsavedDialog = false
+                        onNavigateBack()
+                    }) { Text("Discard") }
+                    TextButton(onClick = {
+                        showUnsavedDialog = false
+                    }) { Text("Cancel") }
+                }
+            },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -153,6 +191,9 @@ fun EditorScreen(
                         onNavigateBack = onNavigateBack,
                     )
                 }
+                // RecoveryAvailable: detection + recovery UI deferred to Journal integration.
+                // The state variant exists so the sealed interface is complete (R-21 stub).
+                is EditorUiState.RecoveryAvailable -> {}
             }
         }
     }
