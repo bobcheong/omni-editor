@@ -23,6 +23,7 @@ import androidx.navigation.navArgument
 import com.omnieditor.app.home.HomeScreen
 import com.omnieditor.core.io.RecentsStore
 import com.omnieditor.core.model.CompareMode
+import com.omnieditor.core.model.DocumentLimits
 import com.omnieditor.core.model.Session
 import com.omnieditor.core.model.SourceKind
 import com.omnieditor.core.model.SourceRef
@@ -132,23 +133,10 @@ fun OmniNavGraph(
         // ── Editor ──
         composable("editor/{contentKey}") { backStackEntry ->
             val contentKey = backStackEntry.arguments?.getString("contentKey") ?: ""
-            val cached = ContentCache.get(contentKey)
-            val viewModel: EditorViewModel = hiltViewModel()
-            val uiState by viewModel.uiState.collectAsState()
-
-            LaunchedEffect(contentKey) {
-                if (uiState is EditorUiState.Empty && cached != null) {
-                    viewModel.openDocument(cached.text)
-                }
-            }
-
-            EditorScreen(
-                fileName = cached?.label ?: "",
+            EditorDestination(
+                contentKey = contentKey,
                 onNavigateBack = { navController.popBackStack() },
-                onCompareWith = {
-                    navController.navigate("setup?leftKey=$contentKey")
-                },
-                viewModel = viewModel,
+                onCompareWith = { navController.navigate("setup?leftKey=$contentKey") },
             )
         }
 
@@ -175,12 +163,13 @@ fun OmniNavGraph(
             var leftKey by remember { mutableStateOf(prefilledLeftKey) }
             var rightKey by remember { mutableStateOf<String?>(null) }
             val scope = rememberCoroutineScope()
+            val context2 = LocalContext.current
 
             val leftPicker = rememberLauncherForActivityResult(
                 ActivityResultContracts.OpenDocument()
             ) { uri ->
                 if (uri != null) {
-                    val key = ContentCache.readAndCache(context, uri)
+                    val key = ContentCache.readAndCache(context2, uri)
                     val cached = ContentCache.get(key)
                     leftKey = key
                     leftSource = SourceRef(
@@ -196,7 +185,7 @@ fun OmniNavGraph(
                 ActivityResultContracts.OpenDocument()
             ) { uri ->
                 if (uri != null) {
-                    val key = ContentCache.readAndCache(context, uri)
+                    val key = ContentCache.readAndCache(context2, uri)
                     val cached = ContentCache.get(key)
                     rightKey = key
                     rightSource = SourceRef(
@@ -237,32 +226,9 @@ fun OmniNavGraph(
         composable("compare/{leftKey}/{rightKey}") { backStackEntry ->
             val leftKey = backStackEntry.arguments?.getString("leftKey") ?: ""
             val rightKey = backStackEntry.arguments?.getString("rightKey") ?: ""
-
-            val leftCached = ContentCache.get(leftKey)
-            val rightCached = ContentCache.get(rightKey)
-
-            var compareState by remember { mutableStateOf<CompareState?>(null) }
-
-            LaunchedEffect(leftKey, rightKey) {
-                if (leftCached != null && rightCached != null) {
-                    val leftLines = leftCached.text.lines()
-                    val rightLines = rightCached.text.lines()
-                    val result = withContext(Dispatchers.Default) {
-                        com.omnieditor.core.diff.DiffEngine.compare(
-                            leftLineCount = leftLines.size.toLong(),
-                            rightLineCount = rightLines.size.toLong(),
-                            leftLine = { leftLines[it.toInt()] },
-                            rightLine = { rightLines[it.toInt()] },
-                        )
-                    }
-                    compareState = CompareState(result, leftLines, rightLines)
-                }
-            }
-
-            CompareScreen(
-                state = compareState,
-                leftLabel = leftCached?.label ?: "left",
-                rightLabel = rightCached?.label ?: "right",
+            CompareDestination(
+                leftKey = leftKey,
+                rightKey = rightKey,
                 onNavigateBack = { navController.popBackStack() },
             )
         }
@@ -274,4 +240,83 @@ fun OmniNavGraph(
             )
         }
     }
+}
+
+/** Editor route body extracted to keep OmniNavGraph within complexity budget. */
+@Composable
+private fun EditorDestination(
+    contentKey: String,
+    onNavigateBack: () -> Unit,
+    onCompareWith: () -> Unit,
+) {
+    val cached = ContentCache.get(contentKey)
+    val viewModel: EditorViewModel = hiltViewModel()
+    val uiState by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(contentKey) {
+        if (uiState is EditorUiState.Empty && cached != null) {
+            val size = cached.sizeBytes
+            if (size > 0 && size > DocumentLimits.EDITOR_MAX_BYTES) {
+                // R-12: refuse oversized files; content was never read from disk.
+                viewModel.signalOverThreshold(
+                    fileName = cached.label,
+                    fileBytes = size,
+                    limitBytes = DocumentLimits.EDITOR_MAX_BYTES,
+                )
+            } else {
+                viewModel.openDocument(cached.text)
+            }
+        }
+    }
+
+    EditorScreen(
+        fileName = cached?.label ?: "",
+        onNavigateBack = onNavigateBack,
+        onCompareWith = onCompareWith,
+        viewModel = viewModel,
+    )
+}
+
+/** Compare route body extracted to keep OmniNavGraph within complexity budget. */
+@Composable
+private fun CompareDestination(
+    leftKey: String,
+    rightKey: String,
+    onNavigateBack: () -> Unit,
+) {
+    val leftCached = ContentCache.get(leftKey)
+    val rightCached = ContentCache.get(rightKey)
+    var compareState by remember { mutableStateOf<CompareState?>(null) }
+
+    LaunchedEffect(leftKey, rightKey) {
+        if (leftCached != null && rightCached != null) {
+            // R-12: size guard — refuse over-threshold files on the compare path.
+            // Full compare-path error UI is deferred to R-23.
+            val limit = DocumentLimits.COMPARE_MAX_BYTES_PER_SIDE
+            val leftSize = leftCached.sizeBytes
+            val rightSize = rightCached.sizeBytes
+            if ((leftSize > 0 && leftSize > limit) || (rightSize > 0 && rightSize > limit)) {
+                // Stay at loading/null — content was never read for over-limit sides.
+                return@LaunchedEffect
+            }
+            val leftLines = leftCached.text.lines()
+            val rightLines = rightCached.text.lines()
+            val result = withContext(Dispatchers.Default) {
+                com.omnieditor.core.diff.DiffEngine.compare(
+                    leftLineCount = leftLines.size.toLong(),
+                    rightLineCount = rightLines.size.toLong(),
+                    leftLine = { leftLines[it.toInt()] },
+                    rightLine = { rightLines[it.toInt()] },
+                )
+            }
+            compareState = CompareState(result, leftLines, rightLines)
+        }
+    }
+
+    CompareScreen(
+        state = compareState,
+        leftLabel = leftCached?.label ?: "left",
+        rightLabel = rightCached?.label ?: "right",
+        onNavigateBack = onNavigateBack,
+    )
 }

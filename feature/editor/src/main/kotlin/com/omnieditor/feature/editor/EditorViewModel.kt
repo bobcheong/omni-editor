@@ -36,6 +36,11 @@ class EditorViewModel @Inject constructor() : ViewModel() {
     var findOptions by mutableStateOf(FindReplace.FindOptions())
         private set
 
+    /** Called by the NavGraph when the file size exceeds DocumentLimits. Content is never read. */
+    fun signalOverThreshold(fileName: String, fileBytes: Long, limitBytes: Long) {
+        _uiState.value = EditorUiState.OverThreshold(fileName, fileBytes, limitBytes)
+    }
+
     fun openDocument(
         content: String,
         encoding: String = "UTF-8",
@@ -167,4 +172,10 @@ sealed interface EditorUiState {
     data object Empty : EditorUiState
     data class Loaded(val editorState: EditorState) : EditorUiState
     data class Error(val message: String) : EditorUiState
+    /** File exceeded DocumentLimits. Content was never read. */
+    data class OverThreshold(
+        val fileName: String,
+        val fileBytes: Long,
+        val limitBytes: Long,
+    ) : EditorUiState
 }

@@ -7,7 +7,8 @@ import java.io.IOException
 
 /**
  * Reads file content immediately while SAF permission is active.
- * Queries ContentResolver for the actual display name (not the raw document ID).
+ * Queries ContentResolver for the actual display name and size before reading.
+ * Size is stored so callers can enforce DocumentLimits without re-reading.
  */
 object ContentCache {
 
@@ -18,11 +19,13 @@ object ContentCache {
         val label: String,
         val text: String,
         val uri: String,
+        /** Raw byte size as reported by ContentResolver. -1 if unavailable. */
+        val sizeBytes: Long,
     )
 
     fun readAndCache(context: Context, uri: Uri): String {
         val key = uri.toString().hashCode().toString(16)
-        val label = queryDisplayName(context, uri)
+        val (label, sizeBytes) = queryMeta(context, uri)
         val text = try {
             context.contentResolver.openInputStream(uri)?.use {
                 it.bufferedReader().readText()
@@ -32,7 +35,7 @@ object ContentCache {
         }
 
         synchronized(cache) {
-            cache[key] = CachedContent(label, text, uri.toString())
+            cache[key] = CachedContent(label, text, uri.toString(), sizeBytes)
             while (cache.size > MAX_ENTRIES) {
                 cache.remove(cache.keys.first())
             }
@@ -46,23 +49,31 @@ object ContentCache {
     fun remove(key: String) = synchronized(cache) { cache.remove(key) }
 
     /**
-     * Query the actual display name from ContentResolver.
-     * Falls back to parsing the URI if the query fails.
+     * Query display name and byte size from ContentResolver in a single pass.
+     * Returns (label, sizeBytes) — sizeBytes is -1 if the provider does not report it.
      */
-    private fun queryDisplayName(context: Context, uri: Uri): String {
+    private fun queryMeta(context: Context, uri: Uri): Pair<String, Long> {
         try {
-            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            context.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                null, null, null,
+            )?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex >= 0) {
-                        val name = cursor.getString(nameIndex)
-                        if (!name.isNullOrBlank()) return name
-                    }
+                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    val name = if (nameIndex >= 0) cursor.getString(nameIndex) else null
+                    val size = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) cursor.getLong(sizeIndex) else -1L
+                    val label = if (!name.isNullOrBlank()) name else fallbackLabel(uri)
+                    return Pair(label, size)
                 }
             }
         } catch (_: Exception) { }
 
-        // Fallback: try to extract something readable from the URI
+        return Pair(fallbackLabel(uri), -1L)
+    }
+
+    private fun fallbackLabel(uri: Uri): String {
         val path = uri.path ?: uri.toString()
         return path.substringAfterLast('/').substringAfterLast(':').ifBlank { "file" }
     }
