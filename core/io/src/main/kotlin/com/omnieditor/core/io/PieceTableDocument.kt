@@ -8,7 +8,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.io.BufferedWriter
 import java.io.File
+import java.io.FileWriter
 import java.nio.channels.Channels
 import java.nio.channels.WritableByteChannel
 
@@ -53,18 +55,20 @@ class PieceTableDocument private constructor(
      */
     override fun edit(range: LongRange, replacement: CharSequence): Long {
         val editId = ++editIdCounter
-        val offset = lineToOffset(range.first)
+        val offset = table.lineToOffset(range.first.toInt())
         val endOffset = if (range.last >= lineCount - 1) {
             // Last line has no terminator — replace to end of document
             table.length
         } else {
             // Exclude the terminator: end at lineStart + lineContentLength
-            val nextLineStart = lineToOffset(range.last + 1)
-            val text = table.text()
-            var end = nextLineStart
-            if (end > 0 && text[end - 1] == '\n') end--
-            if (end > 0 && text[end - 1] == '\r') end--
-            end
+            val nextLineStart = table.lineToOffset((range.last + 1).toInt())
+            // Peek at the character before nextLineStart to determine terminator length
+            val charBefore = table.charAt(nextLineStart - 1)
+            if (charBefore == '\n' && nextLineStart >= 2 && table.charAt(nextLineStart - 2) == '\r') {
+                nextLineStart - 2 // CRLF
+            } else {
+                nextLineStart - 1 // LF or CR
+            }
         }
         val count = endOffset - offset
         val text = replacement.toString()
@@ -145,17 +149,6 @@ class PieceTableDocument private constructor(
         }
     }
 
-    private fun lineToOffset(lineIndex: Long): Int {
-        var line = 0L
-        var offset = 0
-        val text = table.text()
-        while (offset < text.length && line < lineIndex) {
-            if (text[offset] == '\n') line++
-            offset++
-        }
-        return offset
-    }
-
     private fun countLines(text: String): Long {
         return text.count { it == '\n' }.toLong() + 1
     }
@@ -216,17 +209,34 @@ class PieceTableDocument private constructor(
 /**
  * Continuous journal for crash recovery (OE-EDT-9).
  * Appends edit records as JSON lines to a file.
+ * Holds the file handle open for efficient batched writes.
  */
 class Journal(private val file: File) {
 
     private val json = Json { ignoreUnknownKeys = true }
+    private var writer: BufferedWriter? = null
 
     fun append(entry: JournalEntry) {
-        file.parentFile?.mkdirs()
-        file.appendText(json.encodeToString(JournalEntry.serializer(), entry) + "\n")
+        if (writer == null) {
+            file.parentFile?.mkdirs()
+            writer = BufferedWriter(FileWriter(file, true))
+        }
+        writer!!.write(json.encodeToString(JournalEntry.serializer(), entry))
+        writer!!.newLine()
+        writer!!.flush()
+    }
+
+    fun flush() {
+        writer?.flush()
+    }
+
+    fun close() {
+        writer?.close()
+        writer = null
     }
 
     fun clear() {
+        close()
         file.delete()
     }
 
