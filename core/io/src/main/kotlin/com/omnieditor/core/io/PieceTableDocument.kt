@@ -27,7 +27,7 @@ class PieceTableDocument private constructor(
     private val journal: Journal?,
     private val encoding: String,
     private val lineEnding: LineEnding,
-) : TextDocument {
+) : TextDocument, java.io.Closeable {
 
     private var editIdCounter = 0L
     private val undoStack = mutableListOf<JournalEntry>()
@@ -123,6 +123,11 @@ class PieceTableDocument private constructor(
 
     /** Get the full text. Use for testing; prefer materialise for save. */
     fun text(): String = table.text()
+
+    /** Release the journal file handle. */
+    override fun close() {
+        journal?.close()
+    }
 
     /** Number of undoable edits. */
     val undoCount: Int get() = undoStack.size
