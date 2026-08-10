@@ -48,6 +48,8 @@ class PieceTableDocument private constructor(
 
     override val lineCount: Long get() = table.lineCount.toLong()
 
+    override val length: Int get() = table.length
+
     override val index: LineIndex
         get() = throw UnsupportedOperationException(
             "PieceTableDocument provides line() access directly; use line(index) instead of index"
@@ -96,6 +98,22 @@ class PieceTableDocument private constructor(
             DocumentChange(editId, range.first, range.last + 1, range.first + countLines(text))
         )
 
+        return editId
+    }
+
+    /**
+     * Replace [length] characters at character [offset] with [replacement] as a single
+     * journalled, undoable step. Use for text tools and find/replace-all.
+     */
+    override fun replaceAll(offset: Int, length: Int, replacement: String): Long {
+        val editId = ++editIdCounter
+        val record = table.replace(offset, length, replacement)
+        val entry = JournalEntry(editId, record)
+        undoStack.add(entry)
+        redoStack.clear()
+        journal?.append(entry)
+        // Emit a conservative change covering the whole document
+        _changes.tryEmit(DocumentChange(editId, 0, lineCount, lineCount))
         return editId
     }
 

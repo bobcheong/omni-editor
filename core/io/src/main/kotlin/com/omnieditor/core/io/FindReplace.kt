@@ -123,6 +123,60 @@ object FindReplace {
         return ReplaceAllResult(allMatches.size)
     }
 
+    /**
+     * Apply [matches] replacements to [fullText], returning the modified string.
+     *
+     * Intended for use with [replaceAll] via the public TextDocument API: callers
+     * first collect matches with [findAll], then produce the new content here,
+     * then write it back as a single undo step via [TextDocument.replaceAll].
+     */
+    fun replaceAllInText(
+        fullText: String,
+        matches: List<Match>,
+        replacement: String,
+        options: FindOptions = FindOptions(),
+    ): String {
+        if (matches.isEmpty()) return fullText
+
+        // Build offset-based replacements by computing character offsets per match.
+        // Matches are already in top-to-bottom order; process right-to-left so offsets stay valid.
+        val lines = fullText.split('\n')
+
+        // Compute cumulative line start offsets
+        val lineStarts = IntArray(lines.size)
+        var acc = 0
+        for (i in lines.indices) {
+            lineStarts[i] = acc
+            acc += lines[i].length + 1 // +1 for the '\n'
+        }
+
+        // Sort matches from last to first (bottom-right to top-left)
+        val sorted = matches.sortedWith(
+            compareByDescending<Match> { it.line }.thenByDescending { it.startColumn }
+        )
+
+        val sb = StringBuilder(fullText)
+        val compiledRegex = if (options.regex) {
+            val regexOptions = if (options.caseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
+            Regex(matches.firstOrNull()?.text ?: "", regexOptions)
+        } else null
+
+        for (match in sorted) {
+            val lineIdx = match.line.toInt()
+            if (lineIdx >= lineStarts.size) continue
+            val charStart = lineStarts[lineIdx] + match.startColumn
+            val charEnd = lineStarts[lineIdx] + match.endColumn
+            val actualReplacement = if (options.regex && compiledRegex != null) {
+                compiledRegex.replaceFirst(match.text, replacement)
+            } else {
+                replacement
+            }
+            sb.replace(charStart, charEnd, actualReplacement)
+        }
+
+        return sb.toString()
+    }
+
     // ── Internal helpers ──
 
     internal data class LineMatch(val start: Int, val end: Int, val text: String)

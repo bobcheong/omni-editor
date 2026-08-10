@@ -7,7 +7,6 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.omnieditor.core.io.FindReplace
-import com.omnieditor.core.io.PieceTable
 import com.omnieditor.core.io.PieceTableDocument
 import com.omnieditor.core.io.TextTools
 import com.omnieditor.core.model.LineEnding
@@ -212,17 +211,14 @@ class EditorViewModel @Inject constructor() : ViewModel() {
 
     fun replaceAll(query: String, replacement: String) {
         val doc = editorState?.document ?: return
-        val table = getPieceTable(doc)
-        if (table != null) {
-            val result = FindReplace.replaceAll(
-                table, query, replacement, findOptions,
-                lineCount = doc.lineCount,
-                lineReader = { doc.line(it) },
-            )
-            // Force UI refresh
-            _uiState.value = EditorUiState.Loaded(editorState!!)
-            findMatches = emptyList()
-        }
+        val fullText = doc.text()
+        val result = FindReplace.findAll(doc, query, findOptions)
+        if (result.matches.isEmpty()) return
+        // Build the replaced content and apply as a single undoable operation
+        val newText = FindReplace.replaceAllInText(fullText, result.matches, replacement)
+        doc.replaceAll(0, doc.length, newText)
+        _uiState.value = EditorUiState.Loaded(editorState!!)
+        findMatches = emptyList()
     }
 
     fun updateFindOptions(caseSensitive: Boolean, wholeWord: Boolean, regex: Boolean) {
@@ -243,21 +239,10 @@ class EditorViewModel @Inject constructor() : ViewModel() {
 
     private fun applyTextTool(transform: (List<String>) -> String) {
         val doc = editorState?.document ?: return
-        val table = getPieceTable(doc)
-        if (table != null) {
-            val lines = (0 until doc.lineCount).map { doc.line(it).toString() }
-            val result = transform(lines)
-            table.replace(0, table.length, result)
-            _uiState.value = EditorUiState.Loaded(editorState!!)
-        }
-    }
-
-    private fun getPieceTable(doc: PieceTableDocument): PieceTable? {
-        return try {
-            val field = PieceTableDocument::class.java.getDeclaredField("table")
-            field.isAccessible = true
-            field.get(doc) as PieceTable
-        } catch (_: Exception) { null }
+        val lines = (0 until doc.lineCount).map { doc.line(it).toString() }
+        val result = transform(lines)
+        doc.replaceAll(0, doc.length, result)
+        _uiState.value = EditorUiState.Loaded(editorState!!)
     }
 }
 

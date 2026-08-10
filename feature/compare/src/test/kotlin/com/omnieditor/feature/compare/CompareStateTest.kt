@@ -124,9 +124,6 @@ class CompareStateTest {
     private fun generateRandomHunks(rng: Random, leftSize: Int, rightSize: Int): List<Hunk> {
         // Determine how many lines will be shared context (same on both sides)
         val maxShared = minOf(leftSize, rightSize)
-        // The remaining lines on each side must go into hunks
-        val leftOnlyTotal = leftSize - maxShared  // at least this many left lines must be in hunks
-        val rightOnlyTotal = rightSize - maxShared // at least this many right lines must be in hunks
 
         // Choose shared context count: some portion of maxShared (the rest also goes to hunks)
         val sharedContext = if (maxShared > 0) rng.nextInt(maxShared + 1) else 0

@@ -29,6 +29,20 @@ interface TextDocument {
      */
     fun edit(range: LongRange, replacement: CharSequence): Long
 
+    /**
+     * Replace [length] characters starting at character [offset] with [replacement].
+     * This is a character-offset-based edit (unlike [edit] which is line-based).
+     * The entire operation is a single journalled, undoable step.
+     * Returns an edit ID for undo tracking.
+     *
+     * Use for text tools and find/replace-all operations that need character-level
+     * control and must be undone as one atomic step.
+     */
+    fun replaceAll(offset: Int, length: Int, replacement: String): Long
+
+    /** Total document length in characters. */
+    val length: Int
+
     /** Undo the most recent edit. Returns the edit ID undone, or null if nothing to undo. */
     fun undo(): Long?
 

@@ -161,47 +161,33 @@ class PieceTableDocumentTest {
         val doc = PieceTableDocument.create(original)
         val rng = Random(42) // deterministic seed
 
-        // Perform 10,000 random edits
+        // Perform 10,000 random edits via the public replaceAll API (insert/delete/replace).
+        // Each call is a single journalled, undoable step — no reflection needed.
         for (i in 0 until 10_000) {
-            val text = doc.text()
-            if (text.isEmpty()) {
-                // Insert
-                val insertText = "x${rng.nextInt(100)}"
-                doc.edit(0L..(-1L), insertText) // insert at line 0
+            val len = doc.length
+            if (len == 0) {
+                // Insert at position 0
+                doc.replaceAll(0, 0, "x${rng.nextInt(100)}")
                 continue
             }
 
-            val len = text.length
             when (rng.nextInt(3)) {
                 0 -> {
-                    // Insert at random position
+                    // Insert at random position (replace 0 chars)
                     val pos = rng.nextInt(len + 1)
-                    val insertText = "ins${rng.nextInt(100)}"
-                    val table = getPieceTable(doc)
-                    table.insert(pos, insertText)
-                    // Track in undo stack manually via the document
-                    pushUndoRecord(doc, EditRecord(EditRecord.Type.INSERT, pos, "", insertText))
+                    doc.replaceAll(pos, 0, "ins${rng.nextInt(100)}")
                 }
                 1 -> {
-                    // Delete random range
-                    if (len > 0) {
-                        val pos = rng.nextInt(len)
-                        val delLen = minOf(rng.nextInt(5) + 1, len - pos)
-                        val table = getPieceTable(doc)
-                        val record = table.delete(pos, delLen)
-                        pushUndoRecord(doc, record)
-                    }
+                    // Delete random range (replace with empty)
+                    val pos = rng.nextInt(len)
+                    val delLen = minOf(rng.nextInt(5) + 1, len - pos)
+                    doc.replaceAll(pos, delLen, "")
                 }
                 2 -> {
-                    // Replace
-                    if (len > 0) {
-                        val pos = rng.nextInt(len)
-                        val repLen = minOf(rng.nextInt(3) + 1, len - pos)
-                        val newText = "rep${rng.nextInt(100)}"
-                        val table = getPieceTable(doc)
-                        val record = table.replace(pos, repLen, newText)
-                        pushUndoRecord(doc, record)
-                    }
+                    // Replace random range
+                    val pos = rng.nextInt(len)
+                    val repLen = minOf(rng.nextInt(3) + 1, len - pos)
+                    doc.replaceAll(pos, repLen, "rep${rng.nextInt(100)}")
                 }
             }
         }
@@ -212,35 +198,58 @@ class PieceTableDocumentTest {
         doc.text() shouldBe original
     }
 
-    /**
-     * Access the underlying PieceTable for direct manipulation in the property test.
-     * In production, edits go through the document's edit() method which works on lines.
-     * For the property test, we need character-level control.
-     */
-    private fun getPieceTable(doc: PieceTableDocument): PieceTable {
-        val field = PieceTableDocument::class.java.getDeclaredField("table")
-        field.isAccessible = true
-        return field.get(doc) as PieceTable
+    // ── replaceAll API ──
+
+    @Test
+    fun `replaceAll inserts text at position`() {
+        val doc = PieceTableDocument.create("hello world")
+        doc.replaceAll(5, 0, " beautiful")
+        doc.text() shouldBe "hello beautiful world"
     }
 
-    private fun pushUndoRecord(doc: PieceTableDocument, record: EditRecord) {
-        val undoField = PieceTableDocument::class.java.getDeclaredField("undoStack")
-        undoField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val stack = undoField.get(doc) as MutableList<JournalEntry>
+    @Test
+    fun `replaceAll deletes text`() {
+        val doc = PieceTableDocument.create("hello world")
+        doc.replaceAll(5, 6, "")
+        doc.text() shouldBe "hello"
+    }
 
-        val counterField = PieceTableDocument::class.java.getDeclaredField("editIdCounter")
-        counterField.isAccessible = true
-        val id = counterField.getLong(doc) + 1
-        counterField.setLong(doc, id)
+    @Test
+    fun `replaceAll replaces text`() {
+        val doc = PieceTableDocument.create("hello world")
+        doc.replaceAll(6, 5, "kotlin")
+        doc.text() shouldBe "hello kotlin"
+    }
 
-        stack.add(JournalEntry(id, record))
+    @Test
+    fun `replaceAll is a single undo step`() {
+        val doc = PieceTableDocument.create("abc")
+        doc.replaceAll(0, 1, "X")
+        doc.replaceAll(1, 1, "Y")
+        // Two replaceAll calls = two undo steps
+        doc.undoCount shouldBe 2
+        doc.undo()
+        doc.text() shouldBe "Xbc"
+        doc.undo()
+        doc.text() shouldBe "abc"
+    }
 
-        // Clear redo
-        val redoField = PieceTableDocument::class.java.getDeclaredField("redoStack")
-        redoField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        (redoField.get(doc) as MutableList<*>).clear()
+    @Test
+    fun `replaceAll whole document is one undo step`() {
+        val doc = PieceTableDocument.create("line1\nline2\nline3")
+        val newContent = "sorted1\nsorted2\nsorted3"
+        doc.replaceAll(0, doc.length, newContent)
+        doc.undoCount shouldBe 1
+        doc.undo()
+        doc.text() shouldBe "line1\nline2\nline3"
+    }
+
+    @Test
+    fun `replaceAll exposes document length`() {
+        val doc = PieceTableDocument.create("hello")
+        doc.length shouldBe 5
+        doc.replaceAll(5, 0, " world")
+        doc.length shouldBe 11
     }
 
     // ── R-04: mid-line insert line count bug ──
