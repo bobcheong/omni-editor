@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.nio.channels.Channels
 import javax.inject.Inject
 
@@ -27,6 +28,13 @@ class EditorViewModel @Inject constructor() : ViewModel() {
     val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
 
     private var editorState: EditorState? = null
+
+    /** Injected by the NavGraph so the feature module stays free of Android/app deps. */
+    private var saveFn: (suspend (ByteArray) -> Unit)? = null
+
+    fun setSaveFunction(fn: suspend (ByteArray) -> Unit) {
+        saveFn = fn
+    }
 
     // Find/replace state
     var findMatches by mutableStateOf<List<FindReplace.Match>>(emptyList())
@@ -56,12 +64,26 @@ class EditorViewModel @Inject constructor() : ViewModel() {
 
     fun getContent(): String = editorState?.document?.text() ?: ""
 
-    fun save(callback: (ByteArray) -> Unit) {
+    /**
+     * Materialise the document and write it back to the source via the injected
+     * save function. The save function is provided by the NavGraph (app layer)
+     * so that feature:editor remains free of Android framework dependencies.
+     */
+    fun save() {
         val state = editorState ?: return
+        val fn = saveFn ?: return
         viewModelScope.launch {
-            val baos = ByteArrayOutputStream()
-            state.document.materialise(Channels.newChannel(baos))
-            callback(baos.toByteArray())
+            try {
+                _uiState.value = EditorUiState.Saving
+                val baos = ByteArrayOutputStream()
+                state.document.materialise(Channels.newChannel(baos))
+                fn(baos.toByteArray())
+                _uiState.value = EditorUiState.Loaded(state)
+            } catch (e: IOException) {
+                _uiState.value = EditorUiState.Error("Save failed: ${e.message}")
+            } catch (e: Exception) {
+                _uiState.value = EditorUiState.Error("Save failed: ${e.message}")
+            }
         }
     }
 
@@ -170,6 +192,7 @@ class EditorViewModel @Inject constructor() : ViewModel() {
 
 sealed interface EditorUiState {
     data object Empty : EditorUiState
+    data object Saving : EditorUiState
     data class Loaded(val editorState: EditorState) : EditorUiState
     data class Error(val message: String) : EditorUiState
     /** File exceeded DocumentLimits. Content was never read. */

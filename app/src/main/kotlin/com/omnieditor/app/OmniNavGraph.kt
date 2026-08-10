@@ -250,6 +250,7 @@ private fun EditorDestination(
     onCompareWith: () -> Unit,
 ) {
     val cached = ContentCache.get(contentKey)
+    val context = LocalContext.current
     val viewModel: EditorViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsState()
 
@@ -265,6 +266,23 @@ private fun EditorDestination(
                 )
             } else {
                 viewModel.openDocument(cached.text)
+            }
+        }
+
+        // R-20: inject save function so the editor can write back to the source URI.
+        // The lambda runs in the app layer where ContentResolver is available,
+        // keeping feature:editor free of Android framework dependencies.
+        val sourceUri = cached?.uri
+        if (sourceUri != null) {
+            viewModel.setSaveFunction { bytes ->
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(
+                        Uri.parse(sourceUri), "wt"
+                    )?.use { out ->
+                        out.write(bytes)
+                        out.flush()
+                    } ?: throw java.io.IOException("Cannot open $sourceUri for writing")
+                }
             }
         }
     }

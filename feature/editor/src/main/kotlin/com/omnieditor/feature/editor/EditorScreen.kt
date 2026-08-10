@@ -62,12 +62,13 @@ fun EditorScreen(
                         val dirty = if (state.editorState.document.dirty) " ●" else ""
                         (fileName.ifBlank { "Editor" }) + dirty
                     }
+                    is EditorUiState.Saving -> (fileName.ifBlank { "Editor" }) + " — saving…"
                     else -> "Editor"
                 },
                 onNavigateBack = onNavigateBack,
                 onFind = { showFind = !showFind },
                 onCompareWith = onCompareWith,
-                onSave = { viewModel.save { } },
+                onSave = { viewModel.save() },
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
                 onSortLines = { viewModel.sortLines() },
@@ -131,6 +132,9 @@ fun EditorScreen(
 
             when (val state = uiState) {
                 is EditorUiState.Empty -> {}
+                is EditorUiState.Saving -> {
+                    Text(text = "Saving…", modifier = Modifier.fillMaxSize().padding(16.dp))
+                }
                 is EditorUiState.Error -> {
                     Text(text = state.message, modifier = Modifier.fillMaxSize())
                 }
