@@ -43,7 +43,74 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.util.UUID
+
+// ---------------------------------------------------------------------------
+// Internal helpers — live in the app layer where ContentResolver is available.
+// ---------------------------------------------------------------------------
+
+/**
+ * Reads a URI from the ContentResolver on whichever dispatcher the caller
+ * chooses (callers must dispatch to IO). Stores the result in [DocumentRegistry]
+ * keyed by [id]. Returns the [DocumentRegistry.LoadedDocument] or null on error.
+ *
+ * Error text is NOT stuffed into the document body — errors surface as null so
+ * callers can decide what to display.
+ */
+private fun readUriIntoRegistry(
+    context: android.content.Context,
+    uri: Uri,
+    id: String,
+): DocumentRegistry.LoadedDocument? {
+    val (label, sizeBytes) = queryUriMeta(context, uri)
+    val text = try {
+        context.contentResolver.openInputStream(uri)?.use {
+            it.bufferedReader().readText()
+        } ?: return null
+    } catch (_: IOException) {
+        return null
+    }
+    val doc = DocumentRegistry.LoadedDocument(
+        id = id,
+        text = text,
+        label = label,
+        uri = uri.toString(),
+        sizeBytes = sizeBytes,
+    )
+    DocumentRegistry.put(doc)
+    return doc
+}
+
+/** Query display name and byte size from ContentResolver in a single pass. */
+private fun queryUriMeta(context: android.content.Context, uri: Uri): Pair<String, Long> {
+    try {
+        context.contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+            null, null, null,
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                val name = if (nameIndex >= 0) cursor.getString(nameIndex) else null
+                val size = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) cursor.getLong(sizeIndex) else -1L
+                val label = if (!name.isNullOrBlank()) name else uriFallbackLabel(uri)
+                return Pair(label, size)
+            }
+        }
+    } catch (_: Exception) { }
+    return Pair(uriFallbackLabel(uri), -1L)
+}
+
+private fun uriFallbackLabel(uri: Uri): String {
+    val path = uri.path ?: uri.toString()
+    return path.substringAfterLast('/').substringAfterLast(':').ifBlank { "file" }
+}
+
+// ---------------------------------------------------------------------------
+// Nav graph
+// ---------------------------------------------------------------------------
 
 @Composable
 fun OmniNavGraph(
@@ -101,19 +168,20 @@ fun OmniNavGraph(
                 if (uri != null) {
                     // R-23a: take persistable permission so URI survives app restart.
                     takePersistablePermission(context.contentResolver, uri)
-                    // R-34a: generate SourceRef.id first and use it as the ContentCache key
+                    // R-34a: generate SourceRef.id first and use it as the registry key
                     // so both systems share a single authoritative identity.
                     val sourceId = UUID.randomUUID().toString()
-                    ContentCache.readAndCache(context, uri, id = sourceId)
-                    val cached = ContentCache.get(sourceId)
-                    val ref = SourceRef(
-                        id = sourceId,
-                        kind = SourceKind.LOCAL,
-                        uriGrant = uri.toString(),
-                        label = cached?.label ?: "file",
-                    )
-                    // Track in recents and persist as a session
                     scope.launch {
+                        val doc = withContext(Dispatchers.IO) {
+                            readUriIntoRegistry(context, uri, id = sourceId)
+                        }
+                        val ref = SourceRef(
+                            id = sourceId,
+                            kind = SourceKind.LOCAL,
+                            uriGrant = uri.toString(),
+                            label = doc?.label ?: "file",
+                        )
+                        // Track in recents and persist as a session
                         recentsStore.addRecent(ref)
                         sessionStore.save(Session(
                             id = sourceId,
@@ -122,8 +190,8 @@ fun OmniNavGraph(
                             createdAt = System.currentTimeMillis(),
                             sources = listOf(ref),
                         ))
+                        navController.navigate("editor/$sourceId")
                     }
-                    navController.navigate("editor/$sourceId")
                 }
             }
 
@@ -136,8 +204,8 @@ fun OmniNavGraph(
                     navController.navigate("setup")
                 },
                 onSessionTap = { sessionId ->
-                    // Try cached content first
-                    val cached = ContentCache.get(sessionId)
+                    // Try registry first (document already loaded in this session)
+                    val cached = DocumentRegistry.get(sessionId)
                     if (cached != null) {
                         navController.navigate("editor/$sessionId")
                     } else {
@@ -145,14 +213,16 @@ fun OmniNavGraph(
                         scope.launch {
                             val recents = recentsStore.getRecents()
                             val ref = recents.find { it.id == sessionId }
-                            val uri = ref?.uriGrant
-                            if (uri != null) {
-                                try {
-                                    val key = ContentCache.readAndCache(
-                                        context, Uri.parse(uri)
-                                    )
-                                    navController.navigate("editor/$key")
-                                } catch (_: Exception) {
+                            val uriString = ref?.uriGrant
+                            if (uriString != null) {
+                                val doc = withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        readUriIntoRegistry(context, Uri.parse(uriString), id = sessionId)
+                                    }.getOrNull()
+                                }
+                                if (doc != null) {
+                                    navController.navigate("editor/$sessionId")
+                                } else {
                                     // Permission expired — open picker instead
                                     openFileLauncher.launch(arrayOf("*/*"))
                                 }
@@ -230,7 +300,7 @@ private fun EditorDestination(
     onNavigateBack: () -> Unit,
     onCompareWith: () -> Unit,
 ) {
-    val cached = ContentCache.get(contentKey)
+    val cached = DocumentRegistry.get(contentKey)
     val context = LocalContext.current
     val viewModel: EditorViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsState()
@@ -320,11 +390,10 @@ private fun EditorDestination(
 
             // R-22: inject reload function — re-reads file content and re-opens document.
             viewModel.setReloadFunction {
-                val newKey = withContext(Dispatchers.IO) {
-                    ContentCache.readAndCache(context, uri)
+                val reloaded = withContext(Dispatchers.IO) {
+                    readUriIntoRegistry(context, uri, id = contentKey)
                 }
-                val newCached = ContentCache.get(newKey)
-                if (newCached != null) {
+                if (reloaded != null) {
                     // Refresh fingerprint snapshot after reload.
                     withContext(Dispatchers.IO) {
                         context.contentResolver.query(
@@ -338,7 +407,7 @@ private fun EditorDestination(
                             }
                         }
                     }
-                    viewModel.openDocument(newCached.text, fileName = newCached.label)
+                    viewModel.openDocument(reloaded.text, fileName = reloaded.label)
                 }
             }
         }
@@ -370,7 +439,7 @@ private fun SetupDestination(
     onConsumeLeftRef: () -> Unit,
     onConsumeRightRef: () -> Unit,
 ) {
-    val prefilledLeft = prefilledLeftKey?.let { ContentCache.get(it) }
+    val prefilledLeft = prefilledLeftKey?.let { DocumentRegistry.get(it) }
 
     var leftSource by remember {
         mutableStateOf(prefilledLeft?.let {
@@ -388,17 +457,20 @@ private fun SetupDestination(
     ) { uri ->
         if (uri != null) {
             takePersistablePermission(context.contentResolver, uri)
-            // R-34a: SourceRef.id is generated first and used as the ContentCache key.
+            // R-34a: SourceRef.id is generated first and used as the registry key.
             val sourceId = UUID.randomUUID().toString()
-            ContentCache.readAndCache(context, uri, id = sourceId)
-            val cached = ContentCache.get(sourceId)
-            leftKey = sourceId
-            leftSource = SourceRef(
-                id = sourceId,
-                kind = SourceKind.LOCAL,
-                uriGrant = uri.toString(),
-                label = cached?.label ?: "left",
-            )
+            scope.launch {
+                val doc = withContext(Dispatchers.IO) {
+                    readUriIntoRegistry(context, uri, id = sourceId)
+                }
+                leftKey = sourceId
+                leftSource = SourceRef(
+                    id = sourceId,
+                    kind = SourceKind.LOCAL,
+                    uriGrant = uri.toString(),
+                    label = doc?.label ?: "left",
+                )
+            }
         }
     }
 
@@ -407,28 +479,30 @@ private fun SetupDestination(
     ) { uri ->
         if (uri != null) {
             takePersistablePermission(context.contentResolver, uri)
-            // R-34a: SourceRef.id is generated first and used as the ContentCache key.
+            // R-34a: SourceRef.id is generated first and used as the registry key.
             val sourceId = UUID.randomUUID().toString()
-            ContentCache.readAndCache(context, uri, id = sourceId)
-            val cached = ContentCache.get(sourceId)
-            rightKey = sourceId
-            rightSource = SourceRef(
-                id = sourceId,
-                kind = SourceKind.LOCAL,
-                uriGrant = uri.toString(),
-                label = cached?.label ?: "right",
-            )
+            scope.launch {
+                val doc = withContext(Dispatchers.IO) {
+                    readUriIntoRegistry(context, uri, id = sourceId)
+                }
+                rightKey = sourceId
+                rightSource = SourceRef(
+                    id = sourceId,
+                    kind = SourceKind.LOCAL,
+                    uriGrant = uri.toString(),
+                    label = doc?.label ?: "right",
+                )
+            }
         }
     }
 
     // R-23a: consume file browser picks (direct flavour).
-    // R-34a: use ref.id as the ContentCache key so SourceRef.id is authoritative.
+    // R-34a: use ref.id as the registry key so SourceRef.id is authoritative.
     LaunchedEffect(fileBrowserLeftRef) {
         val ref = fileBrowserLeftRef ?: return@LaunchedEffect
         onConsumeLeftRef()
         val path = ref.path ?: return@LaunchedEffect
-        val file = File(path)
-        ContentCache.readAndCache(context, file, id = ref.id)
+        withContext(Dispatchers.IO) { readFileIntoRegistry(path, id = ref.id) }
         leftKey = ref.id
         leftSource = ref
     }
@@ -436,8 +510,7 @@ private fun SetupDestination(
         val ref = fileBrowserRightRef ?: return@LaunchedEffect
         onConsumeRightRef()
         val path = ref.path ?: return@LaunchedEffect
-        val file = File(path)
-        ContentCache.readAndCache(context, file, id = ref.id)
+        withContext(Dispatchers.IO) { readFileIntoRegistry(path, id = ref.id) }
         rightKey = ref.id
         rightSource = ref
     }
@@ -498,8 +571,8 @@ private fun CompareDestination(
     resultStore: ResultStore,
     onNavigateBack: () -> Unit,
 ) {
-    val leftCached = ContentCache.get(leftKey)
-    val rightCached = ContentCache.get(rightKey)
+    val leftCached = DocumentRegistry.get(leftKey)
+    val rightCached = DocumentRegistry.get(rightKey)
     var compareState by remember { mutableStateOf<CompareState?>(null) }
     val scope = rememberCoroutineScope()
 

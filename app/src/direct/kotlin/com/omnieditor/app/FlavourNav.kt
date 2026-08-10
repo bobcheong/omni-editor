@@ -80,3 +80,28 @@ fun takePersistablePermission(
 ) {
     // No-op for direct flavour — filesystem paths don't need URI grants.
 }
+
+/**
+ * Direct flavour: read a file from the local filesystem into [DocumentRegistry].
+ * Returns the loaded document, or null if the file cannot be read.
+ * Must be called from an IO dispatcher.
+ */
+fun readFileIntoRegistry(path: String, id: String): DocumentRegistry.LoadedDocument? {
+    val file = File(path)
+    val label = file.name
+    val sizeBytes = file.length()
+    val text = try {
+        file.bufferedReader().readText()
+    } catch (_: java.io.IOException) {
+        return null
+    }
+    val doc = DocumentRegistry.LoadedDocument(
+        id = id,
+        text = text,
+        label = label,
+        uri = android.net.Uri.fromFile(file).toString(),
+        sizeBytes = sizeBytes,
+    )
+    DocumentRegistry.put(doc)
+    return doc
+}

@@ -43,8 +43,65 @@ tasks.register("checkCorePurity") {
     }
 }
 
+/**
+ * CLAUDE.md rule: ContentResolver and java.io.File must only appear in core/io
+ * and the flavour source sets (app/src/direct, app/src/store). All other app
+ * and feature code must go through SourceProvider.
+ *
+ * Wired into `check` alongside checkCorePurity.
+ */
+tasks.register("checkIoBoundary") {
+    group = "verification"
+    description = "Fails if ContentResolver or java.io.File is used outside core/io and flavour source sets"
+    val baseDir = projectRoot
+    doLast {
+        val forbidden = Regex("""^\s*import\s+(android\.content\.ContentResolver|java\.io\.File)\b""")
+        // Paths where ContentResolver / java.io.File are legitimately allowed:
+        //  - core/io/src          : the IO abstraction layer itself
+        //  - app/src/direct       : direct-flavour filesystem access
+        //  - app/src/store        : store-flavour SAF/ContentResolver access
+        //  - app/src/main         : app entry-point layer; initialises core/io stores
+        //                           with Android context paths (filesDir/cacheDir)
+        //  - src/test / src/androidTest : test fixtures read golden files directly
+        val allowedSegments = listOf(
+            "core/io/src",
+            "app/src/direct",
+            "app/src/store",
+            "app/src/main",
+            "src/test/",
+            "src/androidTest/",
+        )
+        val violations = mutableListOf<String>()
+        baseDir.walkTopDown()
+            .filter { it.extension == "kt" }
+            // Only scan source files under src/ directories.
+            .filter { f -> f.path.contains("/src/") }
+            // Skip allowed paths.
+            .filter { f ->
+                val rel = f.relativeTo(baseDir).path.replace('\\', '/')
+                allowedSegments.none { rel.startsWith(it) || rel.contains(it) }
+            }
+            .forEach { f ->
+                f.readLines().forEachIndexed { i, line ->
+                    if (forbidden.containsMatchIn(line)) {
+                        violations += "${f.relativeTo(baseDir)}:${i + 1}  ${line.trim()}"
+                    }
+                }
+            }
+        if (violations.isNotEmpty()) {
+            throw GradleException(
+                "IO boundary violated — ContentResolver and java.io.File must only be used\n" +
+                    "in core/io, flavour source sets (app/src/direct, app/src/store),\n" +
+                    "the app entry-point (app/src/main), and test sources:\n" +
+                    violations.joinToString("\n") { "  $it" }
+            )
+        }
+    }
+}
+
 val detektConfigFile = rootProject.file("config/detekt/detekt.yml")
 val corePurityTask = tasks.named("checkCorePurity")
+val ioBoundaryTask = tasks.named("checkIoBoundary")
 
 subprojects {
     apply(plugin = "io.gitlab.arturbosch.detekt")
@@ -54,5 +111,6 @@ subprojects {
     }
     tasks.matching { it.name == "check" }.configureEach {
         dependsOn(corePurityTask)
+        dependsOn(ioBoundaryTask)
     }
 }

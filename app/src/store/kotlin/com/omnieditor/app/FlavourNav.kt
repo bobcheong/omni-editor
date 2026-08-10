@@ -28,6 +28,14 @@ fun NavGraphBuilder.flavourDestinations(
 }
 
 /**
+ * Store flavour: no direct filesystem access — always uses SAF (ContentResolver).
+ * This stub satisfies the shared call-site in OmniNavGraph; it is never actually
+ * reached because hasFlavourFileBrowser() returns false in this flavour.
+ */
+@Suppress("UNUSED_PARAMETER")
+fun readFileIntoRegistry(path: String, id: String): DocumentRegistry.LoadedDocument? = null
+
+/**
  * Store flavour: take persistable URI permission so SAF URIs survive app restart.
  * Called after receiving a URI from [ActivityResultContracts.OpenDocument].
  */
