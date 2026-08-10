@@ -6,6 +6,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.IOException
@@ -45,8 +46,8 @@ class ResultStore(private val cacheDir: File) {
                 val file = File(cacheDir, "$sessionId.json")
                 val tmpFile = File(cacheDir, "$sessionId.tmp")
                 try {
-                    val data = json.encodeToString(CompareResult.serializer(), result)
-                    tmpFile.writeText(data)
+                    val wrapper = VersionedResult(schemaVersion = SCHEMA_VERSION, data = result)
+                    tmpFile.writeText(json.encodeToString(VersionedResult.serializer(), wrapper))
                     tmpFile.renameTo(file)
                 } catch (e: IOException) {
                     tmpFile.delete()
@@ -61,7 +62,8 @@ class ResultStore(private val cacheDir: File) {
 
     /**
      * Load a cached compare result for a session.
-     * Returns null if no cached result exists or if the cache is corrupted.
+     * Returns null if no cached result exists, the cache is corrupted, or the
+     * schema version is unknown (graceful degradation — triggers recompute).
      */
     suspend fun load(sessionId: String): CompareResult? {
         return mutexFor(sessionId).withLock {
@@ -69,8 +71,13 @@ class ResultStore(private val cacheDir: File) {
                 val file = File(cacheDir, "$sessionId.json")
                 if (!file.exists()) return@withContext null
                 try {
-                    val data = file.readText()
-                    json.decodeFromString(CompareResult.serializer(), data)
+                    val wrapper = json.decodeFromString(VersionedResult.serializer(), file.readText())
+                    if (wrapper.schemaVersion != SCHEMA_VERSION) {
+                        // Unknown version: discard rather than crash
+                        file.delete()
+                        return@withContext null
+                    }
+                    wrapper.data
                 } catch (e: IOException) {
                     // Corrupted or unreadable cache — delete and return null
                     file.delete()
@@ -120,5 +127,15 @@ class ResultStore(private val cacheDir: File) {
             ?.filter { it.extension == "json" }
             ?.sumOf { it.length() }
             ?: 0L
+    }
+
+    @Serializable
+    private data class VersionedResult(
+        val schemaVersion: Int = 1,
+        val data: CompareResult,
+    )
+
+    companion object {
+        const val SCHEMA_VERSION = 1
     }
 }

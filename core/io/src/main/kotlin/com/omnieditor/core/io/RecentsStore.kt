@@ -99,7 +99,8 @@ class RecentsStore(private val storeFile: File) {
         cache?.let { return it }
         val data = if (storeFile.exists()) {
             try {
-                json.decodeFromString(RecentsData.serializer(), storeFile.readText())
+                val wrapper = json.decodeFromString(VersionedRecentsData.serializer(), storeFile.readText())
+                if (wrapper.schemaVersion != SCHEMA_VERSION) RecentsData() else wrapper.data
             } catch (_: Exception) {
                 RecentsData()
             }
@@ -114,7 +115,8 @@ class RecentsStore(private val storeFile: File) {
         cache = data
         withContext(Dispatchers.IO) {
             storeFile.parentFile?.mkdirs()
-            storeFile.writeText(json.encodeToString(RecentsData.serializer(), data))
+            val wrapper = VersionedRecentsData(schemaVersion = SCHEMA_VERSION, data = data)
+            storeFile.writeText(json.encodeToString(VersionedRecentsData.serializer(), wrapper))
         }
     }
 
@@ -124,7 +126,14 @@ class RecentsStore(private val storeFile: File) {
         val favouriteIds: MutableList<String> = mutableListOf(),
     )
 
+    @Serializable
+    private data class VersionedRecentsData(
+        val schemaVersion: Int = 1,
+        val data: RecentsData,
+    )
+
     companion object {
         const val MAX_RECENTS = 100
+        const val SCHEMA_VERSION = 1
     }
 }

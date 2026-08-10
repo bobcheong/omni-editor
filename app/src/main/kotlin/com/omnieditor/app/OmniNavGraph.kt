@@ -26,6 +26,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.omnieditor.app.home.HomeScreen
 import com.omnieditor.core.io.RecentsStore
+import com.omnieditor.core.io.ResultStore
+import com.omnieditor.core.io.SessionStore
 import com.omnieditor.core.model.CompareMode
 import com.omnieditor.core.model.DocumentLimits
 import com.omnieditor.core.model.Session
@@ -51,6 +53,12 @@ fun OmniNavGraph(
     val context = LocalContext.current
     val recentsStore = remember {
         RecentsStore(File(context.filesDir, "recents.json"))
+    }
+    val sessionStore = remember {
+        SessionStore(File(context.filesDir, "sessions"))
+    }
+    val resultStore = remember {
+        ResultStore(File(context.cacheDir, "results"))
     }
 
     // R-23a: file browser picked sources, keyed by slot ("left" / "right").
@@ -93,18 +101,29 @@ fun OmniNavGraph(
                 if (uri != null) {
                     // R-23a: take persistable permission so URI survives app restart.
                     takePersistablePermission(context.contentResolver, uri)
-                    val key = ContentCache.readAndCache(context, uri)
-                    val cached = ContentCache.get(key)
-                    // Track in recents
+                    // R-34a: generate SourceRef.id first and use it as the ContentCache key
+                    // so both systems share a single authoritative identity.
+                    val sourceId = UUID.randomUUID().toString()
+                    ContentCache.readAndCache(context, uri, id = sourceId)
+                    val cached = ContentCache.get(sourceId)
+                    val ref = SourceRef(
+                        id = sourceId,
+                        kind = SourceKind.LOCAL,
+                        uriGrant = uri.toString(),
+                        label = cached?.label ?: "file",
+                    )
+                    // Track in recents and persist as a session
                     scope.launch {
-                        recentsStore.addRecent(SourceRef(
-                            id = key,
-                            kind = SourceKind.LOCAL,
-                            uriGrant = uri.toString(),
-                            label = cached?.label ?: "file",
+                        recentsStore.addRecent(ref)
+                        sessionStore.save(Session(
+                            id = sourceId,
+                            name = ref.label,
+                            mode = CompareMode.EDITOR,
+                            createdAt = System.currentTimeMillis(),
+                            sources = listOf(ref),
                         ))
                     }
-                    navController.navigate("editor/$key")
+                    navController.navigate("editor/$sourceId")
                 }
             }
 
@@ -174,6 +193,7 @@ fun OmniNavGraph(
             SetupDestination(
                 prefilledLeftKey = prefilledLeftKey,
                 recentsStore = recentsStore,
+                sessionStore = sessionStore,
                 navController = navController,
                 fileBrowserLeftRef = fileBrowserLeftRef,
                 fileBrowserRightRef = fileBrowserRightRef,
@@ -189,6 +209,7 @@ fun OmniNavGraph(
             CompareDestination(
                 leftKey = leftKey,
                 rightKey = rightKey,
+                resultStore = resultStore,
                 onNavigateBack = { navController.popBackStack() },
             )
         }
@@ -342,6 +363,7 @@ private fun EditorDestination(
 private fun SetupDestination(
     prefilledLeftKey: String?,
     recentsStore: RecentsStore,
+    sessionStore: SessionStore,
     navController: NavHostController,
     fileBrowserLeftRef: SourceRef?,
     fileBrowserRightRef: SourceRef?,
@@ -366,11 +388,13 @@ private fun SetupDestination(
     ) { uri ->
         if (uri != null) {
             takePersistablePermission(context.contentResolver, uri)
-            val key = ContentCache.readAndCache(context, uri)
-            val cached = ContentCache.get(key)
-            leftKey = key
+            // R-34a: SourceRef.id is generated first and used as the ContentCache key.
+            val sourceId = UUID.randomUUID().toString()
+            ContentCache.readAndCache(context, uri, id = sourceId)
+            val cached = ContentCache.get(sourceId)
+            leftKey = sourceId
             leftSource = SourceRef(
-                id = UUID.randomUUID().toString(),
+                id = sourceId,
                 kind = SourceKind.LOCAL,
                 uriGrant = uri.toString(),
                 label = cached?.label ?: "left",
@@ -383,11 +407,13 @@ private fun SetupDestination(
     ) { uri ->
         if (uri != null) {
             takePersistablePermission(context.contentResolver, uri)
-            val key = ContentCache.readAndCache(context, uri)
-            val cached = ContentCache.get(key)
-            rightKey = key
+            // R-34a: SourceRef.id is generated first and used as the ContentCache key.
+            val sourceId = UUID.randomUUID().toString()
+            ContentCache.readAndCache(context, uri, id = sourceId)
+            val cached = ContentCache.get(sourceId)
+            rightKey = sourceId
             rightSource = SourceRef(
-                id = UUID.randomUUID().toString(),
+                id = sourceId,
                 kind = SourceKind.LOCAL,
                 uriGrant = uri.toString(),
                 label = cached?.label ?: "right",
@@ -396,13 +422,14 @@ private fun SetupDestination(
     }
 
     // R-23a: consume file browser picks (direct flavour).
+    // R-34a: use ref.id as the ContentCache key so SourceRef.id is authoritative.
     LaunchedEffect(fileBrowserLeftRef) {
         val ref = fileBrowserLeftRef ?: return@LaunchedEffect
         onConsumeLeftRef()
         val path = ref.path ?: return@LaunchedEffect
         val file = File(path)
-        val key = ContentCache.readAndCache(context, file)
-        leftKey = key
+        ContentCache.readAndCache(context, file, id = ref.id)
+        leftKey = ref.id
         leftSource = ref
     }
     LaunchedEffect(fileBrowserRightRef) {
@@ -410,8 +437,8 @@ private fun SetupDestination(
         onConsumeRightRef()
         val path = ref.path ?: return@LaunchedEffect
         val file = File(path)
-        val key = ContentCache.readAndCache(context, file)
-        rightKey = key
+        ContentCache.readAndCache(context, file, id = ref.id)
+        rightKey = ref.id
         rightSource = ref
     }
 
@@ -439,11 +466,22 @@ private fun SetupDestination(
         onCompare = {
             val lk = leftKey
             val rk = rightKey
+            val ls = leftSource
+            val rs = rightSource
             if (lk != null && rk != null) {
-                // Track both in recents
+                // Track both in recents and persist as a compare session (R-34a)
                 scope.launch {
-                    leftSource?.let { recentsStore.addRecent(it) }
-                    rightSource?.let { recentsStore.addRecent(it) }
+                    ls?.let { recentsStore.addRecent(it) }
+                    rs?.let { recentsStore.addRecent(it) }
+                    val sources = listOfNotNull(ls, rs)
+                    val sessionId = "$lk-$rk"
+                    sessionStore.save(Session(
+                        id = sessionId,
+                        name = "${ls?.label ?: "left"} ↔ ${rs?.label ?: "right"}",
+                        mode = CompareMode.TEXT,
+                        createdAt = System.currentTimeMillis(),
+                        sources = sources,
+                    ))
                 }
                 navController.navigate("compare/$lk/$rk")
             }
@@ -457,11 +495,13 @@ private fun SetupDestination(
 private fun CompareDestination(
     leftKey: String,
     rightKey: String,
+    resultStore: ResultStore,
     onNavigateBack: () -> Unit,
 ) {
     val leftCached = ContentCache.get(leftKey)
     val rightCached = ContentCache.get(rightKey)
     var compareState by remember { mutableStateOf<CompareState?>(null) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(leftKey, rightKey) {
         if (leftCached != null && rightCached != null) {
@@ -474,6 +514,17 @@ private fun CompareDestination(
                 // Stay at loading/null — content was never read for over-limit sides.
                 return@LaunchedEffect
             }
+
+            // R-34a: try to restore a cached result before recomputing.
+            val sessionId = "$leftKey-$rightKey"
+            val cached = resultStore.load(sessionId)
+            if (cached != null && !cached.stale) {
+                val leftLines = leftCached.text.lines()
+                val rightLines = rightCached.text.lines()
+                compareState = CompareState(cached, leftLines, rightLines)
+                return@LaunchedEffect
+            }
+
             val leftLines = leftCached.text.lines()
             val rightLines = rightCached.text.lines()
             val result = withContext(Dispatchers.Default) {
@@ -485,6 +536,8 @@ private fun CompareDestination(
                 )
             }
             compareState = CompareState(result, leftLines, rightLines)
+            // R-34a: persist result so it survives process death.
+            scope.launch { resultStore.store(sessionId, result) }
         }
     }
 

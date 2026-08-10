@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -33,7 +34,8 @@ class SessionStore(private val sessionDir: File) {
             withContext(Dispatchers.IO) {
                 sessionDir.mkdirs()
                 val file = File(sessionDir, "${session.id}.json")
-                file.writeText(json.encodeToString(Session.serializer(), session))
+                val wrapper = VersionedSession(schemaVersion = SCHEMA_VERSION, data = session)
+                file.writeText(json.encodeToString(VersionedSession.serializer(), wrapper))
             }
         }
     }
@@ -47,7 +49,9 @@ class SessionStore(private val sessionDir: File) {
                 val file = File(sessionDir, "$sessionId.json")
                 if (!file.exists()) return@withContext null
                 try {
-                    val session = json.decodeFromString(Session.serializer(), file.readText())
+                    val wrapper = json.decodeFromString(VersionedSession.serializer(), file.readText())
+                    if (wrapper.schemaVersion != SCHEMA_VERSION) return@withContext null
+                    val session = wrapper.data
                     cache[sessionId] = session
                     session
                 } catch (_: Exception) {
@@ -136,12 +140,25 @@ class SessionStore(private val sessionDir: File) {
             if (!sessionDir.exists()) return@withContext
             sessionDir.listFiles()?.filter { it.extension == "json" }?.forEach { file ->
                 try {
-                    val session = json.decodeFromString(Session.serializer(), file.readText())
-                    cache[session.id] = session
+                    val wrapper = json.decodeFromString(VersionedSession.serializer(), file.readText())
+                    if (wrapper.schemaVersion == SCHEMA_VERSION) {
+                        cache[wrapper.data.id] = wrapper.data
+                    }
+                    // Unknown schema version: skip silently (graceful degradation)
                 } catch (_: Exception) {
-                    // Skip corrupted files
+                    // Corrupted or unreadable file: skip silently
                 }
             }
         }
+    }
+
+    @Serializable
+    private data class VersionedSession(
+        val schemaVersion: Int = 1,
+        val data: Session,
+    )
+
+    companion object {
+        const val SCHEMA_VERSION = 1
     }
 }

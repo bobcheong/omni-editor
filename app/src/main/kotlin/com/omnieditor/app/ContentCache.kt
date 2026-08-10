@@ -26,6 +26,15 @@ object ContentCache {
 
     fun readAndCache(context: Context, uri: Uri): String {
         val key = uri.toString().hashCode().toString(16)
+        return readAndCache(context, uri, id = key)
+    }
+
+    /**
+     * Read and cache a URI using [id] as the cache key.
+     * Use this overload when a [SourceRef] has already been created so that
+     * SourceRef.id and the ContentCache key are identical.
+     */
+    fun readAndCache(context: Context, uri: Uri, id: String): String {
         val (label, sizeBytes) = queryMeta(context, uri)
         val text = try {
             context.contentResolver.openInputStream(uri)?.use {
@@ -36,13 +45,13 @@ object ContentCache {
         }
 
         synchronized(cache) {
-            cache[key] = CachedContent(label, text, uri.toString(), sizeBytes)
+            cache[id] = CachedContent(label, text, uri.toString(), sizeBytes)
             while (cache.size > MAX_ENTRIES) {
                 cache.remove(cache.keys.first())
             }
         }
 
-        return key
+        return id
     }
 
     /**
@@ -51,6 +60,18 @@ object ContentCache {
      */
     fun readAndCache(@Suppress("UNUSED_PARAMETER") context: Context, file: File): String {
         val key = file.absolutePath.hashCode().toString(16)
+        return readAndCache(context, file, id = key)
+    }
+
+    /**
+     * R-23a: read a file directly from the filesystem (direct flavour), using [id]
+     * as the cache key so that SourceRef.id and ContentCache key are identical.
+     */
+    fun readAndCache(
+        @Suppress("UNUSED_PARAMETER") context: Context,
+        file: File,
+        id: String,
+    ): String {
         val label = file.name
         val sizeBytes = file.length()
         val text = try {
@@ -60,13 +81,13 @@ object ContentCache {
         }
 
         synchronized(cache) {
-            cache[key] = CachedContent(label, text, Uri.fromFile(file).toString(), sizeBytes)
+            cache[id] = CachedContent(label, text, Uri.fromFile(file).toString(), sizeBytes)
             while (cache.size > MAX_ENTRIES) {
                 cache.remove(cache.keys.first())
             }
         }
 
-        return key
+        return id
     }
 
     fun get(key: String): CachedContent? = synchronized(cache) { cache[key] }
