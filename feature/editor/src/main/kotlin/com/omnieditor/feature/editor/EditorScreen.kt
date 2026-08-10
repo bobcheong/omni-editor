@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -26,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -194,6 +196,22 @@ fun EditorScreen(
                 // RecoveryAvailable: detection + recovery UI deferred to Journal integration.
                 // The state variant exists so the sealed interface is complete (R-21 stub).
                 is EditorUiState.RecoveryAvailable -> {}
+                // R-22: file changed on disk since it was opened.
+                is EditorUiState.ExternallyChanged -> {
+                    ExternallyChangedBanner(
+                        onReload = { viewModel.reloadFromDisk() },
+                        onKeepMine = { viewModel.dismissExternalChange() },
+                    )
+                    // Show whatever editor content is currently loaded beneath the banner
+                    val editorContent = viewModel.lastLoadedState
+                    if (editorContent != null) {
+                        EditorContent(
+                            state = editorContent,
+                            modifier = Modifier.weight(1f),
+                            fileName = fileName,
+                        )
+                    }
+                }
             }
         }
     }
@@ -303,6 +321,35 @@ private fun OverThresholdScreen(
 private fun formatBytes(bytes: Long): String {
     val mb = bytes / (1024.0 * 1024.0)
     return if (mb >= 1.0) "%.1f MB".format(mb) else "%.0f KB".format(bytes / 1024.0)
+}
+
+@Composable
+private fun ExternallyChangedBanner(
+    onReload: () -> Unit,
+    onKeepMine: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "File changed on disk",
+                modifier = Modifier.weight(1f),
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            TextButton(onClick = onReload) {
+                Text("Reload")
+            }
+            TextButton(onClick = onKeepMine) {
+                Text("Keep mine")
+            }
+        }
+    }
 }
 
 private fun handleNavKey(state: EditorState, key: String) {

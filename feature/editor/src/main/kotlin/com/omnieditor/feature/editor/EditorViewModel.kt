@@ -29,11 +29,71 @@ class EditorViewModel @Inject constructor() : ViewModel() {
 
     private var editorState: EditorState? = null
 
+    /** The last EditorState that was in the Loaded state; remains accessible while in ExternallyChanged. */
+    val lastLoadedState: EditorState? get() = editorState
+
     /** Injected by the NavGraph so the feature module stays free of Android/app deps. */
     private var saveFn: (suspend (ByteArray) -> Unit)? = null
 
+    /** Returns true if the file on disk differs from the snapshot taken at open time. */
+    private var checkFingerprintFn: (suspend () -> Boolean)? = null
+
+    /** Re-reads the file from its source URI and re-opens it in the editor. */
+    private var reloadFn: (suspend () -> Unit)? = null
+
+    /** File name remembered when the document is loaded, used for the ExternallyChanged banner. */
+    private var currentFileName: String = ""
+
     fun setSaveFunction(fn: suspend (ByteArray) -> Unit) {
         saveFn = fn
+    }
+
+    fun setCheckFingerprintFunction(fn: suspend () -> Boolean) {
+        checkFingerprintFn = fn
+    }
+
+    fun setReloadFunction(fn: suspend () -> Unit) {
+        reloadFn = fn
+    }
+
+    fun setCurrentFileName(name: String) {
+        currentFileName = name
+    }
+
+    /** Called on resume; transitions to ExternallyChanged if the file has been modified on disk.
+     *  No-ops when already in ExternallyChanged or when no document is loaded. */
+    fun checkForExternalChanges() {
+        val fn = checkFingerprintFn ?: return
+        // Skip if not in a state where a live document is open and editable.
+        val current = _uiState.value
+        if (current !is EditorUiState.Loaded) return
+        viewModelScope.launch {
+            if (fn()) {
+                _uiState.value = EditorUiState.ExternallyChanged(fileName = currentFileName)
+            }
+        }
+    }
+
+    /** Keep current edits — dismiss the banner and return to Loaded state. */
+    fun dismissExternalChange() {
+        val state = editorState ?: return
+        _uiState.value = EditorUiState.Loaded(state)
+    }
+
+    /** Reload from disk — delegates to the injected reload function provided by the NavGraph. */
+    fun reloadFromDisk() {
+        val fn = reloadFn ?: return
+        viewModelScope.launch {
+            try {
+                fn()
+            } catch (e: IOException) {
+                _uiState.value = EditorUiState.Error("Reload failed: ${e.message}")
+            } catch (e: SecurityException) {
+                _uiState.value = EditorUiState.Error("Reload failed: ${e.message}")
+            } catch (e: IllegalStateException) {
+                _uiState.value = EditorUiState.Error("Reload failed: ${e.message}")
+            }
+        }
     }
 
     // Find/replace state
@@ -54,7 +114,9 @@ class EditorViewModel @Inject constructor() : ViewModel() {
         encoding: String = "UTF-8",
         lineEnding: LineEnding = LineEnding.LF,
         readOnly: Boolean = false,
+        fileName: String = "",
     ) {
+        if (fileName.isNotBlank()) currentFileName = fileName
         val doc = PieceTableDocument.create(content, encoding, lineEnding)
         val state = EditorState(doc)
         state.readOnly = readOnly
@@ -73,6 +135,12 @@ class EditorViewModel @Inject constructor() : ViewModel() {
         val state = editorState ?: return
         val fn = saveFn ?: return
         viewModelScope.launch {
+            // R-22: check for external changes before writing to avoid silently overwriting
+            val fingerprintFn = checkFingerprintFn
+            if (fingerprintFn != null && fingerprintFn()) {
+                _uiState.value = EditorUiState.ExternallyChanged(fileName = currentFileName)
+                return@launch
+            }
             try {
                 _uiState.value = EditorUiState.Saving
                 val baos = ByteArrayOutputStream()
@@ -211,4 +279,9 @@ sealed interface EditorUiState {
      * variant is stubbed here so the sealed interface is complete.
      */
     data class RecoveryAvailable(val documentId: String) : EditorUiState
+    /**
+     * The file on disk has been modified since it was opened (R-22).
+     * The editor shows a banner offering Reload or Keep mine.
+     */
+    data class ExternallyChanged(val fileName: String) : EditorUiState
 }

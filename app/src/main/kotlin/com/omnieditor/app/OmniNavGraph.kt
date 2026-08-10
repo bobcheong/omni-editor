@@ -1,12 +1,15 @@
 package com.omnieditor.app
 
 import android.net.Uri
+import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -14,6 +17,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.navigation.NavType
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -254,6 +258,11 @@ private fun EditorDestination(
     val viewModel: EditorViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsState()
 
+    // R-22: snapshot of the file's size and modification time taken when the file is opened.
+    // Stored as state so they survive recomposition.
+    var initialSize by remember { mutableLongStateOf(-1L) }
+    var initialModified by remember { mutableLongStateOf(-1L) }
+
     LaunchedEffect(contentKey) {
         if (uiState is EditorUiState.Empty && cached != null) {
             val size = cached.sizeBytes
@@ -265,26 +274,103 @@ private fun EditorDestination(
                     limitBytes = DocumentLimits.EDITOR_MAX_BYTES,
                 )
             } else {
-                viewModel.openDocument(cached.text)
+                viewModel.openDocument(cached.text, fileName = cached.label)
             }
         }
 
-        // R-20: inject save function so the editor can write back to the source URI.
-        // The lambda runs in the app layer where ContentResolver is available,
-        // keeping feature:editor free of Android framework dependencies.
         val sourceUri = cached?.uri
         if (sourceUri != null) {
+            val uri = Uri.parse(sourceUri)
+
+            // R-22: capture initial fingerprint (size + lastModified) from ContentResolver.
+            withContext(Dispatchers.IO) {
+                context.contentResolver.query(
+                    uri,
+                    arrayOf(OpenableColumns.SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED),
+                    null, null, null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        initialSize = cursor.getLong(0)
+                        initialModified = cursor.getLong(1)
+                    }
+                }
+            }
+
+            // R-22: inject fingerprint check function — compares current metadata to the snapshot.
+            viewModel.setCheckFingerprintFunction {
+                withContext(Dispatchers.IO) {
+                    var currentSize = -1L
+                    var currentModified = -1L
+                    context.contentResolver.query(
+                        uri,
+                        arrayOf(OpenableColumns.SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED),
+                        null, null, null
+                    )?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            currentSize = cursor.getLong(0)
+                            currentModified = cursor.getLong(1)
+                        }
+                    }
+                    // Only report changed when we have valid snapshots (both > -1)
+                    initialSize >= 0 &&
+                        (currentSize != initialSize || currentModified != initialModified)
+                }
+            }
+
+            // R-20: inject save function so the editor can write back to the source URI.
+            // The lambda runs in the app layer where ContentResolver is available,
+            // keeping feature:editor free of Android framework dependencies.
             viewModel.setSaveFunction { bytes ->
                 withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(
-                        Uri.parse(sourceUri), "wt"
-                    )?.use { out ->
+                    context.contentResolver.openOutputStream(uri, "wt")?.use { out ->
                         out.write(bytes)
                         out.flush()
                     } ?: throw java.io.IOException("Cannot open $sourceUri for writing")
+                    // Update fingerprint snapshot after a successful save so the next
+                    // resume check doesn't false-positive on our own write.
+                    context.contentResolver.query(
+                        uri,
+                        arrayOf(OpenableColumns.SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED),
+                        null, null, null
+                    )?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            initialSize = cursor.getLong(0)
+                            initialModified = cursor.getLong(1)
+                        }
+                    }
+                }
+            }
+
+            // R-22: inject reload function — re-reads file content and re-opens document.
+            viewModel.setReloadFunction {
+                val newKey = withContext(Dispatchers.IO) {
+                    ContentCache.readAndCache(context, uri)
+                }
+                val newCached = ContentCache.get(newKey)
+                if (newCached != null) {
+                    // Refresh fingerprint snapshot after reload.
+                    withContext(Dispatchers.IO) {
+                        context.contentResolver.query(
+                            uri,
+                            arrayOf(OpenableColumns.SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED),
+                            null, null, null
+                        )?.use { cursor ->
+                            if (cursor.moveToFirst()) {
+                                initialSize = cursor.getLong(0)
+                                initialModified = cursor.getLong(1)
+                            }
+                        }
+                    }
+                    viewModel.openDocument(newCached.text, fileName = newCached.label)
                 }
             }
         }
+    }
+
+    // R-22: check for external changes whenever the app comes back to the foreground.
+    LifecycleResumeEffect(Unit) {
+        viewModel.checkForExternalChanges()
+        onPauseOrDispose { }
     }
 
     EditorScreen(
