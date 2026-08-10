@@ -1,7 +1,7 @@
 # Omni Editor — working rules
 
-Read this before every task. The specification is `docs/OE-SPEC-001.html`; the task list
-is `docs/P1-BUILD-PLAN.md`.
+Read this before every task. The specification is `docs/OE-SPEC-001.html`; the completion
+plan is `docs/P1-COMPLETION-PLAN.md` (v3, authoritative). Change log: `CHANGES.md`.
 
 ## Independence (non-negotiable)
 
@@ -65,7 +65,7 @@ This product has no relationship to any existing compare or editor tool or vendo
 ## Definition of done
 
 1. Acceptance criteria in the build plan pass.
-2. `./gradlew checkCorePurity` clean.
+2. `./gradlew checkCorePurity checkIoBoundary` clean.
 3. `./gradlew testDirectDebugUnitTest testStoreDebugUnitTest :core:model:test :core:diff:test` green.
 4. `./gradlew detekt lintDirectDebug` clean.
 5. No new dependency without a line in `docs/licenses.md`.
