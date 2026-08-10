@@ -3,6 +3,7 @@ package com.omnieditor.app
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import java.io.File
 import java.io.IOException
 
 /**
@@ -36,6 +37,30 @@ object ContentCache {
 
         synchronized(cache) {
             cache[key] = CachedContent(label, text, uri.toString(), sizeBytes)
+            while (cache.size > MAX_ENTRIES) {
+                cache.remove(cache.keys.first())
+            }
+        }
+
+        return key
+    }
+
+    /**
+     * R-23a: read a file directly from the filesystem (direct flavour).
+     * No ContentResolver needed — the path is durable.
+     */
+    fun readAndCache(@Suppress("UNUSED_PARAMETER") context: Context, file: File): String {
+        val key = file.absolutePath.hashCode().toString(16)
+        val label = file.name
+        val sizeBytes = file.length()
+        val text = try {
+            file.bufferedReader().readText()
+        } catch (e: IOException) {
+            "Error reading file: ${e.message}"
+        }
+
+        synchronized(cache) {
+            cache[key] = CachedContent(label, text, Uri.fromFile(file).toString(), sizeBytes)
             while (cache.size > MAX_ENTRIES) {
                 cache.remove(cache.keys.first())
             }

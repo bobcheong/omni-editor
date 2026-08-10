@@ -53,7 +53,20 @@ fun OmniNavGraph(
         RecentsStore(File(context.filesDir, "recents.json"))
     }
 
-    NavHost(navController = navController, startDestination = "home") {
+    // R-23a: file browser picked sources, keyed by slot ("left" / "right").
+    // Updated by flavourDestinations() callback, read by the setup screen.
+    var fileBrowserLeftRef by remember { mutableStateOf<SourceRef?>(null) }
+    var fileBrowserRightRef by remember { mutableStateOf<SourceRef?>(null) }
+
+    NavHost(navController = navController, startDestination = flavourStartDestination()) {
+
+        // ── Flavour-specific routes (permission screen, file browser) ──
+        flavourDestinations(navController) { slot, ref ->
+            when (slot) {
+                "left" -> fileBrowserLeftRef = ref
+                "right" -> fileBrowserRightRef = ref
+            }
+        }
 
         // ── Home ──
         composable("home") {
@@ -78,6 +91,8 @@ fun OmniNavGraph(
                 ActivityResultContracts.OpenDocument()
             ) { uri: Uri? ->
                 if (uri != null) {
+                    // R-23a: take persistable permission so URI survives app restart.
+                    takePersistablePermission(context.contentResolver, uri)
                     val key = ContentCache.readAndCache(context, uri)
                     val cached = ContentCache.get(key)
                     // Track in recents
@@ -156,73 +171,14 @@ fun OmniNavGraph(
             ),
         ) { backStackEntry ->
             val prefilledLeftKey = backStackEntry.arguments?.getString("leftKey")
-            val prefilledLeft = prefilledLeftKey?.let { ContentCache.get(it) }
-
-            var leftSource by remember {
-                mutableStateOf(prefilledLeft?.let {
-                    SourceRef(id = prefilledLeftKey!!, kind = SourceKind.LOCAL, uriGrant = it.uri, label = it.label)
-                })
-            }
-            var rightSource by remember { mutableStateOf<SourceRef?>(null) }
-            var leftKey by remember { mutableStateOf(prefilledLeftKey) }
-            var rightKey by remember { mutableStateOf<String?>(null) }
-            val scope = rememberCoroutineScope()
-            val context2 = LocalContext.current
-
-            val leftPicker = rememberLauncherForActivityResult(
-                ActivityResultContracts.OpenDocument()
-            ) { uri ->
-                if (uri != null) {
-                    val key = ContentCache.readAndCache(context2, uri)
-                    val cached = ContentCache.get(key)
-                    leftKey = key
-                    leftSource = SourceRef(
-                        id = UUID.randomUUID().toString(),
-                        kind = SourceKind.LOCAL,
-                        uriGrant = uri.toString(),
-                        label = cached?.label ?: "left",
-                    )
-                }
-            }
-
-            val rightPicker = rememberLauncherForActivityResult(
-                ActivityResultContracts.OpenDocument()
-            ) { uri ->
-                if (uri != null) {
-                    val key = ContentCache.readAndCache(context2, uri)
-                    val cached = ContentCache.get(key)
-                    rightKey = key
-                    rightSource = SourceRef(
-                        id = UUID.randomUUID().toString(),
-                        kind = SourceKind.LOCAL,
-                        uriGrant = uri.toString(),
-                        label = cached?.label ?: "right",
-                    )
-                }
-            }
-
-            SourceSetupScreen(
-                leftSource = leftSource,
-                rightSource = rightSource,
-                onPickLeft = { leftPicker.launch(arrayOf("*/*")) },
-                onPickRight = { rightPicker.launch(arrayOf("*/*")) },
-                onSwapSides = {
-                    val tmpSrc = leftSource; leftSource = rightSource; rightSource = tmpSrc
-                    val tmpKey = leftKey; leftKey = rightKey; rightKey = tmpKey
-                },
-                onCompare = {
-                    val lk = leftKey
-                    val rk = rightKey
-                    if (lk != null && rk != null) {
-                        // Track both in recents
-                        scope.launch {
-                            leftSource?.let { recentsStore.addRecent(it) }
-                            rightSource?.let { recentsStore.addRecent(it) }
-                        }
-                        navController.navigate("compare/$lk/$rk")
-                    }
-                },
-                onNavigateBack = { navController.popBackStack() },
+            SetupDestination(
+                prefilledLeftKey = prefilledLeftKey,
+                recentsStore = recentsStore,
+                navController = navController,
+                fileBrowserLeftRef = fileBrowserLeftRef,
+                fileBrowserRightRef = fileBrowserRightRef,
+                onConsumeLeftRef = { fileBrowserLeftRef = null },
+                onConsumeRightRef = { fileBrowserRightRef = null },
             )
         }
 
@@ -378,6 +334,121 @@ private fun EditorDestination(
         onNavigateBack = onNavigateBack,
         onCompareWith = onCompareWith,
         viewModel = viewModel,
+    )
+}
+
+/** Setup route body extracted to keep OmniNavGraph within complexity budget. */
+@Composable
+private fun SetupDestination(
+    prefilledLeftKey: String?,
+    recentsStore: RecentsStore,
+    navController: NavHostController,
+    fileBrowserLeftRef: SourceRef?,
+    fileBrowserRightRef: SourceRef?,
+    onConsumeLeftRef: () -> Unit,
+    onConsumeRightRef: () -> Unit,
+) {
+    val prefilledLeft = prefilledLeftKey?.let { ContentCache.get(it) }
+
+    var leftSource by remember {
+        mutableStateOf(prefilledLeft?.let {
+            SourceRef(id = prefilledLeftKey, kind = SourceKind.LOCAL, uriGrant = it.uri, label = it.label)
+        })
+    }
+    var rightSource by remember { mutableStateOf<SourceRef?>(null) }
+    var leftKey by remember { mutableStateOf(prefilledLeftKey) }
+    var rightKey by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    val leftPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            takePersistablePermission(context.contentResolver, uri)
+            val key = ContentCache.readAndCache(context, uri)
+            val cached = ContentCache.get(key)
+            leftKey = key
+            leftSource = SourceRef(
+                id = UUID.randomUUID().toString(),
+                kind = SourceKind.LOCAL,
+                uriGrant = uri.toString(),
+                label = cached?.label ?: "left",
+            )
+        }
+    }
+
+    val rightPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            takePersistablePermission(context.contentResolver, uri)
+            val key = ContentCache.readAndCache(context, uri)
+            val cached = ContentCache.get(key)
+            rightKey = key
+            rightSource = SourceRef(
+                id = UUID.randomUUID().toString(),
+                kind = SourceKind.LOCAL,
+                uriGrant = uri.toString(),
+                label = cached?.label ?: "right",
+            )
+        }
+    }
+
+    // R-23a: consume file browser picks (direct flavour).
+    LaunchedEffect(fileBrowserLeftRef) {
+        val ref = fileBrowserLeftRef ?: return@LaunchedEffect
+        onConsumeLeftRef()
+        val path = ref.path ?: return@LaunchedEffect
+        val file = File(path)
+        val key = ContentCache.readAndCache(context, file)
+        leftKey = key
+        leftSource = ref
+    }
+    LaunchedEffect(fileBrowserRightRef) {
+        val ref = fileBrowserRightRef ?: return@LaunchedEffect
+        onConsumeRightRef()
+        val path = ref.path ?: return@LaunchedEffect
+        val file = File(path)
+        val key = ContentCache.readAndCache(context, file)
+        rightKey = key
+        rightSource = ref
+    }
+
+    SourceSetupScreen(
+        leftSource = leftSource,
+        rightSource = rightSource,
+        onPickLeft = {
+            if (hasFlavourFileBrowser()) {
+                navController.navigate("filebrowser/left")
+            } else {
+                leftPicker.launch(arrayOf("*/*"))
+            }
+        },
+        onPickRight = {
+            if (hasFlavourFileBrowser()) {
+                navController.navigate("filebrowser/right")
+            } else {
+                rightPicker.launch(arrayOf("*/*"))
+            }
+        },
+        onSwapSides = {
+            val tmpSrc = leftSource; leftSource = rightSource; rightSource = tmpSrc
+            val tmpKey = leftKey; leftKey = rightKey; rightKey = tmpKey
+        },
+        onCompare = {
+            val lk = leftKey
+            val rk = rightKey
+            if (lk != null && rk != null) {
+                // Track both in recents
+                scope.launch {
+                    leftSource?.let { recentsStore.addRecent(it) }
+                    rightSource?.let { recentsStore.addRecent(it) }
+                }
+                navController.navigate("compare/$lk/$rk")
+            }
+        },
+        onNavigateBack = { navController.popBackStack() },
     )
 }
 
