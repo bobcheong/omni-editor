@@ -9,16 +9,13 @@ import com.omnieditor.core.model.Phase
 import com.omnieditor.core.model.Progress
 import com.omnieditor.core.model.RuleSet
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
 import kotlin.coroutines.coroutineContext
 
 /**
- * The diff engine (OE-ENG-1, OE-ENG-7).
+ * The diff engine (OE-ENG-1).
  *
  * Compares two files by their line hashes, applying normalisation rules,
- * and produces a stream of hunks. Results are emitted as found (first hunk
- * before completion) for responsive UI.
+ * and produces a complete [CompareResult].
  *
  * Pure Kotlin, no Android imports. Tested on the JVM against the golden corpus.
  */
@@ -94,46 +91,6 @@ object DiffEngine {
             engineMode = EngineMode.FULL_INDEX,
             generatedAt = System.currentTimeMillis(),
         )
-    }
-
-    /**
-     * Streaming version: emits hunks as they are found.
-     * The first hunk is emitted before the compare finishes.
-     */
-    fun compareStreaming(
-        leftLineCount: Long,
-        rightLineCount: Long,
-        leftLine: (Long) -> CharSequence,
-        rightLine: (Long) -> CharSequence,
-        rules: RuleSet = RuleSet.DEFAULT,
-        progress: ((Progress) -> Unit)? = null,
-    ): Flow<Hunk> = flow {
-        val total = leftLineCount + rightLineCount
-        progress?.invoke(Progress(0, total, Phase.NORMALISING))
-
-        val leftNorm = Normaliser.normaliseHashes(
-            leftLineCount, leftLine, ::hashString, rules,
-        )
-        val rightNorm = Normaliser.normaliseHashes(
-            rightLineCount, rightLine, ::hashString, rules,
-        )
-
-        progress?.invoke(Progress(total / 3, total, Phase.DIFFING))
-        coroutineContext.ensureActive()
-
-        val edits = HistogramDiff.diff(
-            leftNorm.hashes, 0, leftNorm.hashes.size,
-            rightNorm.hashes, 0, rightNorm.hashes.size,
-        )
-
-        // Emit hunks as they are produced
-        val hunks = editsToHunks(edits, leftNorm, rightNorm, rules)
-        for (hunk in hunks) {
-            coroutineContext.ensureActive()
-            emit(hunk)
-        }
-
-        progress?.invoke(Progress(total, total, Phase.DONE))
     }
 
     private fun editsToHunks(

@@ -1,6 +1,5 @@
 package com.omnieditor.core.diff
 
-import com.omnieditor.core.model.Hunk
 import com.omnieditor.core.model.HunkType
 import com.omnieditor.core.model.Phase
 import com.omnieditor.core.model.Progress
@@ -10,7 +9,6 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -141,49 +139,6 @@ class DiffEngineTest {
         result.hunks.size shouldBe 1
         result.hunks[0].leftStart shouldBe 4999
         result.hunks[0].type shouldBe HunkType.CHANGED
-    }
-
-    // ── Streaming ──
-
-    @Test
-    fun `streaming emits hunks`() = runTest {
-        val hunks = DiffEngine.compareStreaming(
-            leftLineCount = 3,
-            rightLineCount = 3,
-            leftLine = { listOf("a", "b", "c")[it.toInt()] },
-            rightLine = { listOf("a", "X", "c")[it.toInt()] },
-        ).toList()
-        hunks.size shouldBe 1
-        hunks[0].type shouldBe HunkType.CHANGED
-    }
-
-    @Test
-    fun `streaming emits first hunk before completion for large input`() = runTest {
-        val size = 5000
-        val left = (0 until size).map { "line $it" }
-        val right = left.toMutableList().also {
-            it[100] = "CHANGED at 100"
-            it[4900] = "CHANGED at 4900"
-        }
-        var firstHunkTime = 0L
-        var flowCompleteTime = 0L
-        val hunks = mutableListOf<Hunk>()
-
-        DiffEngine.compareStreaming(
-            leftLineCount = size.toLong(),
-            rightLineCount = size.toLong(),
-            leftLine = { left[it.toInt()] },
-            rightLine = { right[it.toInt()] },
-        ).collect { hunk ->
-            if (hunks.isEmpty()) firstHunkTime = System.nanoTime()
-            hunks.add(hunk)
-        }
-        flowCompleteTime = System.nanoTime()
-
-        hunks.size shouldBe 2
-        // First hunk should have been emitted (we can't strictly assert timing
-        // in a unit test, but we verify the flow produced results)
-        (firstHunkTime > 0) shouldBe true
     }
 
     // ── Progress ──
