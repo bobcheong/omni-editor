@@ -31,6 +31,7 @@ import com.omnieditor.core.io.SessionStore
 import com.omnieditor.core.model.CompareMode
 import com.omnieditor.core.model.DocumentLimits
 import com.omnieditor.core.model.Session
+import com.omnieditor.core.model.RuleSet
 import com.omnieditor.core.model.SourceKind
 import com.omnieditor.core.model.SourceRef
 import com.omnieditor.feature.compare.CompareScreen
@@ -574,29 +575,34 @@ private fun CompareDestination(
     val leftCached = DocumentRegistry.get(leftKey)
     val rightCached = DocumentRegistry.get(rightKey)
     var compareState by remember { mutableStateOf<CompareState?>(null) }
+    var currentRuleSet by remember { mutableStateOf(RuleSet.DEFAULT) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(leftKey, rightKey) {
+    LaunchedEffect(leftKey, rightKey, currentRuleSet) {
         if (leftCached != null && rightCached != null) {
             // R-12: size guard — refuse over-threshold files on the compare path.
-            // Full compare-path error UI is deferred to R-23.
             val limit = DocumentLimits.COMPARE_MAX_BYTES_PER_SIDE
             val leftSize = leftCached.sizeBytes
             val rightSize = rightCached.sizeBytes
             if ((leftSize > 0 && leftSize > limit) || (rightSize > 0 && rightSize > limit)) {
-                // Stay at loading/null — content was never read for over-limit sides.
                 return@LaunchedEffect
             }
 
-            // R-34a: try to restore a cached result before recomputing.
+            // R-34a: try to restore a cached result before recomputing,
+            // but only when using default rules (cached results used default).
             val sessionId = "$leftKey-$rightKey"
-            val cached = resultStore.load(sessionId)
-            if (cached != null && !cached.stale) {
-                val leftLines = leftCached.text.lines()
-                val rightLines = rightCached.text.lines()
-                compareState = CompareState(cached, leftLines, rightLines)
-                return@LaunchedEffect
+            if (currentRuleSet == RuleSet.DEFAULT) {
+                val cached = resultStore.load(sessionId)
+                if (cached != null && !cached.stale) {
+                    val leftLines = leftCached.text.lines()
+                    val rightLines = rightCached.text.lines()
+                    compareState = CompareState(cached, leftLines, rightLines)
+                    return@LaunchedEffect
+                }
             }
+
+            // Show loading state while re-running compare
+            compareState = null
 
             val leftLines = leftCached.text.lines()
             val rightLines = rightCached.text.lines()
@@ -606,16 +612,21 @@ private fun CompareDestination(
                     rightLineCount = rightLines.size.toLong(),
                     leftLine = { leftLines[it.toInt()] },
                     rightLine = { rightLines[it.toInt()] },
+                    rules = currentRuleSet,
                 )
             }
             compareState = CompareState(result, leftLines, rightLines)
-            // R-34a: persist result so it survives process death.
-            scope.launch { resultStore.store(sessionId, result) }
+            // R-34a: persist result so it survives process death (only for default rules).
+            if (currentRuleSet == RuleSet.DEFAULT) {
+                scope.launch { resultStore.store(sessionId, result) }
+            }
         }
     }
 
     CompareScreen(
         state = compareState,
+        ruleSet = currentRuleSet,
+        onRuleSetChanged = { currentRuleSet = it },
         leftLabel = leftCached?.label ?: "left",
         rightLabel = rightCached?.label ?: "right",
         onNavigateBack = onNavigateBack,

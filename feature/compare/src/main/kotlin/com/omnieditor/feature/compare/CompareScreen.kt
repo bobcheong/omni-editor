@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,12 +32,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.omnieditor.core.diff.MergeEngine
+import com.omnieditor.core.model.RuleSet
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CompareScreen(
     state: CompareState?,
+    ruleSet: RuleSet = RuleSet.DEFAULT,
+    onRuleSetChanged: (RuleSet) -> Unit = {},
     leftLabel: String = "Left",
     rightLabel: String = "Right",
     onNavigateBack: () -> Unit = {},
@@ -47,6 +51,7 @@ fun CompareScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var showActiveLineSheet by remember { mutableStateOf(false) }
+    var showRuleSheet by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -55,7 +60,9 @@ fun CompareScreen(
                 rightLabel = rightLabel,
                 diffCount = state?.diffCount ?: 0,
                 currentDiff = state?.currentDiffIndex ?: 0,
+                activeRuleCount = countActiveRules(ruleSet),
                 onNavigateBack = onNavigateBack,
+                onRulesClick = { showRuleSheet = true },
             )
         },
         bottomBar = {
@@ -142,6 +149,15 @@ fun CompareScreen(
                 }
             }
         }
+
+        // Rule set bottom sheet
+        if (showRuleSheet) {
+            RuleSetSheet(
+                ruleSet = ruleSet,
+                onRuleSetChanged = onRuleSetChanged,
+                onDismiss = { showRuleSheet = false },
+            )
+        }
     }
 }
 
@@ -152,7 +168,9 @@ private fun CompareTopBar(
     rightLabel: String,
     diffCount: Int,
     currentDiff: Int,
+    activeRuleCount: Int,
     onNavigateBack: () -> Unit,
+    onRulesClick: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -164,6 +182,13 @@ private fun CompareTopBar(
             }
         },
         actions = {
+            // Active rules chip
+            AssistChip(
+                onClick = onRulesClick,
+                label = {
+                    Text(if (activeRuleCount > 0) "$activeRuleCount rules" else "Rules")
+                },
+            )
             if (diffCount > 0) {
                 Text("${currentDiff + 1}/$diffCount")
             }
