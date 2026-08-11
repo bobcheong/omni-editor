@@ -1,5 +1,6 @@
 package com.omnieditor.feature.compare
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -45,6 +46,7 @@ fun CompareScreen(
     leftLabel: String = "Left",
     rightLabel: String = "Right",
     onNavigateBack: () -> Unit = {},
+    onSave: (() -> Unit)? = null,
     onMerge: () -> Unit = {},
     onFind: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -54,6 +56,21 @@ fun CompareScreen(
     var showActiveLineSheet by remember { mutableStateOf(false) }
     var showRuleSheet by remember { mutableStateOf(false) }
     var showAcceptAllConfirm by remember { mutableStateOf<MergeDirection?>(null) }
+    var showUnsavedDialog by remember { mutableStateOf(false) }
+
+    // Intercept back gesture when either side has unsaved merge changes.
+    val isDirty = state?.leftDirty == true || state?.rightDirty == true
+    BackHandler(enabled = isDirty) {
+        showUnsavedDialog = true
+    }
+
+    if (showUnsavedDialog) {
+        UnsavedChangesDialog(
+            onSaveAndLeave = { showUnsavedDialog = false; onSave?.invoke(); onNavigateBack() },
+            onDiscard = { showUnsavedDialog = false; onNavigateBack() },
+            onCancel = { showUnsavedDialog = false },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -65,8 +82,18 @@ fun CompareScreen(
                 activeRuleCount = countActiveRules(ruleSet),
                 leftDirty = state?.leftDirty ?: false,
                 rightDirty = state?.rightDirty ?: false,
-                onNavigateBack = onNavigateBack,
+                canUndo = state?.canUndo ?: false,
+                onNavigateBack = {
+                    if (isDirty) showUnsavedDialog = true else onNavigateBack()
+                },
                 onRulesClick = { showRuleSheet = true },
+                onSave = onSave,
+                onRestoreOriginals = {
+                    state?.undoAll()
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Restored to original")
+                    }
+                },
             )
         },
         bottomBar = {
@@ -235,8 +262,11 @@ private fun CompareTopBar(
     activeRuleCount: Int,
     leftDirty: Boolean,
     rightDirty: Boolean,
+    canUndo: Boolean,
     onNavigateBack: () -> Unit,
     onRulesClick: () -> Unit,
+    onSave: (() -> Unit)?,
+    onRestoreOriginals: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -272,10 +302,54 @@ private fun CompareTopBar(
                 Icon(Icons.Default.MoreVert, "More")
             }
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                if (onSave != null && (leftDirty || rightDirty)) {
+                    DropdownMenuItem(
+                        text = { Text("Save merged") },
+                        onClick = {
+                            menuExpanded = false
+                            onSave()
+                        },
+                    )
+                }
+                if (canUndo) {
+                    DropdownMenuItem(
+                        text = { Text("Restore originals") },
+                        onClick = {
+                            menuExpanded = false
+                            onRestoreOriginals()
+                        },
+                    )
+                }
                 DropdownMenuItem(text = { Text("Open in editor") }, onClick = { menuExpanded = false })
                 DropdownMenuItem(text = { Text("Flip sides") }, onClick = { menuExpanded = false })
                 DropdownMenuItem(text = { Text("Re-run compare") }, onClick = { menuExpanded = false })
                 DropdownMenuItem(text = { Text("Export report") }, onClick = { menuExpanded = false })
+            }
+        },
+    )
+}
+
+/**
+ * Dialog shown when the user attempts to leave compare with unsaved merge changes (R-28).
+ * Offers Save, Discard, and Cancel actions — same pattern as the editor's dirty prompt.
+ */
+@Composable
+private fun UnsavedChangesDialog(
+    onSaveAndLeave: () -> Unit,
+    onDiscard: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Unsaved changes") },
+        text = { Text("Save merged changes before leaving?") },
+        confirmButton = {
+            TextButton(onClick = onSaveAndLeave) { Text("Save") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onDiscard) { Text("Discard") }
+                TextButton(onClick = onCancel) { Text("Cancel") }
             }
         },
     )

@@ -25,6 +25,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.omnieditor.app.home.HomeScreen
+import com.omnieditor.core.io.MergeSafety
 import com.omnieditor.core.io.RecentsStore
 import com.omnieditor.core.io.ResultStore
 import com.omnieditor.core.io.SessionStore
@@ -578,6 +579,7 @@ private fun CompareDestination(
     var compareState by remember { mutableStateOf<CompareState?>(null) }
     var currentRuleSet by remember { mutableStateOf(RuleSet.DEFAULT) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     // R-27: create PieceTableDocuments for merge write-back.
     // Remembered so they survive recomposition but are created once per compare session.
@@ -586,6 +588,45 @@ private fun CompareDestination(
     }
     val rightDocument = remember(rightKey) {
         rightCached?.let { PieceTableDocument.create(it.text) }
+    }
+
+    // R-28: fingerprints captured when files are opened, used to detect external changes.
+    // size+modifiedAt of the source URIs (same approach as R-22 in the editor).
+    var leftInitialSize by remember { mutableLongStateOf(-1L) }
+    var leftInitialModified by remember { mutableLongStateOf(-1L) }
+    var rightInitialSize by remember { mutableLongStateOf(-1L) }
+    var rightInitialModified by remember { mutableLongStateOf(-1L) }
+
+    LaunchedEffect(leftKey, rightKey) {
+        // R-28: capture size+modifiedAt fingerprints for both sides on open.
+        val leftUri = leftCached?.uri?.let { android.net.Uri.parse(it) }
+        val rightUri = rightCached?.uri?.let { android.net.Uri.parse(it) }
+        withContext(Dispatchers.IO) {
+            leftUri?.let { uri ->
+                context.contentResolver.query(
+                    uri,
+                    arrayOf(OpenableColumns.SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED),
+                    null, null, null,
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        leftInitialSize = cursor.getLong(0)
+                        leftInitialModified = cursor.getLong(1)
+                    }
+                }
+            }
+            rightUri?.let { uri ->
+                context.contentResolver.query(
+                    uri,
+                    arrayOf(OpenableColumns.SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED),
+                    null, null, null,
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        rightInitialSize = cursor.getLong(0)
+                        rightInitialModified = cursor.getLong(1)
+                    }
+                }
+            }
+        }
     }
 
     LaunchedEffect(leftKey, rightKey, currentRuleSet) {
@@ -641,6 +682,41 @@ private fun CompareDestination(
         }
     }
 
+    // R-28: save function — checks fingerprint (external change detection), creates backup,
+    // then writes the dirty document back to its URI.
+    val saveFunction: (() -> Unit)? = if (leftDocument != null || rightDocument != null) {
+        {
+            scope.launch {
+                if (compareState == null) return@launch
+                val leftUri = leftCached?.uri?.let { android.net.Uri.parse(it) }
+                val rightUri = rightCached?.uri?.let { android.net.Uri.parse(it) }
+                executeMergeSave(
+                    context = context,
+                    leftDocument = leftDocument,
+                    rightDocument = rightDocument,
+                    leftUri = leftUri,
+                    rightUri = rightUri,
+                    leftCachedUri = leftCached?.uri,
+                    rightCachedUri = rightCached?.uri,
+                    leftInitialSize = leftInitialSize,
+                    leftInitialModified = leftInitialModified,
+                    rightInitialSize = rightInitialSize,
+                    rightInitialModified = rightInitialModified,
+                    backupDir = File(context.cacheDir, "backups"),
+                    sessionId = "$leftKey-$rightKey",
+                    onLeftFingerprintUpdated = { sz, mod ->
+                        leftInitialSize = sz; leftInitialModified = mod
+                    },
+                    onRightFingerprintUpdated = { sz, mod ->
+                        rightInitialSize = sz; rightInitialModified = mod
+                    },
+                )
+            }
+        }
+    } else {
+        null
+    }
+
     CompareScreen(
         state = compareState,
         ruleSet = currentRuleSet,
@@ -648,5 +724,97 @@ private fun CompareDestination(
         leftLabel = leftCached?.label ?: "left",
         rightLabel = rightCached?.label ?: "right",
         onNavigateBack = onNavigateBack,
+        onSave = saveFunction,
     )
+}
+
+/**
+ * R-28: Execute the merge save sequence:
+ * 1. Re-fingerprint both files to detect external changes (abort if changed).
+ * 2. Pre-write backup via MergeSafety before any byte is written.
+ * 3. Write each dirty document back through its URI.
+ * 4. Mark documents saved and refresh fingerprints.
+ */
+private suspend fun executeMergeSave(
+    context: android.content.Context,
+    leftDocument: PieceTableDocument?,
+    rightDocument: PieceTableDocument?,
+    leftUri: Uri?,
+    rightUri: Uri?,
+    leftCachedUri: String?,
+    rightCachedUri: String?,
+    leftInitialSize: Long,
+    leftInitialModified: Long,
+    rightInitialSize: Long,
+    rightInitialModified: Long,
+    backupDir: File,
+    sessionId: String,
+    onLeftFingerprintUpdated: (Long, Long) -> Unit,
+    onRightFingerprintUpdated: (Long, Long) -> Unit,
+) {
+    val fingerprintCols = arrayOf(
+        OpenableColumns.SIZE,
+        DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+    )
+
+    // External change detection — abort if either file changed under us.
+    val externalChangeDetected = withContext(Dispatchers.IO) {
+        var changed = false
+        if (leftUri != null && leftInitialSize >= 0) {
+            context.contentResolver.query(leftUri, fingerprintCols, null, null, null)?.use { c ->
+                if (c.moveToFirst() && (c.getLong(0) != leftInitialSize || c.getLong(1) != leftInitialModified))
+                    changed = true
+            }
+        }
+        if (rightUri != null && rightInitialSize >= 0) {
+            context.contentResolver.query(rightUri, fingerprintCols, null, null, null)?.use { c ->
+                if (c.moveToFirst() && (c.getLong(0) != rightInitialSize || c.getLong(1) != rightInitialModified))
+                    changed = true
+            }
+        }
+        changed
+    }
+    // Do not overwrite silently; spec §13 maps this to ExternalChangeDetected UI state.
+    if (externalChangeDetected) return
+
+    // Pre-write backup for each dirty document that has a local path (direct flavour).
+    withContext(Dispatchers.IO) {
+        leftCachedUri?.let { uriToFileOrNull(it) }?.let { path ->
+            if (leftDocument?.dirty == true) MergeSafety.createBackup(path, backupDir, sessionId)
+        }
+        rightCachedUri?.let { uriToFileOrNull(it) }?.let { path ->
+            if (rightDocument?.dirty == true) MergeSafety.createBackup(path, backupDir, sessionId)
+        }
+    }
+
+    // Write dirty documents and refresh fingerprints.
+    withContext(Dispatchers.IO) {
+        if (leftDocument?.dirty == true && leftUri != null) {
+            val leftBytes = leftDocument.text().toByteArray()
+            context.contentResolver.openOutputStream(leftUri, "wt")?.use { it.write(leftBytes) }
+            leftDocument.markSaved()
+            context.contentResolver.query(leftUri, fingerprintCols, null, null, null)
+                ?.use { c -> if (c.moveToFirst()) onLeftFingerprintUpdated(c.getLong(0), c.getLong(1)) }
+        }
+        if (rightDocument?.dirty == true && rightUri != null) {
+            val rightBytes = rightDocument.text().toByteArray()
+            context.contentResolver.openOutputStream(rightUri, "wt")?.use { it.write(rightBytes) }
+            rightDocument.markSaved()
+            context.contentResolver.query(rightUri, fingerprintCols, null, null, null)
+                ?.use { c -> if (c.moveToFirst()) onRightFingerprintUpdated(c.getLong(0), c.getLong(1)) }
+        }
+    }
+}
+
+/**
+ * Convert a URI string to a java.io.File if it is a plain file:// URI,
+ * returning null for content:// URIs (which cannot be backed up via File API).
+ */
+private fun uriToFileOrNull(uriString: String): File? {
+    return try {
+        val uri = android.net.Uri.parse(uriString)
+        if (uri.scheme == "file") File(uri.path ?: return null) else null
+    } catch (_: Exception) {
+        null
+    }
 }

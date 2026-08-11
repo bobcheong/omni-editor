@@ -93,6 +93,10 @@ class CompareState(
     var mergeMessage by mutableStateOf<String?>(null)
         internal set
 
+    /** True when at least one document has undoable edits (i.e. restore is possible). */
+    val canUndo: Boolean
+        get() = (leftDocument?.undoCount ?: 0) > 0 || (rightDocument?.undoCount ?: 0) > 0
+
     /** Navigate to the next difference. */
     fun nextDiff() {
         if (currentDiffIndex < diffCount - 1) {
@@ -194,6 +198,25 @@ class CompareState(
         mergedHunks = mergedHunks + (0 until result.hunks.size).toSet()
         mergeMessage = "Applied ${acceptResult.hunkCount} changes (${acceptResult.lineCount} lines)"
         return acceptResult.hunkCount
+    }
+
+    /**
+     * Undo all merge edits on both documents, returning each side to its opened state.
+     *
+     * Each document's undo stack is drained completely. Clears the merged-hunk set and
+     * refreshes the in-memory line lists so the UI reflects the restored content.
+     */
+    fun undoAll() {
+        leftDocument?.let { doc ->
+            while (doc.undoCount > 0) doc.undo()
+            leftLines = doc.text().lines()
+        }
+        rightDocument?.let { doc ->
+            while (doc.undoCount > 0) doc.undo()
+            rightLines = doc.text().lines()
+        }
+        mergedHunks = emptySet()
+        mergeMessage = "Restored to original"
     }
 
     /**
