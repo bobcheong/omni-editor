@@ -1,5 +1,6 @@
 package com.omnieditor.app
 
+import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
@@ -9,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -25,6 +27,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.omnieditor.app.home.HomeScreen
+import com.omnieditor.core.diff.ReportGenerator
 import com.omnieditor.core.io.MergeSafety
 import com.omnieditor.core.io.RecentsStore
 import com.omnieditor.core.io.ResultStore
@@ -47,6 +50,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 // ---------------------------------------------------------------------------
@@ -284,6 +290,7 @@ fun OmniNavGraph(
                 rightKey = rightKey,
                 resultStore = resultStore,
                 onNavigateBack = { navController.popBackStack() },
+                navController = navController,
             )
         }
 
@@ -573,20 +580,31 @@ private fun CompareDestination(
     rightKey: String,
     resultStore: ResultStore,
     onNavigateBack: () -> Unit,
+    navController: NavHostController,
 ) {
-    val leftCached = DocumentRegistry.get(leftKey)
-    val rightCached = DocumentRegistry.get(rightKey)
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // Flip state: when true left/right registrations are swapped.
+    var flipped by remember { mutableStateOf(false) }
+    // Increment to force a re-run (bypasses cache).
+    var rerunVersion by remember { mutableIntStateOf(0) }
+
+    // Resolve effective keys and cached docs based on flip state.
+    val effectiveLeftKey = if (flipped) rightKey else leftKey
+    val effectiveRightKey = if (flipped) leftKey else rightKey
+    val leftCached = DocumentRegistry.get(effectiveLeftKey)
+    val rightCached = DocumentRegistry.get(effectiveRightKey)
+
     var compareState by remember { mutableStateOf<CompareState?>(null) }
     var currentRuleSet by remember { mutableStateOf(RuleSet.DEFAULT) }
-    val scope = rememberCoroutineScope()
-    val context = LocalContext.current
 
     // R-27: create PieceTableDocuments for merge write-back.
-    // Remembered so they survive recomposition but are created once per compare session.
-    val leftDocument = remember(leftKey) {
+    // Key on effective keys so documents are recreated when sides are flipped.
+    val leftDocument = remember(effectiveLeftKey, flipped) {
         leftCached?.let { PieceTableDocument.create(it.text) }
     }
-    val rightDocument = remember(rightKey) {
+    val rightDocument = remember(effectiveRightKey, flipped) {
         rightCached?.let { PieceTableDocument.create(it.text) }
     }
 
@@ -597,7 +615,7 @@ private fun CompareDestination(
     var rightInitialSize by remember { mutableLongStateOf(-1L) }
     var rightInitialModified by remember { mutableLongStateOf(-1L) }
 
-    LaunchedEffect(leftKey, rightKey) {
+    LaunchedEffect(effectiveLeftKey, effectiveRightKey, flipped) {
         // R-28: capture size+modifiedAt fingerprints for both sides on open.
         val leftUri = leftCached?.uri?.let { android.net.Uri.parse(it) }
         val rightUri = rightCached?.uri?.let { android.net.Uri.parse(it) }
@@ -629,7 +647,7 @@ private fun CompareDestination(
         }
     }
 
-    LaunchedEffect(leftKey, rightKey, currentRuleSet) {
+    LaunchedEffect(effectiveLeftKey, effectiveRightKey, currentRuleSet, flipped, rerunVersion) {
         if (leftCached != null && rightCached != null) {
             // R-12: size guard — refuse over-threshold files on the compare path.
             val limit = DocumentLimits.COMPARE_MAX_BYTES_PER_SIDE
@@ -641,8 +659,10 @@ private fun CompareDestination(
 
             // R-34a: try to restore a cached result before recomputing,
             // but only when using default rules (cached results used default).
-            val sessionId = "$leftKey-$rightKey"
-            if (currentRuleSet == RuleSet.DEFAULT) {
+            // On re-run (rerunVersion > 0) or flip, skip the cache to get fresh content.
+            val sessionId = "$effectiveLeftKey-$effectiveRightKey"
+            val skipCache = rerunVersion > 0 || flipped
+            if (!skipCache && currentRuleSet == RuleSet.DEFAULT) {
                 val cached = resultStore.load(sessionId)
                 if (cached != null && !cached.stale) {
                     val leftLines = leftCached.text.lines()
@@ -659,8 +679,20 @@ private fun CompareDestination(
             // Show loading state while re-running compare
             compareState = null
 
-            val leftLines = leftCached.text.lines()
-            val rightLines = rightCached.text.lines()
+            // Re-run: reload document text fresh from registry (picks up external changes).
+            val leftText = if (rerunVersion > 0) {
+                DocumentRegistry.get(effectiveLeftKey)?.text ?: leftCached.text
+            } else {
+                leftCached.text
+            }
+            val rightText = if (rerunVersion > 0) {
+                DocumentRegistry.get(effectiveRightKey)?.text ?: rightCached.text
+            } else {
+                rightCached.text
+            }
+
+            val leftLines = leftText.lines()
+            val rightLines = rightText.lines()
             val result = withContext(Dispatchers.Default) {
                 com.omnieditor.core.diff.DiffEngine.compare(
                     leftLineCount = leftLines.size.toLong(),
@@ -703,7 +735,7 @@ private fun CompareDestination(
                     rightInitialSize = rightInitialSize,
                     rightInitialModified = rightInitialModified,
                     backupDir = File(context.cacheDir, "backups"),
-                    sessionId = "$leftKey-$rightKey",
+                    sessionId = "$effectiveLeftKey-$effectiveRightKey",
                     onLeftFingerprintUpdated = { sz, mod ->
                         leftInitialSize = sz; leftInitialModified = mod
                     },
@@ -717,6 +749,57 @@ private fun CompareDestination(
         null
     }
 
+    // R-30: export report — generate unified-diff patch via ReportGenerator and share.
+    val exportReport: () -> Unit = {
+        val state = compareState
+        if (state != null) {
+            val timestamp = DateTimeFormatter
+                .ofPattern("yyyy-MM-dd HH:mm:ss z")
+                .withZone(ZoneId.systemDefault())
+                .format(Instant.now())
+            val meta = ReportGenerator.ReportMeta(
+                leftLabel = leftCached?.label ?: "left",
+                rightLabel = rightCached?.label ?: "right",
+                timestamp = timestamp,
+                rules = currentRuleSet,
+                engineMode = "histogram",
+            )
+            scope.launch {
+                val reportText = withContext(Dispatchers.Default) {
+                    buildString {
+                        append(ReportGenerator.plainTextSummary(state.result, meta))
+                        appendLine()
+                        appendLine("--- Unified Diff Patch ---")
+                        append(ReportGenerator.unifiedDiffPatch(
+                            result = state.result,
+                            leftLines = state.leftLines,
+                            rightLines = state.rightLines,
+                            meta = meta,
+                        ))
+                    }
+                }
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, reportText)
+                    putExtra(
+                        Intent.EXTRA_SUBJECT,
+                        "Compare report: ${meta.leftLabel} vs ${meta.rightLabel}",
+                    )
+                }
+                context.startActivity(Intent.createChooser(shareIntent, "Export report"))
+            }
+        }
+    }
+
+    // R-30: open a single side in the viewer (read-only editor route).
+    val openLeft: (() -> Unit)? = if (leftCached != null) {
+        { navController.navigate("editor/$effectiveLeftKey") }
+    } else null
+
+    val openRight: (() -> Unit)? = if (rightCached != null) {
+        { navController.navigate("editor/$effectiveRightKey") }
+    } else null
+
     CompareScreen(
         state = compareState,
         ruleSet = currentRuleSet,
@@ -725,6 +808,11 @@ private fun CompareDestination(
         rightLabel = rightCached?.label ?: "right",
         onNavigateBack = onNavigateBack,
         onSave = saveFunction,
+        onOpenLeft = openLeft,
+        onOpenRight = openRight,
+        onFlipSides = { flipped = !flipped },
+        onRerunCompare = { rerunVersion++ },
+        onExportReport = exportReport,
     )
 }
 

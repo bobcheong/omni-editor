@@ -49,6 +49,16 @@ fun CompareScreen(
     onSave: (() -> Unit)? = null,
     onMerge: () -> Unit = {},
     onFind: () -> Unit = {},
+    /** Open the left side in the viewer (read-only editor). */
+    onOpenLeft: (() -> Unit)? = null,
+    /** Open the right side in the viewer (read-only editor). */
+    onOpenRight: (() -> Unit)? = null,
+    /** Swap left and right sides and re-run the compare. */
+    onFlipSides: (() -> Unit)? = null,
+    /** Re-read both sides from disk and re-diff. */
+    onRerunCompare: (() -> Unit)? = null,
+    /** Generate and share a report of the current compare result. */
+    onExportReport: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -95,6 +105,11 @@ fun CompareScreen(
                         snackbarHostState.showSnackbar("Restored to original")
                     }
                 },
+                onOpenLeft = onOpenLeft,
+                onOpenRight = onOpenRight,
+                onFlipSides = onFlipSides,
+                onRerunCompare = onRerunCompare,
+                onExportReport = onExportReport,
             )
         },
         bottomBar = {
@@ -295,6 +310,11 @@ private fun CompareTopBar(
     onRulesClick: () -> Unit,
     onSave: (() -> Unit)?,
     onRestoreOriginals: () -> Unit,
+    onOpenLeft: (() -> Unit)?,
+    onOpenRight: (() -> Unit)?,
+    onFlipSides: (() -> Unit)?,
+    onRerunCompare: (() -> Unit)?,
+    onExportReport: (() -> Unit)?,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -348,10 +368,51 @@ private fun CompareTopBar(
                         },
                     )
                 }
-                DropdownMenuItem(text = { Text("Open in editor") }, onClick = { menuExpanded = false })
-                DropdownMenuItem(text = { Text("Flip sides") }, onClick = { menuExpanded = false })
-                DropdownMenuItem(text = { Text("Re-run compare") }, onClick = { menuExpanded = false })
-                DropdownMenuItem(text = { Text("Export report") }, onClick = { menuExpanded = false })
+                if (onOpenLeft != null) {
+                    DropdownMenuItem(
+                        text = { Text("Open left in viewer") },
+                        onClick = {
+                            menuExpanded = false
+                            onOpenLeft()
+                        },
+                    )
+                }
+                if (onOpenRight != null) {
+                    DropdownMenuItem(
+                        text = { Text("Open right in viewer") },
+                        onClick = {
+                            menuExpanded = false
+                            onOpenRight()
+                        },
+                    )
+                }
+                if (onFlipSides != null) {
+                    DropdownMenuItem(
+                        text = { Text("Flip sides") },
+                        onClick = {
+                            menuExpanded = false
+                            onFlipSides()
+                        },
+                    )
+                }
+                if (onRerunCompare != null) {
+                    DropdownMenuItem(
+                        text = { Text("Re-run compare") },
+                        onClick = {
+                            menuExpanded = false
+                            onRerunCompare()
+                        },
+                    )
+                }
+                if (onExportReport != null) {
+                    DropdownMenuItem(
+                        text = { Text("Export report") },
+                        onClick = {
+                            menuExpanded = false
+                            onExportReport()
+                        },
+                    )
+                }
             }
         },
     )
