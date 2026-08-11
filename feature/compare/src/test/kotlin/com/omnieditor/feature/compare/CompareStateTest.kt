@@ -182,6 +182,139 @@ class CompareStateTest {
         rightCovered shouldBe (0 until rightLines.size).map { it.toLong() }
     }
 
+    // ── R-32: 3-way conflict navigation ─────────────────────────────────────
+
+    /**
+     * R-32: conflictCount returns only hunks of type CONFLICT.
+     */
+    @Test
+    fun `R-32 conflictCount counts only CONFLICT hunks`() {
+        val hunks = listOf(
+            Hunk(type = HunkType.CHANGED,  leftStart = 0L, leftEnd = 1L, rightStart = 0L, rightEnd = 1L),
+            Hunk(type = HunkType.CONFLICT, leftStart = 2L, leftEnd = 3L, rightStart = 2L, rightEnd = 3L),
+            Hunk(type = HunkType.ADDED,    leftStart = 4L, leftEnd = 4L, rightStart = 4L, rightEnd = 5L),
+            Hunk(type = HunkType.CONFLICT, leftStart = 6L, leftEnd = 7L, rightStart = 6L, rightEnd = 7L),
+        )
+        val result = CompareResult(
+            hunks = hunks,
+            stats = CompareStats(hunkCount = 4),
+            engineMode = EngineMode.FULL_INDEX,
+            generatedAt = 0L,
+        )
+        val leftLines = (0 until 8).map { "L$it" }
+        val rightLines = (0 until 8).map { "R$it" }
+        val state = CompareState(result, leftLines, rightLines)
+
+        state.conflictCount shouldBe 2
+    }
+
+    /**
+     * R-32: nextConflict() advances to the next CONFLICT hunk, wrapping around.
+     */
+    @Test
+    fun `R-32 nextConflict advances to next CONFLICT hunk`() {
+        val hunks = listOf(
+            Hunk(type = HunkType.CHANGED,  leftStart = 0L, leftEnd = 1L, rightStart = 0L, rightEnd = 1L),
+            Hunk(type = HunkType.CONFLICT, leftStart = 2L, leftEnd = 3L, rightStart = 2L, rightEnd = 3L),
+            Hunk(type = HunkType.CHANGED,  leftStart = 4L, leftEnd = 5L, rightStart = 4L, rightEnd = 5L),
+            Hunk(type = HunkType.CONFLICT, leftStart = 6L, leftEnd = 7L, rightStart = 6L, rightEnd = 7L),
+        )
+        val result = CompareResult(
+            hunks = hunks,
+            stats = CompareStats(hunkCount = 4),
+            engineMode = EngineMode.FULL_INDEX,
+            generatedAt = 0L,
+        )
+        val leftLines = (0 until 8).map { "L$it" }
+        val rightLines = (0 until 8).map { "R$it" }
+        val state = CompareState(result, leftLines, rightLines)
+
+        state.currentDiffIndex shouldBe 0
+        state.nextConflict()
+        state.currentDiffIndex shouldBe 1  // first CONFLICT at index 1
+        state.nextConflict()
+        state.currentDiffIndex shouldBe 3  // second CONFLICT at index 3
+        state.nextConflict()
+        state.currentDiffIndex shouldBe 1  // wraps back to first CONFLICT
+    }
+
+    /**
+     * R-32: prevConflict() moves backward to previous CONFLICT hunk, wrapping around.
+     */
+    @Test
+    fun `R-32 prevConflict moves to previous CONFLICT hunk`() {
+        val hunks = listOf(
+            Hunk(type = HunkType.CONFLICT, leftStart = 0L, leftEnd = 1L, rightStart = 0L, rightEnd = 1L),
+            Hunk(type = HunkType.CHANGED,  leftStart = 2L, leftEnd = 3L, rightStart = 2L, rightEnd = 3L),
+            Hunk(type = HunkType.CONFLICT, leftStart = 4L, leftEnd = 5L, rightStart = 4L, rightEnd = 5L),
+        )
+        val result = CompareResult(
+            hunks = hunks,
+            stats = CompareStats(hunkCount = 3),
+            engineMode = EngineMode.FULL_INDEX,
+            generatedAt = 0L,
+        )
+        val leftLines = (0 until 6).map { "L$it" }
+        val rightLines = (0 until 6).map { "R$it" }
+        val state = CompareState(result, leftLines, rightLines)
+        state.goToDiff(2)
+
+        state.prevConflict()
+        state.currentDiffIndex shouldBe 0  // first CONFLICT at index 0
+        state.prevConflict()
+        state.currentDiffIndex shouldBe 2  // wraps back to last CONFLICT at index 2
+    }
+
+    /**
+     * R-32: nextConflict() and prevConflict() are no-ops when there are no conflicts.
+     */
+    @Test
+    fun `R-32 conflict navigation no-ops when no conflicts present`() {
+        val hunks = listOf(
+            Hunk(type = HunkType.CHANGED, leftStart = 0L, leftEnd = 1L, rightStart = 0L, rightEnd = 1L),
+        )
+        val result = CompareResult(
+            hunks = hunks,
+            stats = CompareStats(hunkCount = 1),
+            engineMode = EngineMode.FULL_INDEX,
+            generatedAt = 0L,
+        )
+        val state = CompareState(result, listOf("a"), listOf("b"))
+        state.nextConflict()
+        state.currentDiffIndex shouldBe 0
+        state.prevConflict()
+        state.currentDiffIndex shouldBe 0
+    }
+
+    /**
+     * R-32: buildAlignedRows() emits CONFLICT_OLD for left side and CONFLICT_NEW for right
+     * side of CONFLICT hunks.
+     */
+    @Test
+    fun `R-32 buildAlignedRows emits CONFLICT_OLD and CONFLICT_NEW row types`() {
+        val hunks = listOf(
+            Hunk(type = HunkType.CONFLICT, leftStart = 0L, leftEnd = 2L, rightStart = 0L, rightEnd = 2L),
+        )
+        val result = CompareResult(
+            hunks = hunks,
+            stats = CompareStats(hunkCount = 1),
+            engineMode = EngineMode.FULL_INDEX,
+            generatedAt = 0L,
+        )
+        val leftLines = listOf("left0", "left1")
+        val rightLines = listOf("right0", "right1")
+        val state = CompareState(result, leftLines, rightLines)
+
+        val rows = state.buildAlignedRows()
+        val conflictOldRows = rows.filter { it.type == RowType.CONFLICT_OLD }
+        val conflictNewRows = rows.filter { it.type == RowType.CONFLICT_NEW }
+
+        conflictOldRows.size shouldBe 2
+        conflictNewRows.size shouldBe 2
+        conflictOldRows.all { it.hunkIndex == 0 } shouldBe true
+        conflictNewRows.all { it.hunkIndex == 0 } shouldBe true
+    }
+
     /**
      * Generate a list of non-overlapping, well-formed hunks within the given left/right bounds.
      *

@@ -219,30 +219,9 @@ private fun SplitPaneRow(
     val isSpacer = lineIdx == null
     val rawText = if (lineIdx != null) lines.getOrElse(lineIdx.toInt()) { "" } else ""
 
-    val bgColor = if (isSpacer) {
-        colors.gutter.copy(alpha = 0.08f)
-    } else {
-        when (row.type) {
-            RowType.ADDED -> colors.addedBg
-            RowType.REMOVED -> colors.removedBg
-            RowType.CHANGED_OLD, RowType.CHANGED_NEW -> colors.changedBg
-            RowType.CONTEXT -> Color.Transparent
-        }
-    }
-    val fgColor = when {
-        isSpacer -> Color.Transparent
-        row.type == RowType.ADDED -> colors.addedFg
-        row.type == RowType.REMOVED -> colors.removedFg
-        row.type == RowType.CHANGED_OLD || row.type == RowType.CHANGED_NEW -> colors.changedFg
-        else -> MaterialTheme.colorScheme.onSurface
-    }
-    val glyph = when {
-        isSpacer -> " "
-        row.type == RowType.ADDED -> "+"
-        row.type == RowType.REMOVED -> "−"
-        row.type == RowType.CHANGED_OLD || row.type == RowType.CHANGED_NEW -> "~"
-        else -> " "
-    }
+    val bgColor = splitPaneBg(isSpacer, row.type, colors)
+    val fgColor = splitPaneFg(isSpacer, row.type, colors)
+    val glyph = splitPaneGlyph(isSpacer, row.type)
     val isCurrentHunk = row.hunkIndex != null && row.hunkIndex == currentHunkIndex
     val isFindMatch = idx in findMatchSet
     val isFocusedMatch = idx == focusedFindRow
@@ -389,6 +368,47 @@ private fun SyncScroll(
     }
 }
 
+/** Background colour for a split-pane row, extracted to reduce [SplitPaneRow] complexity. */
+private fun splitPaneBg(
+    isSpacer: Boolean,
+    type: RowType,
+    colors: com.omnieditor.design.CompareColors,
+): Color = if (isSpacer) {
+    colors.gutter.copy(alpha = 0.08f)
+} else {
+    when (type) {
+        RowType.ADDED -> colors.addedBg
+        RowType.REMOVED -> colors.removedBg
+        RowType.CHANGED_OLD, RowType.CHANGED_NEW -> colors.changedBg
+        RowType.CONFLICT_OLD, RowType.CONFLICT_NEW -> colors.conflictBg
+        RowType.CONTEXT -> Color.Transparent
+    }
+}
+
+/** Foreground colour for a split-pane row, extracted to reduce [SplitPaneRow] complexity. */
+private fun splitPaneFg(
+    isSpacer: Boolean,
+    type: RowType,
+    colors: com.omnieditor.design.CompareColors,
+): Color = when {
+    isSpacer -> Color.Transparent
+    type == RowType.ADDED -> colors.addedFg
+    type == RowType.REMOVED -> colors.removedFg
+    type == RowType.CHANGED_OLD || type == RowType.CHANGED_NEW -> colors.changedFg
+    type == RowType.CONFLICT_OLD || type == RowType.CONFLICT_NEW -> colors.conflictFg
+    else -> Color.Unspecified
+}
+
+/** Gutter glyph for a split-pane row, extracted to reduce [SplitPaneRow] complexity. */
+private fun splitPaneGlyph(isSpacer: Boolean, type: RowType): String = when {
+    isSpacer -> " "
+    type == RowType.ADDED -> "+"
+    type == RowType.REMOVED -> "−"
+    type == RowType.CHANGED_OLD || type == RowType.CHANGED_NEW -> "~"
+    type == RowType.CONFLICT_OLD || type == RowType.CONFLICT_NEW -> "!"
+    else -> " "
+}
+
 /**
  * Compute intra-line highlighted [AnnotatedString] for a split-pane row (R-26).
  *
@@ -407,7 +427,7 @@ private fun splitPaneIntraLine(
     colors: com.omnieditor.design.CompareColors,
 ): AnnotatedString {
     if (isSpacer) return AnnotatedString(rawText)
-    if (side == Side.LEFT && row.type == RowType.CHANGED_OLD) {
+    if (side == Side.LEFT && (row.type == RowType.CHANGED_OLD || row.type == RowType.CONFLICT_OLD)) {
         val leftIdx = lineIdx ?: return AnnotatedString(rawText)
         val hunk = row.hunkIndex?.let { hunks.getOrNull(it) } ?: return AnnotatedString(rawText)
         val rightIdx = hunk.rightStart + (leftIdx - hunk.leftStart)
@@ -416,7 +436,7 @@ private fun splitPaneIntraLine(
         val result = intraLineCache.get(rawText, pairedText, leftIdx, rightIdx, granularity)
         return highlightIntraLine(rawText, result.leftRanges, colors.intraLineOldBg)
     }
-    if (side == Side.RIGHT && row.type == RowType.CHANGED_NEW) {
+    if (side == Side.RIGHT && (row.type == RowType.CHANGED_NEW || row.type == RowType.CONFLICT_NEW)) {
         val rightIdx = lineIdx ?: return AnnotatedString(rawText)
         val hunk = row.hunkIndex?.let { hunks.getOrNull(it) } ?: return AnnotatedString(rawText)
         val leftIdx = hunk.leftStart + (rightIdx - hunk.rightStart)

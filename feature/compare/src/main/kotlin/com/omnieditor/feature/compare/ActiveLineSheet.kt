@@ -16,6 +16,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -37,6 +38,9 @@ import com.omnieditor.design.LocalCompareColors
  * Shows the current line from every side stacked vertically with
  * intra-line highlighting. This is how a phone user sees "side by side"
  * for the line that matters.
+ *
+ * For CONFLICT hunks, resolution buttons are shown: take left, take base (if available),
+ * take right, and a disabled "Edit manually" placeholder (R-32).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,12 +54,20 @@ fun ActiveLineSheet(
     onMergeLeftToRight: (() -> Unit)? = null,
     /** Called when the user taps "→ Accept right" (copy right into left). Null hides the button. */
     onMergeRightToLeft: (() -> Unit)? = null,
+    /**
+     * Base lines for 3-way conflict resolution — null when not in a 3-way merge context.
+     * When non-null and [hunk.type] is CONFLICT, a "Take base" button is shown.
+     */
+    baseLines: List<String>? = null,
+    /** Called when the user taps "Take base" — apply base content as the resolution. Null hides the button. */
+    onTakeBase: (() -> Unit)? = null,
 ) {
     if (!visible || hunk == null) return
 
     val colors = LocalCompareColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val clipboard = LocalClipboardManager.current
+    val isConflict = hunk.type == HunkType.CONFLICT
 
     // Collect left and right text for copy actions.
     val leftText = (hunk.leftStart until hunk.leftEnd)
@@ -76,35 +88,55 @@ fun ActiveLineSheet(
         ) {
             // Header
             Text(
-                text = "Line inspector",
+                text = if (isConflict) "Conflict resolution" else "Line inspector",
                 style = MaterialTheme.typography.titleSmall,
+                color = if (isConflict) colors.conflictFg else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 12.dp),
             )
 
             // Left side lines
             if (hunk.leftEnd > hunk.leftStart) {
-                SideLabel("Left", colors.removedFg)
+                SideLabel(
+                    label = if (isConflict) "Left (yours)" else "Left",
+                    color = if (isConflict) colors.conflictFg else colors.removedFg,
+                )
                 for (i in hunk.leftStart until hunk.leftEnd) {
                     if (i < leftLines.size) {
                         LineContent(
                             lineNumber = i + 1,
                             text = leftLines[i.toInt()],
-                            bgColor = colors.removedBg,
+                            bgColor = if (isConflict) colors.conflictBg else colors.removedBg,
                         )
                     }
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             }
 
+            // Base lines (3-way conflict only)
+            if (isConflict && baseLines != null && baseLines.isNotEmpty()) {
+                SideLabel("Base (common ancestor)", colors.gutter)
+                baseLines.forEachIndexed { idx, line ->
+                    LineContent(
+                        lineNumber = (idx + 1).toLong(),
+                        text = line,
+                        bgColor = Color.Transparent,
+                    )
+                }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            }
+
             // Right side lines
             if (hunk.rightEnd > hunk.rightStart) {
-                SideLabel("Right", colors.addedFg)
+                SideLabel(
+                    label = if (isConflict) "Right (theirs)" else "Right",
+                    color = if (isConflict) colors.conflictFg else colors.addedFg,
+                )
                 for (i in hunk.rightStart until hunk.rightEnd) {
                     if (i < rightLines.size) {
                         LineContent(
                             lineNumber = i + 1,
                             text = rightLines[i.toInt()],
-                            bgColor = colors.addedBg,
+                            bgColor = if (isConflict) colors.conflictBg else colors.addedBg,
                         )
                     }
                 }
@@ -133,8 +165,51 @@ fun ActiveLineSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Merge action buttons (← / →)
-            if (onMergeLeftToRight != null || onMergeRightToLeft != null) {
+            // Conflict resolution buttons (R-32)
+            if (isConflict) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    // Take left
+                    if (onMergeLeftToRight != null) {
+                        Button(
+                            onClick = { onMergeLeftToRight(); onDismiss() },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Take left (yours)")
+                        }
+                    }
+                    // Take base
+                    if (onTakeBase != null) {
+                        Button(
+                            onClick = { onTakeBase(); onDismiss() },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Take base")
+                        }
+                    }
+                    // Take right
+                    if (onMergeRightToLeft != null) {
+                        Button(
+                            onClick = { onMergeRightToLeft(); onDismiss() },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Take right (theirs)")
+                        }
+                    }
+                    // Edit manually — deferred, shown disabled (R-32)
+                    OutlinedButton(
+                        onClick = {},
+                        enabled = false,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Edit manually (not yet available)")
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            } else if (onMergeLeftToRight != null || onMergeRightToLeft != null) {
+                // Regular merge action buttons (← / →)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),

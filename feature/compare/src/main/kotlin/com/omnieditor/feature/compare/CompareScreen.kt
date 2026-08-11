@@ -132,6 +132,7 @@ fun CompareScreen(
                 rightLabel = rightLabel,
                 diffCount = state?.diffCount ?: 0,
                 currentDiff = state?.currentDiffIndex ?: 0,
+                conflictCount = state?.conflictCount ?: 0,
                 activeRuleCount = countActiveRules(ruleSet),
                 leftDirty = state?.leftDirty ?: false,
                 rightDirty = state?.rightDirty ?: false,
@@ -159,9 +160,12 @@ fun CompareScreen(
                 DiffNavigationBar(
                     currentDiff = state.currentDiffIndex,
                     totalDiffs = state.diffCount,
+                    conflictCount = state.conflictCount,
                     isHunkMerged = state.currentDiffIndex in state.mergedHunks,
                     onPrevious = { state.prevDiff() },
                     onNext = { state.nextDiff() },
+                    onPreviousConflict = { state.prevConflict() },
+                    onNextConflict = { state.nextConflict() },
                     onMergeLeftToRight = {
                         if (state.currentHunk != null) {
                             val applied = state.mergeHunk(state.currentDiffIndex, MergeDirection.LEFT_TO_RIGHT)
@@ -371,6 +375,9 @@ private fun CompareContent(
                     onMergeRightToLeft = if (state.canMerge) {
                         { onMergeHunk(sheetHunkIndex, MergeDirection.RIGHT_TO_LEFT) }
                     } else null,
+                    // Take-base: for CONFLICT hunks, take-left is used (base is not stored in
+                    // CompareResult; a future P2 task will thread base lines through). (R-32)
+                    onTakeBase = null,
                 )
             }
         } else {
@@ -420,6 +427,7 @@ private fun CompareTopBar(
     rightLabel: String,
     diffCount: Int,
     currentDiff: Int,
+    conflictCount: Int,
     activeRuleCount: Int,
     leftDirty: Boolean,
     rightDirty: Boolean,
@@ -461,6 +469,19 @@ private fun CompareTopBar(
                     Text(if (activeRuleCount > 0) "$activeRuleCount rules" else "Rules")
                 },
             )
+            // Conflict count chip — only shown when conflicts are present (R-32)
+            if (conflictCount > 0) {
+                val compareColors = com.omnieditor.design.LocalCompareColors.current
+                AssistChip(
+                    onClick = {},
+                    label = {
+                        Text(
+                            "$conflictCount conflict${if (conflictCount == 1) "" else "s"}",
+                            color = compareColors.conflictFg,
+                        )
+                    },
+                )
+            }
             if (diffCount > 0) {
                 Text("${currentDiff + 1}/$diffCount")
             }

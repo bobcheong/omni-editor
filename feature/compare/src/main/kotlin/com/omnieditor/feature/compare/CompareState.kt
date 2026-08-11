@@ -85,6 +85,9 @@ class CompareState(
     /** Total number of differences. */
     val diffCount: Int get() = result.hunks.size
 
+    /** Number of CONFLICT hunks in the current result. */
+    val conflictCount: Int get() = result.hunks.count { it.type == HunkType.CONFLICT }
+
     /** Current filter mode. */
     var filterMode by mutableStateOf(FilterMode.ALL)
 
@@ -136,6 +139,28 @@ class CompareState(
     /** Jump to a specific difference by index. */
     fun goToDiff(index: Int) {
         currentDiffIndex = index.coerceIn(0, maxOf(diffCount - 1, 0))
+    }
+
+    /**
+     * Jump to the next CONFLICT hunk after the current index.
+     * Wraps around if needed. No-op when there are no conflicts.
+     */
+    fun nextConflict() {
+        val conflicts = result.hunks.indices.filter { result.hunks[it].type == HunkType.CONFLICT }
+        if (conflicts.isEmpty()) return
+        val next = conflicts.firstOrNull { it > currentDiffIndex } ?: conflicts.first()
+        currentDiffIndex = next
+    }
+
+    /**
+     * Jump to the previous CONFLICT hunk before the current index.
+     * Wraps around if needed. No-op when there are no conflicts.
+     */
+    fun prevConflict() {
+        val conflicts = result.hunks.indices.filter { result.hunks[it].type == HunkType.CONFLICT }
+        if (conflicts.isEmpty()) return
+        val prev = conflicts.lastOrNull { it < currentDiffIndex } ?: conflicts.last()
+        currentDiffIndex = prev
     }
 
     /** Get the currently focused hunk. */
@@ -345,7 +370,11 @@ class CompareState(
                                 side = Side.LEFT,
                                 lineNumber = i,
                                 text = leftLines[i.toInt()],
-                                type = if (hunk.type == HunkType.REMOVED) RowType.REMOVED else RowType.CHANGED_OLD,
+                                type = when (hunk.type) {
+                                    HunkType.REMOVED -> RowType.REMOVED
+                                    HunkType.CONFLICT -> RowType.CONFLICT_OLD
+                                    else -> RowType.CHANGED_OLD
+                                },
                                 hunkIndex = hunkIdx,
                             )
                         )
@@ -359,7 +388,11 @@ class CompareState(
                                 side = Side.RIGHT,
                                 lineNumber = i,
                                 text = rightLines[i.toInt()],
-                                type = if (hunk.type == HunkType.ADDED) RowType.ADDED else RowType.CHANGED_NEW,
+                                type = when (hunk.type) {
+                                    HunkType.ADDED -> RowType.ADDED
+                                    HunkType.CONFLICT -> RowType.CONFLICT_NEW
+                                    else -> RowType.CHANGED_NEW
+                                },
                                 hunkIndex = hunkIdx,
                             )
                         )
@@ -449,6 +482,10 @@ enum class RowType {
     REMOVED,
     CHANGED_OLD,
     CHANGED_NEW,
+    /** Left side of a CONFLICT hunk (the "old" side in the conflict). */
+    CONFLICT_OLD,
+    /** Right side of a CONFLICT hunk (the "new" side in the conflict). */
+    CONFLICT_NEW,
 }
 
 /**

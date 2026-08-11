@@ -58,7 +58,11 @@ fun buildAlignedRows(
         }
 
         // Emit removed / changed-old rows (left side of hunk, right is spacer).
-        val oldType = if (hunk.type == HunkType.REMOVED) RowType.REMOVED else RowType.CHANGED_OLD
+        val oldType = when (hunk.type) {
+            HunkType.REMOVED -> RowType.REMOVED
+            HunkType.CONFLICT -> RowType.CONFLICT_OLD
+            else -> RowType.CHANGED_OLD
+        }
         for (i in hunk.leftStart until hunk.leftEnd) {
             rows.add(
                 AlignedRow(
@@ -71,7 +75,11 @@ fun buildAlignedRows(
         }
 
         // Emit added / changed-new rows (right side of hunk, left is spacer).
-        val newType = if (hunk.type == HunkType.ADDED) RowType.ADDED else RowType.CHANGED_NEW
+        val newType = when (hunk.type) {
+            HunkType.ADDED -> RowType.ADDED
+            HunkType.CONFLICT -> RowType.CONFLICT_NEW
+            else -> RowType.CHANGED_NEW
+        }
         for (i in hunk.rightStart until hunk.rightEnd) {
             rows.add(
                 AlignedRow(

@@ -26,20 +26,24 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.omnieditor.design.LocalCompareColors
 
 /**
  * Bottom navigation bar for the compare view (OE-TXT-2).
  *
  * Previous/next difference controls, difference counter "7 / 42",
- * merge direction arrows, accept-all action, and find.
+ * conflict navigation (R-32), merge direction arrows, accept-all action, and find.
  */
 @Composable
 fun DiffNavigationBar(
     currentDiff: Int,
     totalDiffs: Int,
+    conflictCount: Int = 0,
     isHunkMerged: Boolean = false,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    onPreviousConflict: () -> Unit = {},
+    onNextConflict: () -> Unit = {},
     onMergeLeftToRight: () -> Unit = {},
     onMergeRightToLeft: () -> Unit = {},
     onAcceptAllLeftToRight: () -> Unit = {},
@@ -85,6 +89,40 @@ fun DiffNavigationBar(
                 modifier = Modifier.semantics { contentDescription = "Next difference" },
             ) {
                 Icon(Icons.Default.KeyboardArrowDown, "Next")
+            }
+
+            // Conflict navigation — only shown when conflicts exist (R-32)
+            if (conflictCount > 0) {
+                val conflictColors = LocalCompareColors.current
+                IconButton(
+                    onClick = onPreviousConflict,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .semantics { contentDescription = "Previous conflict" },
+                ) {
+                    Text(
+                        "!",
+                        color = conflictColors.conflictFg,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+                Text(
+                    text = "$conflictCount !",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = conflictColors.conflictFg,
+                )
+                IconButton(
+                    onClick = onNextConflict,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .semantics { contentDescription = "Next conflict" },
+                ) {
+                    Text(
+                        "!",
+                        color = conflictColors.conflictFg,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
             }
 
             // Merge left-to-right (right gets left's content)

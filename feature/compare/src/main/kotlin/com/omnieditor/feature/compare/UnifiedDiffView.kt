@@ -151,6 +151,8 @@ private fun UnifiedAlignedRow(
         RowType.REMOVED -> Triple(colors.removedBg, colors.removedFg, "−")
         RowType.CHANGED_OLD -> Triple(colors.changedBg, colors.changedFg, "~")
         RowType.CHANGED_NEW -> Triple(colors.changedBg, colors.changedFg, "~")
+        RowType.CONFLICT_OLD -> Triple(colors.conflictBg, colors.conflictFg, "!")
+        RowType.CONFLICT_NEW -> Triple(colors.conflictBg, colors.conflictFg, "!")
         RowType.CONTEXT -> Triple(Color.Transparent, colors.gutter, " ")
     }
 
@@ -261,6 +263,8 @@ private fun buildA11yDescription(row: AlignedRow, lineNum: Long, text: String): 
         RowType.REMOVED -> "Removed from left, line $num: $text"
         RowType.CHANGED_OLD -> "Changed on left, line $num: $text"
         RowType.CHANGED_NEW -> "Changed on right, line $num: $text"
+        RowType.CONFLICT_OLD -> "Conflict on left, line $num: $text"
+        RowType.CONFLICT_NEW -> "Conflict on right, line $num: $text"
         RowType.CONTEXT -> "Unchanged, line $num"
     }
 }
