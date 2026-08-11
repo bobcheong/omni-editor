@@ -6,11 +6,23 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.omnieditor.core.diff.MergeEngine
+import com.omnieditor.core.io.PieceTableDocument
 import com.omnieditor.core.model.CompareResult
 import com.omnieditor.core.model.Granularity
 import com.omnieditor.core.model.Hunk
 import com.omnieditor.core.model.HunkType
 import com.omnieditor.core.model.RuleSet
+
+/**
+ * Direction for merge operations.
+ */
+enum class MergeDirection {
+    /** Copy from left to right (right becomes like left). */
+    LEFT_TO_RIGHT,
+    /** Copy from right to left (left becomes like right). */
+    RIGHT_TO_LEFT,
+}
 
 /**
  * Observable state for the compare view.
@@ -20,11 +32,27 @@ import com.omnieditor.core.model.RuleSet
  */
 @Stable
 class CompareState(
-    val result: CompareResult,
-    val leftLines: List<String>,
-    val rightLines: List<String>,
+    result: CompareResult,
+    leftLines: List<String>,
+    rightLines: List<String>,
     val ruleSet: RuleSet = RuleSet.DEFAULT,
+    /** Optional document backing the left side — enables merge write-back. */
+    val leftDocument: PieceTableDocument? = null,
+    /** Optional document backing the right side — enables merge write-back. */
+    val rightDocument: PieceTableDocument? = null,
 ) {
+    /** The current compare result — updates after merges trigger re-compare. */
+    var result by mutableStateOf(result)
+        internal set
+
+    /** Current left-side lines — updates after merges. */
+    var leftLines by mutableStateOf(leftLines)
+        internal set
+
+    /** Current right-side lines — updates after merges. */
+    var rightLines by mutableStateOf(rightLines)
+        internal set
+
     /**
      * Intra-line diff cache — keyed by (leftLineIdx, rightLineIdx), cleared when [result]
      * changes. Exposed so composables can pass it into rendering utilities without
@@ -48,6 +76,23 @@ class CompareState(
     var firstVisibleLine by mutableLongStateOf(0L)
         internal set
 
+    /** Set of hunk indices already merged (prevents double-merge). */
+    var mergedHunks by mutableStateOf(emptySet<Int>())
+        internal set
+
+    /** Whether the left document is dirty (has unsaved merge changes). */
+    val leftDirty: Boolean get() = leftDocument?.dirty ?: false
+
+    /** Whether the right document is dirty (has unsaved merge changes). */
+    val rightDirty: Boolean get() = rightDocument?.dirty ?: false
+
+    /** True when documents are available for merge write-back. */
+    val canMerge: Boolean get() = leftDocument != null || rightDocument != null
+
+    /** Message shown after a merge operation. */
+    var mergeMessage by mutableStateOf<String?>(null)
+        internal set
+
     /** Navigate to the next difference. */
     fun nextDiff() {
         if (currentDiffIndex < diffCount - 1) {
@@ -69,6 +114,145 @@ class CompareState(
 
     /** Get the currently focused hunk. */
     val currentHunk: Hunk? get() = result.hunks.getOrNull(currentDiffIndex)
+
+    /**
+     * Merge a single hunk in the given direction.
+     *
+     * Applies the change to the target document via [PieceTableDocument.replaceAll]
+     * (one undo step). Updates the in-memory line lists and marks the hunk as merged.
+     *
+     * Returns true if the merge was applied, false if skipped (already merged or no document).
+     */
+    fun mergeHunk(hunkIndex: Int, direction: MergeDirection): Boolean {
+        if (hunkIndex in mergedHunks) return false
+
+        val targetDoc = when (direction) {
+            MergeDirection.LEFT_TO_RIGHT -> rightDocument
+            MergeDirection.RIGHT_TO_LEFT -> leftDocument
+        } ?: return false
+
+        val engineDirection = when (direction) {
+            MergeDirection.LEFT_TO_RIGHT -> MergeEngine.Direction.LEFT_TO_RIGHT
+            MergeDirection.RIGHT_TO_LEFT -> MergeEngine.Direction.RIGHT_TO_LEFT
+        }
+
+        val action = MergeEngine.mergeHunk(
+            hunkIndex, result, leftLines, rightLines, engineDirection,
+        )
+
+        // Apply to the target document as one undo step
+        applyActionToDocument(targetDoc, action)
+
+        // Update in-memory lines from the document
+        refreshLinesFromDocument(direction, targetDoc)
+
+        mergedHunks = mergedHunks + hunkIndex
+        mergeMessage = "Merged hunk ${hunkIndex + 1}: ${action.replacementLines.size} lines"
+        return true
+    }
+
+    /**
+     * Accept all unmerged hunks in one direction as a single batched edit.
+     *
+     * Builds the complete target content once and issues a single [replaceAll].
+     * Returns the number of hunks applied, or 0 if nothing to do.
+     */
+    fun acceptAll(direction: MergeDirection): Int {
+        val targetDoc = when (direction) {
+            MergeDirection.LEFT_TO_RIGHT -> rightDocument
+            MergeDirection.RIGHT_TO_LEFT -> leftDocument
+        } ?: return 0
+
+        val engineDirection = when (direction) {
+            MergeDirection.LEFT_TO_RIGHT -> MergeEngine.Direction.LEFT_TO_RIGHT
+            MergeDirection.RIGHT_TO_LEFT -> MergeEngine.Direction.RIGHT_TO_LEFT
+        }
+
+        // Get the target lines and apply all actions to build complete new content
+        val targetLines = when (direction) {
+            MergeDirection.LEFT_TO_RIGHT -> rightLines.toMutableList()
+            MergeDirection.RIGHT_TO_LEFT -> leftLines.toMutableList()
+        }
+
+        val acceptResult = MergeEngine.acceptAll(
+            result, leftLines, rightLines, engineDirection,
+        )
+
+        if (acceptResult.hunkCount == 0) return 0
+
+        // Apply actions to the in-memory list to build the new content
+        MergeEngine.applyActions(targetLines, acceptResult.actions)
+
+        // Build the complete new content and issue one replaceAll
+        val newContent = targetLines.joinToString("\n")
+        targetDoc.replaceAll(0, targetDoc.length, newContent)
+
+        // Refresh lines from document
+        refreshLinesFromDocument(direction, targetDoc)
+
+        // Mark all hunks as merged
+        mergedHunks = mergedHunks + (0 until result.hunks.size).toSet()
+        mergeMessage = "Applied ${acceptResult.hunkCount} changes (${acceptResult.lineCount} lines)"
+        return acceptResult.hunkCount
+    }
+
+    /**
+     * Apply a single [MergeAction] to a [PieceTableDocument] as one undo step.
+     */
+    private fun applyActionToDocument(
+        doc: PieceTableDocument,
+        action: MergeEngine.MergeAction,
+    ) {
+        // Calculate character offsets from line numbers
+        val startOffset = lineToCharOffset(doc, action.targetStartLine)
+        val endOffset = lineToCharOffset(doc, action.targetEndLine)
+
+        val replacementText = if (action.replacementLines.isEmpty()) {
+            ""
+        } else {
+            // Join with newline; if we're replacing a range that ends before the last line,
+            // add a trailing newline to maintain line structure
+            val joined = action.replacementLines.joinToString("\n")
+            if (action.targetEndLine < doc.lineCount) "$joined\n" else joined
+        }
+
+        val deleteText = if (startOffset < endOffset) {
+            // If deleting lines that aren't the last, include trailing newline
+            val rawLength = endOffset - startOffset
+            rawLength
+        } else {
+            0
+        }
+
+        doc.replaceAll(startOffset, deleteText, replacementText)
+    }
+
+    /**
+     * Calculate the character offset of a given line number in the document.
+     */
+    private fun lineToCharOffset(doc: PieceTableDocument, lineNumber: Long): Int {
+        if (lineNumber <= 0) return 0
+        // Walk through lines to find the character offset
+        var offset = 0
+        for (i in 0 until lineNumber.coerceAtMost(doc.lineCount)) {
+            val line = doc.line(i)
+            offset += line.length
+            // Add 1 for the newline character (except after the last line)
+            if (i < doc.lineCount - 1) offset += 1
+        }
+        return offset
+    }
+
+    /**
+     * Refresh the in-memory line list for the target side from its document.
+     */
+    private fun refreshLinesFromDocument(direction: MergeDirection, doc: PieceTableDocument) {
+        val newLines = doc.text().lines()
+        when (direction) {
+            MergeDirection.LEFT_TO_RIGHT -> rightLines = newLines
+            MergeDirection.RIGHT_TO_LEFT -> leftLines = newLines
+        }
+    }
 
     /**
      * Build the shared alignment model for both unified and split views (R-25).

@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
@@ -28,16 +31,21 @@ import androidx.compose.ui.unit.sp
  * Bottom navigation bar for the compare view (OE-TXT-2).
  *
  * Previous/next difference controls, difference counter "7 / 42",
- * merge action, and find.
+ * merge direction arrows, accept-all action, and find.
  */
 @Composable
 fun DiffNavigationBar(
     currentDiff: Int,
     totalDiffs: Int,
+    isHunkMerged: Boolean = false,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
-    onMerge: () -> Unit,
+    onMergeLeftToRight: () -> Unit = {},
+    onMergeRightToLeft: () -> Unit = {},
+    onAcceptAllLeftToRight: () -> Unit = {},
+    onAcceptAllRightToLeft: () -> Unit = {},
     onFind: () -> Unit,
+    canMerge: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val counterText = if (totalDiffs > 0) "${currentDiff + 1} / $totalDiffs" else "No differences"
@@ -50,7 +58,7 @@ fun DiffNavigationBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp)
-                .padding(horizontal = 8.dp),
+                .padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -79,9 +87,42 @@ fun DiffNavigationBar(
                 Icon(Icons.Default.KeyboardArrowDown, "Next")
             }
 
-            // Merge
-            TextButton(onClick = onMerge, enabled = totalDiffs > 0) {
-                Text("Merge")
+            // Merge left-to-right (right gets left's content)
+            IconButton(
+                onClick = onMergeLeftToRight,
+                enabled = canMerge && totalDiffs > 0 && !isHunkMerged,
+                modifier = Modifier
+                    .size(36.dp)
+                    .semantics { contentDescription = "Merge left to right" },
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = "Merge left to right",
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+
+            // Merge right-to-left (left gets right's content)
+            IconButton(
+                onClick = onMergeRightToLeft,
+                enabled = canMerge && totalDiffs > 0 && !isHunkMerged,
+                modifier = Modifier
+                    .size(36.dp)
+                    .semantics { contentDescription = "Merge right to left" },
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Merge right to left",
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+
+            // Accept all (text button with direction indicator)
+            TextButton(
+                onClick = onAcceptAllLeftToRight,
+                enabled = canMerge && totalDiffs > 0,
+            ) {
+                Text("All", style = MaterialTheme.typography.labelSmall)
             }
 
             // Find

@@ -34,6 +34,7 @@ import com.omnieditor.core.model.Session
 import com.omnieditor.core.model.RuleSet
 import com.omnieditor.core.model.SourceKind
 import com.omnieditor.core.model.SourceRef
+import com.omnieditor.core.io.PieceTableDocument
 import com.omnieditor.feature.compare.CompareScreen
 import com.omnieditor.feature.compare.CompareState
 import com.omnieditor.feature.editor.EditorScreen
@@ -578,6 +579,15 @@ private fun CompareDestination(
     var currentRuleSet by remember { mutableStateOf(RuleSet.DEFAULT) }
     val scope = rememberCoroutineScope()
 
+    // R-27: create PieceTableDocuments for merge write-back.
+    // Remembered so they survive recomposition but are created once per compare session.
+    val leftDocument = remember(leftKey) {
+        leftCached?.let { PieceTableDocument.create(it.text) }
+    }
+    val rightDocument = remember(rightKey) {
+        rightCached?.let { PieceTableDocument.create(it.text) }
+    }
+
     LaunchedEffect(leftKey, rightKey, currentRuleSet) {
         if (leftCached != null && rightCached != null) {
             // R-12: size guard — refuse over-threshold files on the compare path.
@@ -596,7 +606,11 @@ private fun CompareDestination(
                 if (cached != null && !cached.stale) {
                     val leftLines = leftCached.text.lines()
                     val rightLines = rightCached.text.lines()
-                    compareState = CompareState(cached, leftLines, rightLines)
+                    compareState = CompareState(
+                        cached, leftLines, rightLines,
+                        leftDocument = leftDocument,
+                        rightDocument = rightDocument,
+                    )
                     return@LaunchedEffect
                 }
             }
@@ -615,7 +629,11 @@ private fun CompareDestination(
                     rules = currentRuleSet,
                 )
             }
-            compareState = CompareState(result, leftLines, rightLines)
+            compareState = CompareState(
+                result, leftLines, rightLines,
+                leftDocument = leftDocument,
+                rightDocument = rightDocument,
+            )
             // R-34a: persist result so it survives process death (only for default rules).
             if (currentRuleSet == RuleSet.DEFAULT) {
                 scope.launch { resultStore.store(sessionId, result) }

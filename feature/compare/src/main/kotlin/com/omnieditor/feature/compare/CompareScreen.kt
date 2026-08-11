@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -22,6 +23,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,7 +33,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.omnieditor.core.diff.MergeEngine
 import com.omnieditor.core.model.RuleSet
 import kotlinx.coroutines.launch
 
@@ -52,6 +53,7 @@ fun CompareScreen(
     val scope = rememberCoroutineScope()
     var showActiveLineSheet by remember { mutableStateOf(false) }
     var showRuleSheet by remember { mutableStateOf(false) }
+    var showAcceptAllConfirm by remember { mutableStateOf<MergeDirection?>(null) }
 
     Scaffold(
         topBar = {
@@ -61,6 +63,8 @@ fun CompareScreen(
                 diffCount = state?.diffCount ?: 0,
                 currentDiff = state?.currentDiffIndex ?: 0,
                 activeRuleCount = countActiveRules(ruleSet),
+                leftDirty = state?.leftDirty ?: false,
+                rightDirty = state?.rightDirty ?: false,
                 onNavigateBack = onNavigateBack,
                 onRulesClick = { showRuleSheet = true },
             )
@@ -70,27 +74,51 @@ fun CompareScreen(
                 DiffNavigationBar(
                     currentDiff = state.currentDiffIndex,
                     totalDiffs = state.diffCount,
+                    isHunkMerged = state.currentDiffIndex in state.mergedHunks,
                     onPrevious = { state.prevDiff() },
                     onNext = { state.nextDiff() },
-                    onMerge = {
-                        // Merge current hunk left → right
+                    onMergeLeftToRight = {
                         if (state.currentHunk != null) {
-                            val action = MergeEngine.mergeHunk(
+                            val applied = state.mergeHunk(
                                 state.currentDiffIndex,
-                                state.result,
-                                state.leftLines,
-                                state.rightLines,
-                                MergeEngine.Direction.LEFT_TO_RIGHT,
+                                MergeDirection.LEFT_TO_RIGHT,
                             )
                             scope.launch {
-                                snackbarHostState.showSnackbar(
-                                    "Merged hunk ${state.currentDiffIndex + 1}: " +
-                                        "${action.replacementLines.size} lines copied"
-                                )
+                                if (applied) {
+                                    snackbarHostState.showSnackbar(
+                                        state.mergeMessage ?: "Merged"
+                                    )
+                                } else {
+                                    snackbarHostState.showSnackbar("Already merged")
+                                }
                             }
                         }
                     },
+                    onMergeRightToLeft = {
+                        if (state.currentHunk != null) {
+                            val applied = state.mergeHunk(
+                                state.currentDiffIndex,
+                                MergeDirection.RIGHT_TO_LEFT,
+                            )
+                            scope.launch {
+                                if (applied) {
+                                    snackbarHostState.showSnackbar(
+                                        state.mergeMessage ?: "Merged"
+                                    )
+                                } else {
+                                    snackbarHostState.showSnackbar("Already merged")
+                                }
+                            }
+                        }
+                    },
+                    onAcceptAllLeftToRight = {
+                        showAcceptAllConfirm = MergeDirection.LEFT_TO_RIGHT
+                    },
+                    onAcceptAllRightToLeft = {
+                        showAcceptAllConfirm = MergeDirection.RIGHT_TO_LEFT
+                    },
                     onFind = onFind,
+                    canMerge = state.canMerge,
                 )
             }
         },
@@ -150,6 +178,42 @@ fun CompareScreen(
             }
         }
 
+        // Accept-all confirmation dialog
+        showAcceptAllConfirm?.let { direction ->
+            val dirLabel = when (direction) {
+                MergeDirection.LEFT_TO_RIGHT -> "left to right"
+                MergeDirection.RIGHT_TO_LEFT -> "right to left"
+            }
+            val hunkCount = state?.diffCount ?: 0
+            AlertDialog(
+                onDismissRequest = { showAcceptAllConfirm = null },
+                title = { Text("Accept all changes?") },
+                text = {
+                    Text("Apply $hunkCount changes $dirLabel? This is one undo step.")
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showAcceptAllConfirm = null
+                        if (state != null) {
+                            val count = state.acceptAll(direction)
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    state.mergeMessage ?: "Applied $count changes"
+                                )
+                            }
+                        }
+                    }) {
+                        Text("Apply")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAcceptAllConfirm = null }) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
+
         // Rule set bottom sheet
         if (showRuleSheet) {
             RuleSetSheet(
@@ -169,13 +233,25 @@ private fun CompareTopBar(
     diffCount: Int,
     currentDiff: Int,
     activeRuleCount: Int,
+    leftDirty: Boolean,
+    rightDirty: Boolean,
     onNavigateBack: () -> Unit,
     onRulesClick: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
+    val dirtyIndicator = buildString {
+        if (leftDirty || rightDirty) {
+            append(" (")
+            if (leftDirty) append("L")
+            if (leftDirty && rightDirty) append(",")
+            if (rightDirty) append("R")
+            append(" modified)")
+        }
+    }
+
     TopAppBar(
-        title = { Text("$leftLabel ⇄ $rightLabel", maxLines = 1) },
+        title = { Text("$leftLabel \u21C4 $rightLabel$dirtyIndicator", maxLines = 1) },
         navigationIcon = {
             IconButton(onClick = onNavigateBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
