@@ -9,9 +9,113 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+
+// ── Syntax token colour schemes (R-19) ──────────────────────────────────────
+
+/**
+ * Token colour scheme for syntax highlighting.
+ * Three variants are provided: light, dark, and high-contrast.
+ * All values are our own (IND-4). Each colour was chosen for readability against
+ * its respective surface.
+ */
+data class SyntaxColorScheme(
+    val keyword: Color,
+    val string: Color,
+    val comment: Color,
+    val number: Color,
+    val type: Color,
+    val function: Color,
+    val operator: Color,
+    val annotation: Color,
+    val tag: Color,
+    val attribute: Color,
+    val heading: Color,
+    val constant: Color,
+    val punctuation: Color,
+    /** Colour for plain (unclassified) text. */
+    val default: Color,
+)
+
+private val LightSyntaxColors = SyntaxColorScheme(
+    keyword   = Color(0xFF0033B3),
+    string    = Color(0xFF067D17),
+    comment   = Color(0xFF787878),
+    number    = Color(0xFF1750EB),
+    type      = Color(0xFF0052A3),
+    function  = Color(0xFF00627A),
+    operator  = Color(0xFF000000),
+    annotation = Color(0xFF9E6D00),
+    tag       = Color(0xFF6E2DA0),
+    attribute = Color(0xFF174AD4),
+    heading   = Color(0xFF0033B3),
+    constant  = Color(0xFF6E2DA0),
+    punctuation = Color(0xFF000000),
+    default   = Color(0xFF1F1F1F),
+)
+
+private val DarkSyntaxColors = SyntaxColorScheme(
+    keyword   = Color(0xFF6FA0DE),
+    string    = Color(0xFF6AAB73),
+    comment   = Color(0xFF7A7E85),
+    number    = Color(0xFF6897BB),
+    type      = Color(0xFF54A5D6),
+    function  = Color(0xFF56A8C7),
+    operator  = Color(0xFFBABABA),
+    annotation = Color(0xFFBBB529),
+    tag       = Color(0xFFCC7832),
+    attribute = Color(0xFFBABABA),
+    heading   = Color(0xFF6FA0DE),
+    constant  = Color(0xFF9876AA),
+    punctuation = Color(0xFFBABABA),
+    default   = Color(0xFFBABABA),
+)
+
+private val HighContrastSyntaxColors = SyntaxColorScheme(
+    keyword   = Color(0xFFFFFFFF),
+    string    = Color(0xFF7EC699),
+    comment   = Color(0xFF999999),
+    number    = Color(0xFFF08D49),
+    type      = Color(0xFF67CDBE),
+    function  = Color(0xFFDCDCAA),
+    operator  = Color(0xFFFFFFFF),
+    annotation = Color(0xFFFFD700),
+    tag       = Color(0xFF569CD6),
+    attribute = Color(0xFF9CDCFE),
+    heading   = Color(0xFFFFFFFF),
+    constant  = Color(0xFF569CD6),
+    punctuation = Color(0xFFFFFFFF),
+    default   = Color(0xFFFFFFFF),
+)
+
+/**
+ * Provides the correct [SyntaxColorScheme] for the current theme.
+ *
+ * Call this once per composable scope (it's stable and [remember]-ed internally
+ * to avoid re-allocation on every recomposition).
+ */
+object SyntaxColors {
+    @Composable
+    fun forTheme(
+        isDark: Boolean = isSystemInDarkTheme(),
+        isHighContrast: Boolean = false,
+    ): SyntaxColorScheme {
+        return remember(isDark, isHighContrast) {
+            when {
+                isHighContrast -> HighContrastSyntaxColors
+                isDark -> DarkSyntaxColors
+                else -> LightSyntaxColors
+            }
+        }
+    }
+}
+
+val LocalSyntaxColors = staticCompositionLocalOf { LightSyntaxColors }
+
+// ── Compare colours ──────────────────────────────────────────────────────────
 
 /**
  * IND-4: this palette is our own. Added/removed green and red are an industry-wide
@@ -70,7 +174,8 @@ fun OmniTheme(
         else -> LightScheme
     }
     CompositionLocalProvider(
-        LocalCompareColors provides if (darkTheme) DarkCompareColors else LightCompareColors
+        LocalCompareColors provides if (darkTheme) DarkCompareColors else LightCompareColors,
+        LocalSyntaxColors provides if (darkTheme) DarkSyntaxColors else LightSyntaxColors,
     ) {
         MaterialTheme(colorScheme = scheme, content = content)
     }

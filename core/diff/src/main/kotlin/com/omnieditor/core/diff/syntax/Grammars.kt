@@ -8,6 +8,7 @@ private fun cLikeGrammar(
     types: List<String>,
     hasAnnotations: Boolean = false,
     annotationChar: Char = '@',
+    hasMultilineStrings: Boolean = false,
 ): Grammar {
     val rules = mutableListOf<GrammarRule>()
 
@@ -46,7 +47,7 @@ private fun cLikeGrammar(
     // Punctuation
     rules.add(GrammarRule("""[{}()\[\];,.]""", TokenType.PUNCTUATION))
 
-    return Grammar(name, rules)
+    return Grammar(name, rules, hasMultilineStrings = hasMultilineStrings)
 }
 
 // ── Language-specific keyword/type lists ──
@@ -149,6 +150,7 @@ private fun pythonGrammar(): Grammar {
         "pass", "break", "continue", "lambda", "and", "or", "not", "in", "is",
         "global", "nonlocal", "del", "assert", "async", "await", "match", "case",
     )
+    // Python supports triple-quoted strings (""" and ''') that span multiple lines.
     return Grammar("python", listOf(
         GrammarRule("""#.*""", TokenType.COMMENT),
         GrammarRule("""\"\"\"[\s\S]*?\"\"\"""", TokenType.STRING),
@@ -163,7 +165,7 @@ private fun pythonGrammar(): Grammar {
         GrammarRule("""\b(?:int|float|str|bool|list|dict|tuple|set|bytes|type|object)\b""", TokenType.TYPE),
         GrammarRule("""[+\-*/%=!<>&|^~@:]+""", TokenType.OPERATOR),
         GrammarRule("""[{}()\[\];,.]""", TokenType.PUNCTUATION),
-    ))
+    ), hasMultilineStrings = true)
 }
 
 private fun shellGrammar(): Grammar {
@@ -260,7 +262,8 @@ private fun markdownGrammar(): Grammar {
  * Rules are ordered by priority: first match wins.
  */
 internal val GRAMMARS: Map<String, Grammar> = buildMap {
-    put("kotlin", cLikeGrammar("kotlin", kotlinKeywords, kotlinTypes, hasAnnotations = true))
+    // Kotlin supports triple-quoted strings (""") that span multiple lines.
+    put("kotlin", cLikeGrammar("kotlin", kotlinKeywords, kotlinTypes, hasAnnotations = true, hasMultilineStrings = true))
     put("java", cLikeGrammar("java", javaKeywords, javaTypes, hasAnnotations = true))
     put("javascript", cLikeGrammar("javascript", jsKeywords, jsTypes))
     put("typescript", cLikeGrammar("typescript", tsKeywords, tsTypes))
@@ -268,6 +271,7 @@ internal val GRAMMARS: Map<String, Grammar> = buildMap {
     put("rust", cLikeGrammar("rust", rustKeywords, rustTypes, hasAnnotations = true, annotationChar = '#'))
     put("c", cLikeGrammar("c", cKeywords, cTypes))
     put("cpp", cLikeGrammar("cpp", cppKeywords, cppTypes))
+    // Python supports triple-quoted strings (""" and ''') that span multiple lines.
     put("python", pythonGrammar())
     put("shell", shellGrammar())
     put("yaml", yamlGrammar())

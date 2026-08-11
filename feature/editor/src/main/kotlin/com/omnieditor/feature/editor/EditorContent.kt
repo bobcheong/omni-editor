@@ -32,9 +32,12 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.omnieditor.core.diff.syntax.SyntaxEngine
+import com.omnieditor.core.diff.syntax.SyntaxToken
 import com.omnieditor.core.diff.syntax.TokenType
 import com.omnieditor.core.model.DisplaySettings
 import com.omnieditor.design.LocalCompareColors
+import com.omnieditor.design.LocalSyntaxColors
+import com.omnieditor.design.SyntaxColorScheme
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 /** Byte threshold above which a line is considered "long" and shown truncated. */
@@ -57,6 +60,30 @@ fun EditorContent(
     // Detect language for syntax highlighting
     val language = remember(fileName) { SyntaxEngine.detectLanguage(fileName) }
     val grammar = remember(language) { SyntaxEngine.grammarFor(language) }
+
+    // Hoist syntax colours — resolved once per theme change, not per recomposition (R-19).
+    val syntaxColors = LocalSyntaxColors.current
+
+    // Stateful highlighter — carries lexer entry state across lines (R-19).
+    // Created once per grammar; invalidated from the edit point downward.
+    val highlighter = remember(grammar) {
+        grammar?.let { StatefulSyntaxHighlighter(it) }
+    }
+
+    // Track the earliest line invalidated by an edit so we can tell the
+    // highlighter where to start re-lexing. This is collected from the
+    // document's changes flow (which emits DocumentChange with startLine).
+    val lastInvalidateLine = remember { mutableStateOf(0L) }
+    LaunchedEffect(state.document) {
+        state.document.changes.collect { change ->
+            val startLine = change.startLine
+            if (startLine < lastInvalidateLine.value || lastInvalidateLine.value == 0L) {
+                lastInvalidateLine.value = startLine
+            }
+            highlighter?.invalidateFrom(startLine.toInt())
+            highlighter?.notifyLineCountChanged(state.lineCount.toInt())
+        }
+    }
 
     val gutterWidth by remember(state.lineCount) {
         derivedStateOf {
@@ -146,34 +173,35 @@ fun EditorContent(
                 }
 
                 val showWs = displaySettings.showWhitespace
-                val syntaxColors = SyntaxColors(
-                    keyword = Color(0xFF0033B3),
-                    type = Color(0xFF1750EB),
-                    string = Color(0xFF067D17),
-                    number = Color(0xFF1750EB),
-                    comment = Color(0xFF8C8C8C),
-                    annotation = Color(0xFFBBB529),
-                    tag = Color(0xFF871094),
-                    attribute = Color(0xFF174AD4),
-                    heading = Color(0xFF0033B3),
-                    operator = onSurface,
-                    punctuation = onSurface,
-                    constant = Color(0xFF871094),
-                    function = Color(0xFF00627A),
-                )
 
-                val annotated: AnnotatedString = remember(displayText, grammar, showWs) {
+                // Tokenize with carried state when a grammar is present (R-19).
+                // When the highlighter is available we call it directly (it carries
+                // state across lines); otherwise fall back to the stateless path.
+                val annotated: AnnotatedString = remember(displayText, grammar, showWs, syntaxColors) {
                     when {
+                        highlighter != null && showWs -> highlightLineWithWhitespace(
+                            original = displayText,
+                            tokens = highlighter.tokenizeLine(index, displayText),
+                            colors = syntaxColors,
+                            defaultColor = onSurface,
+                            whitespaceColor = whitespaceColor,
+                        )
+                        highlighter != null -> highlightLine(
+                            text = displayText,
+                            tokens = highlighter.tokenizeLine(index, displayText),
+                            colors = syntaxColors,
+                            defaultColor = onSurface,
+                        )
                         grammar != null && showWs -> highlightLineWithWhitespace(
                             original = displayText,
-                            grammar = grammar,
+                            tokens = SyntaxEngine.tokenizeLine(displayText, grammar),
                             colors = syntaxColors,
                             defaultColor = onSurface,
                             whitespaceColor = whitespaceColor,
                         )
                         grammar != null -> highlightLine(
                             text = displayText,
-                            grammar = grammar,
+                            tokens = SyntaxEngine.tokenizeLine(displayText, grammar),
                             colors = syntaxColors,
                             defaultColor = onSurface,
                         )
@@ -254,29 +282,12 @@ fun EditorContent(
     }
 }
 
-data class SyntaxColors(
-    val keyword: Color,
-    val type: Color,
-    val string: Color,
-    val number: Color,
-    val comment: Color,
-    val annotation: Color,
-    val tag: Color,
-    val attribute: Color,
-    val heading: Color,
-    val operator: Color,
-    val punctuation: Color,
-    val constant: Color,
-    val function: Color,
-)
-
 private fun highlightLine(
     text: String,
-    grammar: com.omnieditor.core.diff.syntax.Grammar,
-    colors: SyntaxColors,
+    tokens: List<SyntaxToken>,
+    colors: SyntaxColorScheme,
     defaultColor: Color,
 ): AnnotatedString {
-    val tokens = SyntaxEngine.tokenizeLine(text, grammar)
     if (tokens.isEmpty()) return AnnotatedString(text)
 
     return buildAnnotatedString {
@@ -312,13 +323,11 @@ private fun highlightLine(
  */
 private fun highlightLineWithWhitespace(
     original: String,
-    grammar: com.omnieditor.core.diff.syntax.Grammar,
-    colors: SyntaxColors,
+    tokens: List<SyntaxToken>,
+    colors: SyntaxColorScheme,
     defaultColor: Color,
     whitespaceColor: Color,
 ): AnnotatedString {
-    val tokens = SyntaxEngine.tokenizeLine(original, grammar)
-
     return buildAnnotatedString {
         var pos = 0
 
@@ -347,7 +356,7 @@ private fun highlightLineWithWhitespace(
     }
 }
 
-private fun tokenColor(type: TokenType, colors: SyntaxColors): Color =
+private fun tokenColor(type: TokenType, colors: SyntaxColorScheme): Color =
     when (type) {
         TokenType.KEYWORD -> colors.keyword
         TokenType.TYPE -> colors.type

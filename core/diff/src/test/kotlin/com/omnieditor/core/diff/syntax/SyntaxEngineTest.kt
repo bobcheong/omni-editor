@@ -219,6 +219,82 @@ class SyntaxEngineTest {
         tokens.any { it.type == TokenType.HEADING } shouldBe true
     }
 
+    // ── Stateful tokenization (R-19) ──
+
+    @Test
+    fun `block comment spanning two lines — second line is COMMENT when entry state is BLOCK_COMMENT`() {
+        val grammar = SyntaxEngine.grammarFor("kotlin")!!
+
+        // First line opens a block comment but doesn't close it.
+        val line1 = "/* start of comment"
+        val result1 = SyntaxEngine.tokenizeLineStateful(line1, grammar, LexerState.NORMAL)
+        result1.exitState shouldBe LexerState.BLOCK_COMMENT
+        result1.tokens.any { it.type == TokenType.COMMENT } shouldBe true
+
+        // Second line starts inside the block comment.
+        val line2 = "   still inside comment"
+        val result2 = SyntaxEngine.tokenizeLineStateful(line2, grammar, LexerState.BLOCK_COMMENT)
+        result2.exitState shouldBe LexerState.BLOCK_COMMENT
+        result2.tokens.all { it.type == TokenType.COMMENT } shouldBe true
+
+        // Third line closes the block comment.
+        val line3 = "   end of comment */"
+        val result3 = SyntaxEngine.tokenizeLineStateful(line3, grammar, LexerState.BLOCK_COMMENT)
+        result3.exitState shouldBe LexerState.NORMAL
+        result3.tokens.any { it.type == TokenType.COMMENT } shouldBe true
+    }
+
+    @Test
+    fun `inline block comment on single line returns NORMAL exit state`() {
+        val grammar = SyntaxEngine.grammarFor("kotlin")!!
+        val line = "val x = /* inline */ 42"
+        val result = SyntaxEngine.tokenizeLineStateful(line, grammar, LexerState.NORMAL)
+        result.exitState shouldBe LexerState.NORMAL
+        result.tokens.any { it.type == TokenType.COMMENT } shouldBe true
+    }
+
+    @Test
+    fun `triple-quoted string spanning lines — exit state is MULTILINE_STRING`() {
+        val grammar = SyntaxEngine.grammarFor("kotlin")!!
+
+        val line1 = "val s = \"\"\""
+        val result1 = SyntaxEngine.tokenizeLineStateful(line1, grammar, LexerState.NORMAL)
+        result1.exitState shouldBe LexerState.MULTILINE_STRING
+
+        val line2 = "  inside the string"
+        val result2 = SyntaxEngine.tokenizeLineStateful(line2, grammar, LexerState.MULTILINE_STRING)
+        result2.exitState shouldBe LexerState.MULTILINE_STRING
+        result2.tokens.all { it.type == TokenType.STRING } shouldBe true
+
+        val line3 = "\"\"\""
+        val result3 = SyntaxEngine.tokenizeLineStateful(line3, grammar, LexerState.MULTILINE_STRING)
+        result3.exitState shouldBe LexerState.NORMAL
+    }
+
+    @Test
+    fun `stateless tokenizeLine delegates to NORMAL entry state`() {
+        val grammar = SyntaxEngine.grammarFor("kotlin")!!
+        val line = "fun main() {}"
+        val stateless = SyntaxEngine.tokenizeLine(line, grammar)
+        val stateful = SyntaxEngine.tokenizeLineStateful(line, grammar, LexerState.NORMAL).tokens
+        stateless shouldBe stateful
+    }
+
+    @Test
+    fun `LexerState round-trips through fromCode`() {
+        LexerState.fromCode(0) shouldBe LexerState.NORMAL
+        LexerState.fromCode(1) shouldBe LexerState.BLOCK_COMMENT
+        LexerState.fromCode(2) shouldBe LexerState.MULTILINE_STRING
+        LexerState.fromCode(99) shouldBe LexerState.NORMAL // unknown → NORMAL
+    }
+
+    @Test
+    fun `empty line with BLOCK_COMMENT entry state stays in BLOCK_COMMENT`() {
+        val grammar = SyntaxEngine.grammarFor("kotlin")!!
+        val result = SyntaxEngine.tokenizeLineStateful("", grammar, LexerState.BLOCK_COMMENT)
+        result.exitState shouldBe LexerState.BLOCK_COMMENT
+    }
+
     // ── Edge cases ──
 
     @Test
