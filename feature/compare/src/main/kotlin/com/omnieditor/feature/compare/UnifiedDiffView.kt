@@ -38,6 +38,9 @@ import com.omnieditor.design.LocalCompareColors
  * Colour is never the only signal — glyph markers satisfy WCAG 1.4.1 (OE-APP-2).
  *
  * TalkBack announces side and change type for every row (NFR-A1).
+ *
+ * Renders from the shared List<AlignedRow> produced by CompareState.buildAlignedRows()
+ * so that unified and split views are driven by the same alignment model (R-25).
  */
 @Composable
 fun UnifiedDiffView(
@@ -46,13 +49,20 @@ fun UnifiedDiffView(
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
     val rows = remember(state.result, state.filterMode) {
-        state.buildUnifiedRows()
+        state.buildAlignedRows().filter { row ->
+            when (state.filterMode) {
+                FilterMode.ALL -> true
+                FilterMode.DIFFS_ONLY -> row.type != RowType.CONTEXT
+                FilterMode.MATCHES_ONLY -> row.type == RowType.CONTEXT
+            }
+        }
     }
     val listState = rememberLazyListState()
     val colors = LocalCompareColors.current
 
     // Scroll to current difference when navigating
     LaunchedEffect(state.currentDiffIndex) {
+        @Suppress("UnusedVariable")
         val hunk = state.currentHunk ?: return@LaunchedEffect
         val targetRow = rows.indexOfFirst { it.hunkIndex == state.currentDiffIndex }
         if (targetRow >= 0) {
@@ -65,10 +75,12 @@ fun UnifiedDiffView(
         contentPadding = contentPadding,
         modifier = modifier.fillMaxSize(),
     ) {
-        itemsIndexed(rows, key = { idx, row -> "${row.side}_${row.lineNumber}_$idx" }) { _, row ->
-            UnifiedDiffRow(
+        itemsIndexed(rows, key = { idx, row -> "${row.left}_${row.right}_${row.type}_$idx" }) { _, row ->
+            UnifiedAlignedRow(
                 row = row,
-                isCurrentHunk = row.hunkIndex == state.currentDiffIndex && row.hunkIndex >= 0,
+                leftLines = state.leftLines,
+                rightLines = state.rightLines,
+                isCurrentHunk = row.hunkIndex != null && row.hunkIndex == state.currentDiffIndex,
                 colors = colors,
             )
         }
@@ -76,8 +88,10 @@ fun UnifiedDiffView(
 }
 
 @Composable
-private fun UnifiedDiffRow(
-    row: UnifiedRow,
+private fun UnifiedAlignedRow(
+    row: AlignedRow,
+    leftLines: List<String>,
+    rightLines: List<String>,
     isCurrentHunk: Boolean,
     colors: com.omnieditor.design.CompareColors,
 ) {
@@ -89,8 +103,16 @@ private fun UnifiedDiffRow(
         RowType.CONTEXT -> Triple(Color.Transparent, colors.gutter, " ")
     }
 
+    // For display: prefer left line for context/removed; right line for added/changed-new.
+    val displayLineNum = row.left ?: row.right ?: 0L
+    val displayText = when {
+        row.left != null -> leftLines.getOrElse(row.left.toInt()) { "" }
+        row.right != null -> rightLines.getOrElse(row.right.toInt()) { "" }
+        else -> ""
+    }
+
     // TalkBack content description (NFR-A1)
-    val a11yDescription = buildA11yDescription(row)
+    val a11yDescription = buildA11yDescription(row, displayLineNum, displayText)
 
     Row(
         modifier = Modifier
@@ -115,7 +137,7 @@ private fun UnifiedDiffRow(
 
         // Line number
         Text(
-            text = (row.lineNumber + 1).toString(),
+            text = (displayLineNum + 1).toString(),
             color = colors.gutter,
             fontFamily = FontFamily.Monospace,
             fontSize = 11.sp,
@@ -125,7 +147,7 @@ private fun UnifiedDiffRow(
 
         // Content with horizontal scroll
         Text(
-            text = row.text,
+            text = displayText,
             color = if (row.type == RowType.CONTEXT) {
                 MaterialTheme.colorScheme.onSurface
             } else {
@@ -143,16 +165,16 @@ private fun UnifiedDiffRow(
 }
 
 /**
- * Build TalkBack-accessible description for a diff row.
+ * Build TalkBack-accessible description for an aligned diff row.
  * Announces side and change type for every row (NFR-A1).
  */
-private fun buildA11yDescription(row: UnifiedRow): String {
-    val lineNum = row.lineNumber + 1
+private fun buildA11yDescription(row: AlignedRow, lineNum: Long, text: String): String {
+    val num = lineNum + 1
     return when (row.type) {
-        RowType.ADDED -> "Added on right, line $lineNum: ${row.text}"
-        RowType.REMOVED -> "Removed from left, line $lineNum: ${row.text}"
-        RowType.CHANGED_OLD -> "Changed on left, line $lineNum: ${row.text}"
-        RowType.CHANGED_NEW -> "Changed on right, line $lineNum: ${row.text}"
-        RowType.CONTEXT -> "Unchanged, line $lineNum"
+        RowType.ADDED -> "Added on right, line $num: $text"
+        RowType.REMOVED -> "Removed from left, line $num: $text"
+        RowType.CHANGED_OLD -> "Changed on left, line $num: $text"
+        RowType.CHANGED_NEW -> "Changed on right, line $num: $text"
+        RowType.CONTEXT -> "Unchanged, line $num"
     }
 }

@@ -59,6 +59,16 @@ class CompareState(
     val currentHunk: Hunk? get() = result.hunks.getOrNull(currentDiffIndex)
 
     /**
+     * Build the shared alignment model for both unified and split views (R-25).
+     *
+     * One List<AlignedRow> drives both views. Sync holds by construction because both
+     * panes iterate the same list: left pane renders left-side rows, right pane renders
+     * right-side rows, and spacer rows (null on one side) keep matched lines visually aligned.
+     */
+    fun buildAlignedRows(): List<AlignedRow> =
+        buildAlignedRows(result.hunks, leftLines.size, rightLines.size)
+
+    /**
      * Build the unified view rows from the compare result.
      * Each row represents a line in the interleaved unified view.
      */

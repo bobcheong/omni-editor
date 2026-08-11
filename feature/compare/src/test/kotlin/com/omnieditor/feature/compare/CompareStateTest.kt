@@ -108,6 +108,81 @@ class CompareStateTest {
     }
 
     /**
+     * R-25: buildAlignedRows() keeps matched lines on the same visual row after an insertion.
+     *
+     * Scenario: Left has 5 lines. Right has 40 inserted lines followed by the same 5 lines.
+     * One ADDED hunk covers the 40 inserted lines at the top of the right side. After the
+     * 40 spacer rows (left=null, right=non-null), the 5 matching context lines must appear
+     * at the same visual row index in both panes.
+     */
+    @Test
+    fun `R-25 aligned rows keep matched lines on same visual row after insertion`() {
+        val leftLines = (0 until 5).map { "line$it" }
+        val rightLines = (0 until 40).map { "inserted$it" } + (0 until 5).map { "line$it" }
+
+        // One ADDED hunk at the top covering the 40 inserted lines
+        val hunks = listOf(
+            Hunk(
+                type = HunkType.ADDED,
+                leftStart = 0L, leftEnd = 0L,
+                rightStart = 0L, rightEnd = 40L,
+            )
+        )
+
+        val result = CompareResult(
+            hunks = hunks,
+            stats = CompareStats(
+                linesAdded = 40,
+                linesRemoved = 0,
+                linesChanged = 0,
+                hunkCount = 1,
+            ),
+            engineMode = EngineMode.FULL_INDEX,
+            generatedAt = 0L,
+        )
+
+        val state = CompareState(result, leftLines, rightLines)
+        val rows = state.buildAlignedRows()
+
+        // After the 40 spacer/added rows, the matched lines should be on the same row
+        val matchedRows = rows.filter { it.left != null && it.right != null }
+        matchedRows.size shouldBe 5
+        matchedRows.forEach { row ->
+            leftLines[row.left!!.toInt()] shouldBe rightLines[row.right!!.toInt()]
+        }
+    }
+
+    /**
+     * R-25: buildAlignedRows() produces a row for every left and every right line (no gaps).
+     */
+    @Test
+    fun `R-25 aligned rows cover all lines on both sides`() {
+        val leftLines = listOf("a", "b", "c")
+        val rightLines = listOf("x", "b", "y", "z")
+
+        val hunks = listOf(
+            Hunk(type = HunkType.CHANGED, leftStart = 0L, leftEnd = 1L, rightStart = 0L, rightEnd = 1L),
+            Hunk(type = HunkType.ADDED,   leftStart = 2L, leftEnd = 2L, rightStart = 2L, rightEnd = 4L),
+        )
+
+        val result = CompareResult(
+            hunks = hunks,
+            stats = CompareStats(linesAdded = 3, linesRemoved = 1, linesChanged = 1, hunkCount = 2),
+            engineMode = EngineMode.FULL_INDEX,
+            generatedAt = 0L,
+        )
+
+        val state = CompareState(result, leftLines, rightLines)
+        val rows = state.buildAlignedRows()
+
+        val leftCovered = rows.mapNotNull { it.left }.sorted()
+        val rightCovered = rows.mapNotNull { it.right }.sorted()
+
+        leftCovered shouldBe (0 until leftLines.size).map { it.toLong() }
+        rightCovered shouldBe (0 until rightLines.size).map { it.toLong() }
+    }
+
+    /**
      * Generate a list of non-overlapping, well-formed hunks within the given left/right bounds.
      *
      * "Well-formed" means:

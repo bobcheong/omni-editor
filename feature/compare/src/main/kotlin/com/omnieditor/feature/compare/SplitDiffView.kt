@@ -2,7 +2,6 @@ package com.omnieditor.feature.compare
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -13,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,15 +24,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.omnieditor.core.model.Hunk
-import com.omnieditor.core.model.HunkType
 import com.omnieditor.design.LocalCompareColors
 
 /**
@@ -40,6 +37,10 @@ import com.omnieditor.design.LocalCompareColors
  *
  * Two synchronised panes with relational connector lines between matched
  * blocks. Scrolling is synchronised by default (toggleable via OE-TXT-6).
+ *
+ * Both panes render from the same List<AlignedRow> (R-25). Sync holds by construction:
+ * both lists have identical length; spacer rows (null on one side) keep matched context
+ * lines on the same visual row after any insertion or deletion.
  */
 @Composable
 fun SplitDiffView(
@@ -48,6 +49,7 @@ fun SplitDiffView(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
+    val alignedRows = remember(state.result) { state.buildAlignedRows() }
     val leftListState = rememberLazyListState()
     val rightListState = rememberLazyListState()
     val colors = LocalCompareColors.current
@@ -57,20 +59,24 @@ fun SplitDiffView(
         SyncScroll(leftListState, rightListState)
     }
 
-    // Scroll to current difference
+    // Scroll to current difference — find the first aligned row belonging to this hunk
     LaunchedEffect(state.currentDiffIndex) {
+        @Suppress("UnusedVariable")
         val hunk = state.currentHunk ?: return@LaunchedEffect
-        leftListState.animateScrollToItem(hunk.leftStart.toInt().coerceAtLeast(0))
-        if (!syncScroll) {
-            rightListState.animateScrollToItem(hunk.rightStart.toInt().coerceAtLeast(0))
+        val targetRow = alignedRows.indexOfFirst { it.hunkIndex == state.currentDiffIndex }
+        if (targetRow >= 0) {
+            leftListState.animateScrollToItem(targetRow)
+            if (!syncScroll) {
+                rightListState.animateScrollToItem(targetRow)
+            }
         }
     }
 
     Row(modifier = modifier.fillMaxSize()) {
-        // Left pane
+        // Left pane — renders left side of each AlignedRow (null → spacer)
         SplitPane(
+            alignedRows = alignedRows,
             lines = state.leftLines,
-            hunks = state.result.hunks,
             side = Side.LEFT,
             currentHunkIndex = state.currentDiffIndex,
             listState = leftListState,
@@ -79,19 +85,18 @@ fun SplitDiffView(
             modifier = Modifier.weight(1f),
         )
 
-        // Connector column
+        // Connector column — same row index on both sides, so coordinates are now correct
         ConnectorColumn(
-            hunks = state.result.hunks,
+            alignedRows = alignedRows,
             leftListState = leftListState,
-            rightListState = rightListState,
             colors = colors,
             modifier = Modifier.width(24.dp).fillMaxHeight(),
         )
 
-        // Right pane
+        // Right pane — renders right side of each AlignedRow (null → spacer)
         SplitPane(
+            alignedRows = alignedRows,
             lines = state.rightLines,
-            hunks = state.result.hunks,
             side = Side.RIGHT,
             currentHunkIndex = state.currentDiffIndex,
             listState = rightListState,
@@ -104,8 +109,8 @@ fun SplitDiffView(
 
 @Composable
 private fun SplitPane(
+    alignedRows: List<AlignedRow>,
     lines: List<String>,
-    hunks: List<Hunk>,
     side: Side,
     currentHunkIndex: Int,
     listState: LazyListState,
@@ -113,59 +118,53 @@ private fun SplitPane(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
-    // Build a set of changed line indices for this side
-    val changedLines = remember(hunks, side) {
-        val map = HashMap<Long, Pair<HunkType, Int>>()
-        hunks.forEachIndexed { idx, hunk ->
-            val range = if (side == Side.LEFT) hunk.leftStart until hunk.leftEnd
-            else hunk.rightStart until hunk.rightEnd
-            for (line in range) {
-                map[line] = Pair(hunk.type, idx)
-            }
-        }
-        map
-    }
-
     LazyColumn(
         state = listState,
         contentPadding = contentPadding,
         modifier = modifier,
     ) {
-        items(lines.size, key = { it }) { index ->
-            val change = changedLines[index.toLong()]
-            val bgColor = when (change?.first) {
-                HunkType.ADDED -> colors.addedBg
-                HunkType.REMOVED -> colors.removedBg
-                HunkType.CHANGED -> colors.changedBg
-                HunkType.CONFLICT -> colors.conflictBg
-                null -> Color.Transparent
-            }
-            val fgColor = when (change?.first) {
-                HunkType.ADDED -> colors.addedFg
-                HunkType.REMOVED -> colors.removedFg
-                HunkType.CHANGED -> colors.changedFg
-                HunkType.CONFLICT -> colors.conflictFg
-                null -> MaterialTheme.colorScheme.onSurface
-            }
-            val glyph = when (change?.first) {
-                HunkType.ADDED -> "+"
-                HunkType.REMOVED -> "−"
-                HunkType.CHANGED -> "~"
-                HunkType.CONFLICT -> "!"
-                null -> " "
-            }
-            val isCurrentHunk = change?.second == currentHunkIndex && change != null
-            val sideLabel = if (side == Side.LEFT) "left" else "right"
-            val a11y = if (change != null) {
-                "${change.first.name} on $sideLabel, line ${index + 1}: ${lines[index]}"
+        itemsIndexed(alignedRows, key = { idx, row -> "${side}_${row.left}_${row.right}_$idx" }) { _, row ->
+            val lineIdx = if (side == Side.LEFT) row.left else row.right
+            val isSpacer = lineIdx == null
+            val text = if (lineIdx != null) lines.getOrElse(lineIdx.toInt()) { "" } else ""
+
+            val bgColor = if (isSpacer) {
+                colors.gutter.copy(alpha = 0.08f)
             } else {
-                "Unchanged on $sideLabel, line ${index + 1}"
+                when (row.type) {
+                    RowType.ADDED -> colors.addedBg
+                    RowType.REMOVED -> colors.removedBg
+                    RowType.CHANGED_OLD, RowType.CHANGED_NEW -> colors.changedBg
+                    RowType.CONTEXT -> Color.Transparent
+                }
+            }
+            val fgColor = when {
+                isSpacer -> Color.Transparent
+                row.type == RowType.ADDED -> colors.addedFg
+                row.type == RowType.REMOVED -> colors.removedFg
+                row.type == RowType.CHANGED_OLD || row.type == RowType.CHANGED_NEW -> colors.changedFg
+                else -> MaterialTheme.colorScheme.onSurface
+            }
+            val glyph = when {
+                isSpacer -> " "
+                row.type == RowType.ADDED -> "+"
+                row.type == RowType.REMOVED -> "−"
+                row.type == RowType.CHANGED_OLD || row.type == RowType.CHANGED_NEW -> "~"
+                else -> " "
+            }
+            val isCurrentHunk = row.hunkIndex != null && row.hunkIndex == currentHunkIndex
+            val sideLabel = if (side == Side.LEFT) "left" else "right"
+            val displayLine = lineIdx ?: 0L
+            val a11y = when {
+                isSpacer -> "Spacer on $sideLabel"
+                row.type == RowType.CONTEXT -> "Unchanged on $sideLabel, line ${displayLine + 1}"
+                else -> "${row.type.name} on $sideLabel, line ${displayLine + 1}: $text"
             }
 
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(if (isCurrentHunk) bgColor.copy(alpha = 0.7f) else bgColor)
+                    .background(if (isCurrentHunk && !isSpacer) bgColor.copy(alpha = 0.7f) else bgColor)
                     .height(22.dp)
                     .semantics { contentDescription = a11y },
                 verticalAlignment = Alignment.CenterVertically,
@@ -180,7 +179,7 @@ private fun SplitPane(
                 )
                 // Line number
                 Text(
-                    text = "${index + 1}",
+                    text = if (lineIdx != null) "${lineIdx + 1}" else "",
                     color = colors.gutter,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 10.sp,
@@ -189,7 +188,7 @@ private fun SplitPane(
                 )
                 // Content
                 Text(
-                    text = lines[index],
+                    text = text,
                     color = fgColor,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
@@ -203,39 +202,52 @@ private fun SplitPane(
 }
 
 /**
- * Relational connector lines between matched blocks in split view.
+ * Relational connector lines between hunk boundaries in split view.
+ *
+ * Because both panes share the same AlignedRow list (R-25), hunk boundaries fall on
+ * identical row indices in both panes. The connector simply draws horizontal markers at
+ * the row where each hunk starts and ends — no offset arithmetic required.
  */
 @Composable
 private fun ConnectorColumn(
-    hunks: List<Hunk>,
+    alignedRows: List<AlignedRow>,
     leftListState: LazyListState,
-    rightListState: LazyListState,
     colors: com.omnieditor.design.CompareColors,
     modifier: Modifier = Modifier,
 ) {
-    val lineHeight = 22f // dp, matches row height
+    val lineHeightDp = 22f // dp, matches row height
+
+    // Collect the first and last row index of each hunk (by hunkIndex tag).
+    val hunkBounds = remember(alignedRows) {
+        val bounds = mutableMapOf<Int, Pair<Int, Int>>() // hunkIndex → (firstRow, lastRow)
+        alignedRows.forEachIndexed { rowIdx, row ->
+            val h = row.hunkIndex ?: return@forEachIndexed
+            val existing = bounds[h]
+            if (existing == null) {
+                bounds[h] = Pair(rowIdx, rowIdx)
+            } else {
+                bounds[h] = Pair(existing.first, rowIdx)
+            }
+        }
+        bounds
+    }
 
     Canvas(modifier = modifier) {
-        val midX = size.width / 2
-        val leftFirst = leftListState.firstVisibleItemIndex
-        val rightFirst = rightListState.firstVisibleItemIndex
+        val firstVisible = leftListState.firstVisibleItemIndex
+        val lineHeightPx = lineHeightDp * density
 
-        for (hunk in hunks) {
-            val leftY = (hunk.leftStart.toInt() - leftFirst) * lineHeight
-            val leftEndY = (hunk.leftEnd.toInt() - leftFirst) * lineHeight
-            val rightY = (hunk.rightStart.toInt() - rightFirst) * lineHeight
-            val rightEndY = (hunk.rightEnd.toInt() - rightFirst) * lineHeight
+        for (bounds in hunkBounds.values) {
+            val (startRow, endRow) = bounds
+            val topY = (startRow - firstVisible) * lineHeightPx
+            val bottomY = (endRow - firstVisible + 1) * lineHeightPx
 
-            val color = when (hunk.type) {
-                HunkType.ADDED -> colors.addedFg
-                HunkType.REMOVED -> colors.removedFg
-                HunkType.CHANGED -> colors.changedFg
-                HunkType.CONFLICT -> colors.conflictFg
-            }
-
-            // Draw connector lines
-            drawLine(color, Offset(0f, leftY), Offset(size.width, rightY), strokeWidth = 1.5f)
-            drawLine(color, Offset(0f, leftEndY), Offset(size.width, rightEndY), strokeWidth = 1.5f)
+            // Draw a simple vertical bar in the middle of the connector column
+            drawLine(
+                color = colors.changedFg,
+                start = Offset(size.width / 2f, topY),
+                end = Offset(size.width / 2f, bottomY),
+                strokeWidth = 2f,
+            )
         }
     }
 }
