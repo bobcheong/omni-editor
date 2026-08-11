@@ -33,6 +33,9 @@ class PieceTableDocument private constructor(
     private val undoStack = mutableListOf<JournalEntry>()
     private val redoStack = mutableListOf<JournalEntry>()
 
+    private var _editGeneration = 0L
+    override val editGeneration: Long get() = _editGeneration
+
     /**
      * Undo-stack depth at the time of the last save. dirty is false when the
      * stack depth returns to this value (i.e., the user has undone back to the
@@ -93,6 +96,7 @@ class PieceTableDocument private constructor(
         redoStack.clear()
 
         journal?.append(entry)
+        _editGeneration++
 
         _changes.tryEmit(
             DocumentChange(editId, range.first, range.last + 1, range.first + countLines(text))
@@ -112,6 +116,7 @@ class PieceTableDocument private constructor(
         undoStack.add(entry)
         redoStack.clear()
         journal?.append(entry)
+        _editGeneration++
         // Emit a conservative change covering the whole document
         _changes.tryEmit(DocumentChange(editId, 0, lineCount, lineCount))
         return editId
@@ -123,6 +128,7 @@ class PieceTableDocument private constructor(
         applyReverse(entry.record)
         redoStack.add(entry)
         journal?.append(JournalEntry(-entry.editId, entry.record))
+        _editGeneration++
         _changes.tryEmit(DocumentChange(-entry.editId, 0, lineCount, lineCount))
         return entry.editId
     }
@@ -133,6 +139,7 @@ class PieceTableDocument private constructor(
         applyForward(entry.record)
         undoStack.add(entry)
         journal?.append(entry)
+        _editGeneration++
         _changes.tryEmit(DocumentChange(entry.editId, 0, lineCount, lineCount))
         return entry.editId
     }

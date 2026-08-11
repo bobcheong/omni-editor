@@ -93,6 +93,61 @@ class PieceTableDocumentTest {
         doc.redoCount shouldBe 0
     }
 
+    // ── editGeneration (R-18a) ──
+
+    @Test
+    fun `editGeneration starts at 0`() {
+        val doc = PieceTableDocument.create("hello")
+        doc.editGeneration shouldBe 0L
+    }
+
+    @Test
+    fun `editGeneration increments on edit`() {
+        val doc = PieceTableDocument.create("hello")
+        val gen0 = doc.editGeneration
+        doc.edit(0L..0L, "world")
+        doc.editGeneration shouldBe gen0 + 1L
+    }
+
+    @Test
+    fun `editGeneration increments on replaceAll`() {
+        val doc = PieceTableDocument.create("hello")
+        val gen0 = doc.editGeneration
+        doc.replaceAll(0, 5, "world")
+        doc.editGeneration shouldBe gen0 + 1L
+    }
+
+    @Test
+    fun `editGeneration increments on undo`() {
+        val doc = PieceTableDocument.create("hello")
+        doc.edit(0L..0L, "world")
+        val genAfterEdit = doc.editGeneration
+        doc.undo()
+        doc.editGeneration shouldBe genAfterEdit + 1L
+    }
+
+    @Test
+    fun `editGeneration increments on redo`() {
+        val doc = PieceTableDocument.create("hello")
+        doc.edit(0L..0L, "world")
+        doc.undo()
+        val genAfterUndo = doc.editGeneration
+        doc.redo()
+        doc.editGeneration shouldBe genAfterUndo + 1L
+    }
+
+    @Test
+    fun `editGeneration is monotonically increasing across multiple edits`() {
+        val doc = PieceTableDocument.create("hello")
+        var prev = doc.editGeneration
+        repeat(5) {
+            doc.edit(0L..0L, "x")
+            val cur = doc.editGeneration
+            (cur > prev) shouldBe true
+            prev = cur
+        }
+    }
+
     // ── Materialise ──
 
     @Test

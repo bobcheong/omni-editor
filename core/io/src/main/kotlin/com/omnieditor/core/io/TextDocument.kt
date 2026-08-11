@@ -61,6 +61,13 @@ interface TextDocument {
 
     /** Whether the document has unsaved changes. */
     val dirty: Boolean
+
+    /**
+     * Monotonically increasing counter incremented on every edit, undo, or redo.
+     * Use as a Compose recomposition key instead of [dirty] (which stays true after
+     * the first edit and therefore never invalidates subsequent recompositions).
+     */
+    val editGeneration: Long
 }
 
 /**

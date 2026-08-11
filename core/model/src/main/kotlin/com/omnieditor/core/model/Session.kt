@@ -50,6 +50,12 @@ data class DisplaySettings(
     val tabWidth: Int = 4,
     val syncScroll: Boolean = true,
     val granularity: Granularity = Granularity.WORD,
+    /**
+     * When true, lines exceeding [DocumentLimits.MAX_LINE_BYTES] are rendered truncated
+     * with an expand control. When false they are still truncated (to protect heap) but
+     * without an explicit affordance for the user to expand them.
+     */
+    val truncateLongLines: Boolean = true,
 )
 
 @Serializable
