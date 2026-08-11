@@ -24,6 +24,8 @@ fun AdaptiveDiffView(
     state: CompareState,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
+    /** Called with the hunk index when a diff row (CHANGED/ADDED/REMOVED) is tapped. */
+    onDiffRowTapped: ((hunkIndex: Int) -> Unit)? = null,
 ) {
     // Manual override: null = auto, true = split, false = unified
     var layoutOverride by rememberSaveable { mutableStateOf<Boolean?>(null) }
@@ -35,11 +37,13 @@ fun AdaptiveDiffView(
             SplitDiffView(
                 state = state,
                 contentPadding = contentPadding,
+                onDiffRowTapped = onDiffRowTapped,
             )
         } else {
             UnifiedDiffView(
                 state = state,
                 contentPadding = contentPadding,
+                onDiffRowTapped = onDiffRowTapped,
             )
         }
     }

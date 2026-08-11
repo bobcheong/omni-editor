@@ -2,6 +2,7 @@ package com.omnieditor.feature.compare
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -50,6 +51,8 @@ fun SplitDiffView(
     syncScroll: Boolean = true,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
+    /** Called with the hunk index when a diff row (CHANGED/ADDED/REMOVED) is tapped. */
+    onDiffRowTapped: ((hunkIndex: Int) -> Unit)? = null,
 ) {
     val alignedRows = remember(state.result) { state.buildAlignedRows() }
     val leftListState = rememberLazyListState()
@@ -91,6 +94,7 @@ fun SplitDiffView(
             intraLineCache = cache,
             granularity = granularity,
             contentPadding = contentPadding,
+            onDiffRowTapped = onDiffRowTapped,
             modifier = Modifier.weight(1f),
         )
 
@@ -115,6 +119,7 @@ fun SplitDiffView(
             intraLineCache = cache,
             granularity = granularity,
             contentPadding = contentPadding,
+            onDiffRowTapped = onDiffRowTapped,
             modifier = Modifier.weight(1f),
         )
     }
@@ -134,6 +139,7 @@ private fun SplitPane(
     intraLineCache: IntraLineCache,
     granularity: Granularity,
     contentPadding: PaddingValues,
+    onDiffRowTapped: ((hunkIndex: Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -209,11 +215,19 @@ private fun SplitPane(
                 }
             }
 
+            val onTap: (() -> Unit)? =
+                if (onDiffRowTapped != null && !isSpacer && row.type != RowType.CONTEXT && row.hunkIndex != null) {
+                    { onDiffRowTapped(row.hunkIndex) }
+                } else {
+                    null
+                }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(if (isCurrentHunk && !isSpacer) bgColor.copy(alpha = 0.7f) else bgColor)
                     .height(22.dp)
+                    .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
                     .semantics { contentDescription = a11y },
                 verticalAlignment = Alignment.CenterVertically,
             ) {

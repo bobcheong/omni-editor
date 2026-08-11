@@ -1,6 +1,7 @@
 package com.omnieditor.feature.compare
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -47,6 +48,8 @@ fun UnifiedDiffView(
     state: CompareState,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
+    /** Called with the hunk index when a diff row (CHANGED/ADDED/REMOVED) is tapped. */
+    onDiffRowTapped: ((hunkIndex: Int) -> Unit)? = null,
 ) {
     val rows = remember(state.result, state.filterMode) {
         state.buildAlignedRows().filter { row ->
@@ -88,6 +91,11 @@ fun UnifiedDiffView(
                 hunks = hunks,
                 intraLineCache = cache,
                 granularity = granularity,
+                onTap = if (onDiffRowTapped != null && row.type != RowType.CONTEXT && row.hunkIndex != null) {
+                    { onDiffRowTapped(row.hunkIndex) }
+                } else {
+                    null
+                },
             )
         }
     }
@@ -103,6 +111,7 @@ private fun UnifiedAlignedRow(
     hunks: List<com.omnieditor.core.model.Hunk>,
     intraLineCache: IntraLineCache,
     granularity: Granularity,
+    onTap: (() -> Unit)? = null,
 ) {
     val (bgColor, fgColor, glyph) = when (row.type) {
         RowType.ADDED -> Triple(colors.addedBg, colors.addedFg, "+")
@@ -156,6 +165,7 @@ private fun UnifiedAlignedRow(
             .fillMaxWidth()
             .background(if (isCurrentHunk) bgColor.copy(alpha = 0.7f) else bgColor)
             .height(22.dp)
+            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
             .semantics { contentDescription = a11yDescription },
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -54,6 +54,7 @@ fun CompareScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var showActiveLineSheet by remember { mutableStateOf(false) }
+    var tappedHunkIndex by remember { mutableStateOf<Int?>(null) }
     var showRuleSheet by remember { mutableStateOf(false) }
     var showAcceptAllConfirm by remember { mutableStateOf<MergeDirection?>(null) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
@@ -165,6 +166,10 @@ fun CompareScreen(
                     AdaptiveDiffView(
                         state = state,
                         modifier = Modifier.weight(1f),
+                        onDiffRowTapped = { hunkIndex ->
+                            tappedHunkIndex = hunkIndex
+                            showActiveLineSheet = true
+                        },
                     )
 
                     // Minimap rail
@@ -188,14 +193,37 @@ fun CompareScreen(
                 // Status bar
                 CompareStatusBar(state = state)
 
-                // Active line sheet
+                // Active line sheet — opened by tapping any diff row (R-29).
                 if (showActiveLineSheet) {
+                    val sheetHunk = tappedHunkIndex?.let { state.result.hunks.getOrNull(it) }
+                        ?: state.currentHunk
+                    val sheetHunkIndex = tappedHunkIndex ?: state.currentDiffIndex
                     ActiveLineSheet(
                         visible = true,
-                        hunk = state.currentHunk,
+                        hunk = sheetHunk,
                         leftLines = state.leftLines,
                         rightLines = state.rightLines,
                         onDismiss = { showActiveLineSheet = false },
+                        onMergeLeftToRight = if (state.canMerge) {
+                            {
+                                val applied = state.mergeHunk(sheetHunkIndex, MergeDirection.LEFT_TO_RIGHT)
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        if (applied) state.mergeMessage ?: "Merged" else "Already merged"
+                                    )
+                                }
+                            }
+                        } else null,
+                        onMergeRightToLeft = if (state.canMerge) {
+                            {
+                                val applied = state.mergeHunk(sheetHunkIndex, MergeDirection.RIGHT_TO_LEFT)
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        if (applied) state.mergeMessage ?: "Merged" else "Already merged"
+                                    )
+                                }
+                            }
+                        } else null,
                     )
                 }
             } else {
