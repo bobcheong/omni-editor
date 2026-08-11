@@ -23,28 +23,34 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.omnieditor.core.model.LicenceInfo
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
+    viewModel: SettingsViewModel = hiltViewModel(),
 ) {
-    // Local state for settings (would be persisted via DataStore in production)
-    var ignoreCase by remember { mutableStateOf(false) }
-    var ignoreWhitespace by remember { mutableStateOf(false) }
-    var ignoreLineEndings by remember { mutableStateOf(true) }
-    var wordWrap by remember { mutableStateOf(false) }
-    var showLineNumbers by remember { mutableStateOf(true) }
-    var tabWidth by remember { mutableIntStateOf(4) }
-    var dynamicColor by remember { mutableStateOf(true) }
+    // ── Collect DataStore-backed state ────────────────────────────────────────
+    val wordWrap by viewModel.wordWrap.collectAsStateWithLifecycle()
+    val showLineNumbers by viewModel.showLineNumbers.collectAsStateWithLifecycle()
+    val showWhitespace by viewModel.showWhitespace.collectAsStateWithLifecycle()
+    val tabWidth by viewModel.tabWidth.collectAsStateWithLifecycle()
+    val defaultLayout by viewModel.defaultLayout.collectAsStateWithLifecycle()
+    val syncScroll by viewModel.syncScroll.collectAsStateWithLifecycle()
+    val granularity by viewModel.granularity.collectAsStateWithLifecycle()
+    val theme by viewModel.theme.collectAsStateWithLifecycle()
+    val dynamicColor by viewModel.dynamicColor.collectAsStateWithLifecycle()
+
+    // Local UI-only state — not persisted
     var showLicences by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -69,7 +75,6 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState()),
         ) {
             if (showLicences) {
-                // Licences list
                 for (entry in LicenceInfo.entries) {
                     Column(
                         modifier = Modifier
@@ -86,31 +91,68 @@ fun SettingsScreen(
                     HorizontalDivider()
                 }
             } else {
-                // Compare settings
-                SettingsSection("Compare defaults")
-                SwitchItem("Ignore case", ignoreCase) { ignoreCase = it }
-                SwitchItem("Ignore whitespace", ignoreWhitespace) { ignoreWhitespace = it }
-                SwitchItem("Ignore line endings", ignoreLineEndings) { ignoreLineEndings = it }
-
-                // Editor settings
+                // ── Editor (v0.1: no text-input/IME options per §2.2) ─────────
                 SettingsSection("Editor")
-                SwitchItem("Word wrap", wordWrap) { wordWrap = it }
-                SwitchItem("Show line numbers", showLineNumbers) { showLineNumbers = it }
+                SwitchItem("Word wrap", wordWrap) { viewModel.setWordWrap(it) }
+                SwitchItem("Show line numbers", showLineNumbers) { viewModel.setShowLineNumbers(it) }
+                SwitchItem("Show whitespace", showWhitespace) { viewModel.setShowWhitespace(it) }
                 SettingsItem("Tab width", "$tabWidth spaces") {
-                    tabWidth = if (tabWidth == 4) 2 else if (tabWidth == 2) 8 else 4
+                    // Cycle through common tab widths: 2 → 4 → 8 → 2
+                    viewModel.setTabWidth(if (tabWidth == 2) 4 else if (tabWidth == 4) 8 else 2)
                 }
 
-                // Appearance
+                // ── Compare ───────────────────────────────────────────────────
+                SettingsSection("Compare")
+                SettingsItem(
+                    title = "Default layout",
+                    subtitle = if (defaultLayout == "split") "Split" else "Unified",
+                ) {
+                    viewModel.setDefaultLayout(if (defaultLayout == "unified") "split" else "unified")
+                }
+                SwitchItem("Sync scroll", syncScroll) { viewModel.setSyncScroll(it) }
+                SettingsItem(
+                    title = "Intra-line granularity",
+                    subtitle = granularity.replaceFirstChar { it.uppercaseChar() },
+                ) {
+                    viewModel.setGranularity(
+                        when (granularity) {
+                            "word" -> "char"
+                            "char" -> "line"
+                            else -> "word"
+                        }
+                    )
+                }
+
+                // ── Appearance ────────────────────────────────────────────────
                 SettingsSection("Appearance")
-                SwitchItem("Dynamic colour", dynamicColor) { dynamicColor = it }
-                SettingsItem("Theme", "System default") { }
-
-                // About
-                SettingsSection("About")
-                SettingsItem("Version", "${LicenceInfo.appVersion} (${LicenceInfo.appVersionCode})") { }
-                SettingsItem("Licences", "${LicenceInfo.entries.size} open-source libraries") {
-                    showLicences = true
+                SettingsItem(
+                    title = "Theme",
+                    subtitle = when (theme) {
+                        "light" -> "Light"
+                        "dark" -> "Dark"
+                        else -> "System default"
+                    },
+                ) {
+                    viewModel.setTheme(
+                        when (theme) {
+                            "system" -> "light"
+                            "light" -> "dark"
+                            else -> "system"
+                        }
+                    )
                 }
+                SwitchItem("Dynamic colour", dynamicColor) { viewModel.setDynamicColor(it) }
+
+                // ── About ─────────────────────────────────────────────────────
+                SettingsSection("About")
+                SettingsItem(
+                    title = "Version",
+                    subtitle = "${LicenceInfo.appVersion} (${LicenceInfo.appVersionCode})",
+                ) { }
+                SettingsItem(
+                    title = "Licences",
+                    subtitle = "${LicenceInfo.entries.size} open-source libraries",
+                ) { showLicences = true }
             }
         }
     }

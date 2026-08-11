@@ -19,8 +19,9 @@ Permitted: Apache-2.0, MIT, BSD. LGPL by justification only. GPL/AGPL forbidden.
 | Turbine | 1.2.1 | Apache-2.0 (test only) | tests | T-01 |
 | detekt | 1.23.8 | Apache-2.0 (build only) | build | T-01 |
 
-No dependencies were added after T-01. All P1 functionality is implemented
-without additional third-party libraries.
+| AndroidX DataStore Preferences | 1.2.1 | Apache-2.0 | app (settings persistence) | R-35 |
+
+No other dependencies were added after T-01 (outside of the above).
 
 Watch items for future phases:
 - P2 (documents): OOXML/PDF parsing libraries — check licences carefully
