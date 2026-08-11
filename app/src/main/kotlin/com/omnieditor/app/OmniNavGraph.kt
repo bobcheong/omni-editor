@@ -143,6 +143,59 @@ fun OmniNavGraph(
     var fileBrowserLeftRef by remember { mutableStateOf<SourceRef?>(null) }
     var fileBrowserRightRef by remember { mutableStateOf<SourceRef?>(null) }
 
+    // R-33: consume initialAction once the nav graph is ready.
+    LaunchedEffect(initialAction) {
+        when (val action = initialAction) {
+            is IntentRouter.IntentAction.ShowHome -> {
+                // Already at home — nothing to do.
+            }
+            is IntentRouter.IntentAction.OpenFile -> {
+                // Load the URI into the registry then navigate to the editor.
+                val ref = action.source
+                val uriString = ref.uriGrant ?: return@LaunchedEffect
+                val uri = android.net.Uri.parse(uriString)
+                withContext(Dispatchers.IO) {
+                    readUriIntoRegistry(context, uri, id = ref.id)
+                }
+                navController.navigate("editor/${ref.id}")
+            }
+            is IntentRouter.IntentAction.CompareWithPrompt -> {
+                // Load the single source, then navigate to setup with left pre-filled.
+                val ref = action.source
+                val uriString = ref.uriGrant ?: return@LaunchedEffect
+                val uri = android.net.Uri.parse(uriString)
+                withContext(Dispatchers.IO) {
+                    readUriIntoRegistry(context, uri, id = ref.id)
+                }
+                navController.navigate("setup?leftKey=${ref.id}")
+            }
+            is IntentRouter.IntentAction.CompareDirectly -> {
+                // Load both sources, then navigate directly to compare.
+                val left = action.left
+                val right = action.right
+                withContext(Dispatchers.IO) {
+                    left.uriGrant?.let { readUriIntoRegistry(context, android.net.Uri.parse(it), id = left.id) }
+                    right.uriGrant?.let { readUriIntoRegistry(context, android.net.Uri.parse(it), id = right.id) }
+                }
+                navController.navigate("compare/${left.id}/${right.id}")
+            }
+            is IntentRouter.IntentAction.SnippetCompare -> {
+                // Store the snippet text as an in-memory document, navigate to setup.
+                val snippetId = UUID.randomUUID().toString()
+                DocumentRegistry.put(
+                    DocumentRegistry.LoadedDocument(
+                        id = snippetId,
+                        text = action.text,
+                        label = "snippet",
+                        uri = "",
+                        sizeBytes = action.text.length.toLong(),
+                    )
+                )
+                navController.navigate("setup?leftKey=$snippetId")
+            }
+        }
+    }
+
     NavHost(navController = navController, startDestination = flavourStartDestination()) {
 
         // ── Flavour-specific routes (permission screen, file browser) ──

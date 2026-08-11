@@ -5,4 +5,8 @@
     <string name="home_empty_body">Open a file to edit, or pick two files to compare.</string>
     <string name="home_open_file">Open a file</string>
     <string name="home_new_compare">New compare</string>
+    <string name="shortcut_new_compare">New compare</string>
+    <string name="shortcut_new_compare_long">Start a new file comparison</string>
+    <string name="shortcut_open_file">Open file</string>
+    <string name="shortcut_open_file_long">Open a file in the editor</string>
 </resources>

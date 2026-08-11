@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Static app shortcuts (R-33, T-23).
+    Surfaced by long-pressing the launcher icon.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- New compare: opens the source setup screen directly. -->
+    <shortcut
+        android:shortcutId="new_compare"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_new_compare"
+        android:shortcutLongLabel="@string/shortcut_new_compare_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.omnieditor"
+            android:targetClass="com.omnieditor.app.MainActivity"
+            android:data="omni://setup" />
+    </shortcut>
+
+    <!-- Open file: launches the file picker via the standard VIEW action. -->
+    <shortcut
+        android:shortcutId="open_file"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_open_file"
+        android:shortcutLongLabel="@string/shortcut_open_file_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.omnieditor"
+            android:targetClass="com.omnieditor.app.MainActivity"
+            android:data="omni://open" />
+    </shortcut>
+
+</shortcuts>

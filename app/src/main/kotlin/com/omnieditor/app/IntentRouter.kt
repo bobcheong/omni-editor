@@ -42,31 +42,33 @@ object IntentRouter {
         return when (intent.action) {
             Intent.ACTION_SEND -> handleSend(intent)
             Intent.ACTION_SEND_MULTIPLE -> handleSendMultiple(intent)
-            Intent.ACTION_VIEW -> handleView(intent)
+            Intent.ACTION_VIEW,
+            Intent.ACTION_EDIT -> handleView(intent)
             else -> IntentAction.ShowHome
         }
     }
 
     private fun handleSend(intent: Intent): IntentAction {
-        // Check for plain text first (snippet compare)
-        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
-        if (text != null) {
-            return IntentAction.SnippetCompare(text)
-        }
-
-        // Check for a file URI
-        val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+        // Check for a file URI first: apps that share files often supply both EXTRA_STREAM
+        // and EXTRA_TEXT (a display name). Checking EXTRA_STREAM first ensures we treat the
+        // share as a file operation rather than a snippet compare.
+        val uri = intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
         if (uri != null) {
             val ref = uriToSourceRef(uri, intent.type)
             return IntentAction.CompareWithPrompt(ref)
         }
 
+        // Fall back to plain text (snippet compare)
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+        if (text != null) {
+            return IntentAction.SnippetCompare(text)
+        }
+
         return IntentAction.ShowHome
     }
 
-    @Suppress("DEPRECATION")
     private fun handleSendMultiple(intent: Intent): IntentAction {
-        val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+        val uris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
         if (uris == null || uris.isEmpty()) return IntentAction.ShowHome
 
         if (uris.size == 1) {
