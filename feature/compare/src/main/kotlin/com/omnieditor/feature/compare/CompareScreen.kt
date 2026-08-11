@@ -78,6 +78,8 @@ fun CompareScreen(
     compareProgress: Float? = null,
     /** Called when the user taps "Cancel" during compare. */
     onCancelCompare: (() -> Unit)? = null,
+    /** Optional tab strip rendered above the compare content (R-34b). */
+    tabStripContent: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -195,41 +197,46 @@ fun CompareScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        CompareContent(
-            state = state,
-            ruleSet = ruleSet,
-            compareProgress = compareProgress,
-            onCancelCompare = onCancelCompare,
-            showFindBar = showFindBar,
-            findQuery = findQuery,
-            findMatches = findMatches,
-            findMatchIndex = findMatchIndex,
-            showActiveLineSheet = showActiveLineSheet,
-            tappedHunkIndex = tappedHunkIndex,
-            onFindQueryChanged = { findQuery = it; findMatchIndex = 0 },
-            onFindPrevious = {
-                if (findMatches.isNotEmpty()) {
-                    findMatchIndex = (findMatchIndex - 1 + findMatches.size) % findMatches.size
-                }
-            },
-            onFindNext = {
-                if (findMatches.isNotEmpty()) {
-                    findMatchIndex = (findMatchIndex + 1) % findMatches.size
-                }
-            },
-            onFindClose = { showFindBar = false; findQuery = "" },
-            onDiffRowTapped = { hunkIndex -> tappedHunkIndex = hunkIndex; showActiveLineSheet = true },
-            onActiveLineSheetDismiss = { showActiveLineSheet = false },
-            onMergeHunk = { hunkIndex, direction ->
-                val applied = state?.mergeHunk(hunkIndex, direction)
-                scope.launch {
-                    snackbarHostState.showSnackbar(
-                        if (applied == true) state?.mergeMessage ?: "Merged" else "Already merged"
-                    )
-                }
-            },
-            modifier = modifier.fillMaxSize().padding(padding),
-        )
+        Column(modifier = modifier.fillMaxSize().padding(padding)) {
+            // R-34b: tab strip slot — rendered when tabs are present.
+            tabStripContent?.invoke()
+
+            CompareContent(
+                state = state,
+                ruleSet = ruleSet,
+                compareProgress = compareProgress,
+                onCancelCompare = onCancelCompare,
+                showFindBar = showFindBar,
+                findQuery = findQuery,
+                findMatches = findMatches,
+                findMatchIndex = findMatchIndex,
+                showActiveLineSheet = showActiveLineSheet,
+                tappedHunkIndex = tappedHunkIndex,
+                onFindQueryChanged = { findQuery = it; findMatchIndex = 0 },
+                onFindPrevious = {
+                    if (findMatches.isNotEmpty()) {
+                        findMatchIndex = (findMatchIndex - 1 + findMatches.size) % findMatches.size
+                    }
+                },
+                onFindNext = {
+                    if (findMatches.isNotEmpty()) {
+                        findMatchIndex = (findMatchIndex + 1) % findMatches.size
+                    }
+                },
+                onFindClose = { showFindBar = false; findQuery = "" },
+                onDiffRowTapped = { hunkIndex -> tappedHunkIndex = hunkIndex; showActiveLineSheet = true },
+                onActiveLineSheetDismiss = { showActiveLineSheet = false },
+                onMergeHunk = { hunkIndex, direction ->
+                    val applied = state?.mergeHunk(hunkIndex, direction)
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            if (applied == true) state?.mergeMessage ?: "Merged" else "Already merged"
+                        )
+                    }
+                },
+                modifier = Modifier.weight(1f),
+            )
+        }
 
         // Accept-all confirmation dialog
         showAcceptAllConfirm?.let { direction ->

@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import com.omnieditor.feature.editor.TabInfo
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -118,6 +119,21 @@ private fun uriFallbackLabel(uri: Uri): String {
     return path.substringAfterLast('/').substringAfterLast(':').ifBlank { "file" }
 }
 
+/**
+ * Loads a document into [DocumentRegistry] from [uriString] if [id] is not already cached.
+ * No-op when the document is already present or the URI is null.
+ */
+private suspend fun reloadIfAbsent(
+    context: android.content.Context,
+    id: String,
+    uriString: String?,
+) {
+    if (DocumentRegistry.get(id) != null || uriString == null) return
+    withContext(Dispatchers.IO) {
+        runCatching { readUriIntoRegistry(context, Uri.parse(uriString), id = id) }.getOrNull()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Nav graph
 // ---------------------------------------------------------------------------
@@ -137,6 +153,10 @@ fun OmniNavGraph(
     val resultStore = remember {
         ResultStore(File(context.cacheDir, "results"))
     }
+
+    // R-34b: shared tab strip state — one list, one active ID, across all screens.
+    val tabs = remember { mutableStateListOf<TabInfo>() }
+    var activeTabId by remember { mutableStateOf<String?>(null) }
 
     // R-23a: file browser picked sources, keyed by slot ("left" / "right").
     // Updated by flavourDestinations() callback, read by the setup screen.
@@ -208,104 +228,46 @@ fun OmniNavGraph(
 
         // ── Home ──
         composable("home") {
-            val scope = rememberCoroutineScope()
-            val recentSessions = remember { mutableStateListOf<Session>() }
-
-            // Load recents
-            LaunchedEffect(Unit) {
-                val recents = recentsStore.getRecents()
-                recentSessions.clear()
-                recentSessions.addAll(recents.map { ref ->
-                    Session(
-                        id = ref.id,
-                        name = ref.label,
-                        mode = CompareMode.EDITOR,
-                        createdAt = System.currentTimeMillis(),
-                    )
-                })
-            }
-
-            val openFileLauncher = rememberLauncherForActivityResult(
-                ActivityResultContracts.OpenDocument()
-            ) { uri: Uri? ->
-                if (uri != null) {
-                    // R-23a: take persistable permission so URI survives app restart.
-                    takePersistablePermission(context.contentResolver, uri)
-                    // R-34a: generate SourceRef.id first and use it as the registry key
-                    // so both systems share a single authoritative identity.
-                    val sourceId = UUID.randomUUID().toString()
-                    scope.launch {
-                        val doc = withContext(Dispatchers.IO) {
-                            readUriIntoRegistry(context, uri, id = sourceId)
-                        }
-                        val ref = SourceRef(
-                            id = sourceId,
-                            kind = SourceKind.LOCAL,
-                            uriGrant = uri.toString(),
-                            label = doc?.label ?: "file",
-                        )
-                        // Track in recents and persist as a session
-                        recentsStore.addRecent(ref)
-                        sessionStore.save(Session(
-                            id = sourceId,
-                            name = ref.label,
-                            mode = CompareMode.EDITOR,
-                            createdAt = System.currentTimeMillis(),
-                            sources = listOf(ref),
-                        ))
-                        navController.navigate("editor/$sourceId")
-                    }
-                }
-            }
-
-            HomeScreen(
-                recentSessions = recentSessions,
-                onOpenFile = {
-                    openFileLauncher.launch(arrayOf("*/*"))
-                },
-                onNewCompare = {
-                    navController.navigate("setup")
-                },
-                onSessionTap = { sessionId ->
-                    // Try registry first (document already loaded in this session)
-                    val cached = DocumentRegistry.get(sessionId)
-                    if (cached != null) {
-                        navController.navigate("editor/$sessionId")
-                    } else {
-                        // Try to re-read from stored URI in recents
-                        scope.launch {
-                            val recents = recentsStore.getRecents()
-                            val ref = recents.find { it.id == sessionId }
-                            val uriString = ref?.uriGrant
-                            if (uriString != null) {
-                                val doc = withContext(Dispatchers.IO) {
-                                    runCatching {
-                                        readUriIntoRegistry(context, Uri.parse(uriString), id = sessionId)
-                                    }.getOrNull()
-                                }
-                                if (doc != null) {
-                                    navController.navigate("editor/$sessionId")
-                                } else {
-                                    // Permission expired — open picker instead
-                                    openFileLauncher.launch(arrayOf("*/*"))
-                                }
-                            } else {
-                                openFileLauncher.launch(arrayOf("*/*"))
-                            }
-                        }
-                    }
-                },
-                onSettings = {
-                    navController.navigate("settings")
-                },
+            HomeDestination(
+                recentsStore = recentsStore,
+                sessionStore = sessionStore,
+                navController = navController,
             )
         }
 
         // ── Editor ──
         composable("editor/{contentKey}") { backStackEntry ->
             val contentKey = backStackEntry.arguments?.getString("contentKey") ?: ""
+            // R-34b: register this document as the active tab.
+            LaunchedEffect(contentKey) {
+                activeTabId = contentKey
+                val label = DocumentRegistry.get(contentKey)?.label ?: contentKey
+                val existing = tabs.indexOfFirst { it.id == contentKey }
+                val tab = TabInfo(id = contentKey, label = label, dirty = false, isCompare = false)
+                if (existing >= 0) tabs[existing] = tab else tabs.add(tab)
+            }
             EditorDestination(
                 contentKey = contentKey,
+                tabs = tabs,
+                activeTabId = activeTabId,
+                onTabSelected = { id ->
+                    activeTabId = id
+                    val selectedTab = tabs.find { it.id == id }
+                    if (selectedTab?.isCompare == true && id.length == 73) {
+                        // Compare tab ID is "$leftUUID-$rightUUID" — UUIDs are always 36 chars.
+                        val lk = id.substring(0, 36)
+                        val rk = id.substring(37)
+                        navController.navigate("compare/$lk/$rk")
+                    } else {
+                        navController.navigate("editor/$id")
+                    }
+                },
+                onTabClosed = { id ->
+                    tabs.removeAll { it.id == id }
+                    DocumentRegistry.unpin(id)
+                    if (id == contentKey) navController.popBackStack()
+                },
+                onNewTab = { navController.navigate("home") },
                 onNavigateBack = { navController.popBackStack() },
                 onCompareWith = { navController.navigate("setup?leftKey=$contentKey") },
             )
@@ -339,10 +301,40 @@ fun OmniNavGraph(
         composable("compare/{leftKey}/{rightKey}") { backStackEntry ->
             val leftKey = backStackEntry.arguments?.getString("leftKey") ?: ""
             val rightKey = backStackEntry.arguments?.getString("rightKey") ?: ""
+            val compareTabId = "$leftKey-$rightKey"
+            // R-34b: register this compare as the active tab.
+            LaunchedEffect(compareTabId) {
+                activeTabId = compareTabId
+                val leftLabel = DocumentRegistry.get(leftKey)?.label ?: "left"
+                val rightLabel = DocumentRegistry.get(rightKey)?.label ?: "right"
+                val label = "$leftLabel ↔ $rightLabel"
+                val existing = tabs.indexOfFirst { it.id == compareTabId }
+                val tab = TabInfo(id = compareTabId, label = label, dirty = false, isCompare = true)
+                if (existing >= 0) tabs[existing] = tab else tabs.add(tab)
+            }
             CompareDestination(
                 leftKey = leftKey,
                 rightKey = rightKey,
                 resultStore = resultStore,
+                tabs = tabs,
+                activeTabId = activeTabId,
+                onTabSelected = { id ->
+                    activeTabId = id
+                    val selectedTab = tabs.find { it.id == id }
+                    if (selectedTab?.isCompare == true && id.length == 73) {
+                        // Compare tab ID is "$leftUUID-$rightUUID" — UUIDs are always 36 chars.
+                        val lk = id.substring(0, 36)
+                        val rk = id.substring(37)
+                        navController.navigate("compare/$lk/$rk")
+                    } else {
+                        navController.navigate("editor/$id")
+                    }
+                },
+                onTabClosed = { id ->
+                    tabs.removeAll { it.id == id }
+                    if (id == compareTabId) navController.popBackStack()
+                },
+                onNewTab = { navController.navigate("home") },
                 onNavigateBack = { navController.popBackStack() },
                 navController = navController,
             )
@@ -357,10 +349,110 @@ fun OmniNavGraph(
     }
 }
 
+/** Home route body extracted to keep OmniNavGraph within complexity budget. */
+@Composable
+private fun HomeDestination(
+    recentsStore: RecentsStore,
+    sessionStore: SessionStore,
+    navController: NavHostController,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val recentSessions = remember { mutableStateListOf<Session>() }
+    val pinnedSessions = remember { mutableStateListOf<Session>() }
+
+    // R-34b: load sessions from SessionStore (preserves correct CompareMode labels).
+    LaunchedEffect(Unit) {
+        val all = sessionStore.listAll()
+        pinnedSessions.clear()
+        pinnedSessions.addAll(all.filter { it.pinned })
+        recentSessions.clear()
+        recentSessions.addAll(all.filter { !it.pinned })
+    }
+
+    val openFileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            takePersistablePermission(context.contentResolver, uri)
+            val sourceId = UUID.randomUUID().toString()
+            scope.launch {
+                val doc = withContext(Dispatchers.IO) {
+                    readUriIntoRegistry(context, uri, id = sourceId)
+                }
+                val ref = SourceRef(
+                    id = sourceId,
+                    kind = SourceKind.LOCAL,
+                    uriGrant = uri.toString(),
+                    label = doc?.label ?: "file",
+                )
+                recentsStore.addRecent(ref)
+                sessionStore.save(Session(
+                    id = sourceId,
+                    name = ref.label,
+                    mode = CompareMode.EDITOR,
+                    createdAt = System.currentTimeMillis(),
+                    sources = listOf(ref),
+                ))
+                navController.navigate("editor/$sourceId")
+            }
+        }
+    }
+
+    HomeScreen(
+        pinnedSessions = pinnedSessions,
+        recentSessions = recentSessions,
+        onOpenFile = { openFileLauncher.launch(arrayOf("*/*")) },
+        onNewCompare = { navController.navigate("setup") },
+        onSessionTap = { sessionId ->
+            val session = (pinnedSessions + recentSessions).find { it.id == sessionId }
+            if (session != null && session.mode == CompareMode.TEXT) {
+                val leftRef = session.sources.getOrNull(0)
+                val rightRef = session.sources.getOrNull(1)
+                if (leftRef != null && rightRef != null) {
+                    scope.launch {
+                        reloadIfAbsent(context, leftRef.id, leftRef.uriGrant)
+                        reloadIfAbsent(context, rightRef.id, rightRef.uriGrant)
+                        navController.navigate("compare/${leftRef.id}/${rightRef.id}")
+                    }
+                }
+            } else {
+                val cached = DocumentRegistry.get(sessionId)
+                if (cached != null) {
+                    navController.navigate("editor/$sessionId")
+                } else {
+                    scope.launch {
+                        val storedSession = sessionStore.load(sessionId)
+                        val uriString = storedSession?.sources?.firstOrNull()?.uriGrant
+                            ?: recentsStore.getRecents().find { it.id == sessionId }?.uriGrant
+                        if (uriString != null) {
+                            val doc = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    readUriIntoRegistry(context, Uri.parse(uriString), id = sessionId)
+                                }.getOrNull()
+                            }
+                            if (doc != null) navController.navigate("editor/$sessionId")
+                            else openFileLauncher.launch(arrayOf("*/*"))
+                        } else {
+                            openFileLauncher.launch(arrayOf("*/*"))
+                        }
+                    }
+                }
+            }
+        },
+        onSettings = { navController.navigate("settings") },
+    )
+}
+
 /** Editor route body extracted to keep OmniNavGraph within complexity budget. */
 @Composable
 private fun EditorDestination(
     contentKey: String,
+    tabs: List<TabInfo> = emptyList(),
+    activeTabId: String? = null,
+    onTabSelected: (String) -> Unit = {},
+    onTabClosed: (String) -> Unit = {},
+    onNewTab: () -> Unit = {},
     onNavigateBack: () -> Unit,
     onCompareWith: () -> Unit,
 ) {
@@ -368,6 +460,11 @@ private fun EditorDestination(
     val context = LocalContext.current
     val viewModel: EditorViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsState()
+
+    // R-34b: pin this document so LRU eviction cannot remove it while open.
+    LaunchedEffect(contentKey) {
+        DocumentRegistry.pin(contentKey)
+    }
 
     // R-22: snapshot of the file's size and modification time taken when the file is opened.
     // Stored as state so they survive recomposition.
@@ -485,6 +582,11 @@ private fun EditorDestination(
 
     EditorScreen(
         fileName = cached?.label ?: "",
+        tabs = tabs,
+        selectedTabId = activeTabId,
+        onTabSelected = onTabSelected,
+        onTabClosed = onTabClosed,
+        onNewTab = onNewTab,
         onNavigateBack = onNavigateBack,
         onCompareWith = onCompareWith,
         viewModel = viewModel,
@@ -633,6 +735,11 @@ private fun CompareDestination(
     leftKey: String,
     rightKey: String,
     resultStore: ResultStore,
+    tabs: List<TabInfo> = emptyList(),
+    activeTabId: String? = null,
+    onTabSelected: (String) -> Unit = {},
+    onTabClosed: (String) -> Unit = {},
+    onNewTab: () -> Unit = {},
     onNavigateBack: () -> Unit,
     navController: NavHostController,
 ) {
@@ -857,6 +964,17 @@ private fun CompareDestination(
             compareJob = null
             compareProgress = null
         },
+        tabStripContent = if (tabs.isNotEmpty()) {
+            {
+                com.omnieditor.feature.editor.TabStrip(
+                    tabs = tabs,
+                    selectedTabId = activeTabId,
+                    onTabSelected = onTabSelected,
+                    onTabClosed = onTabClosed,
+                    onNewTab = onNewTab,
+                )
+            }
+        } else null,
     )
 }
 
