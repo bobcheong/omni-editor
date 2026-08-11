@@ -2,7 +2,6 @@ package com.omnieditor.feature.compare
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -26,9 +24,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.omnieditor.core.model.Granularity
 import com.omnieditor.design.LocalCompareColors
 
 /**
@@ -59,6 +59,9 @@ fun UnifiedDiffView(
     }
     val listState = rememberLazyListState()
     val colors = LocalCompareColors.current
+    val hunks = state.result.hunks
+    val cache = state.intraLineCache
+    val granularity = state.granularity
 
     // Scroll to current difference when navigating
     LaunchedEffect(state.currentDiffIndex) {
@@ -82,6 +85,9 @@ fun UnifiedDiffView(
                 rightLines = state.rightLines,
                 isCurrentHunk = row.hunkIndex != null && row.hunkIndex == state.currentDiffIndex,
                 colors = colors,
+                hunks = hunks,
+                intraLineCache = cache,
+                granularity = granularity,
             )
         }
     }
@@ -94,6 +100,9 @@ private fun UnifiedAlignedRow(
     rightLines: List<String>,
     isCurrentHunk: Boolean,
     colors: com.omnieditor.design.CompareColors,
+    hunks: List<com.omnieditor.core.model.Hunk>,
+    intraLineCache: IntraLineCache,
+    granularity: Granularity,
 ) {
     val (bgColor, fgColor, glyph) = when (row.type) {
         RowType.ADDED -> Triple(colors.addedBg, colors.addedFg, "+")
@@ -105,14 +114,42 @@ private fun UnifiedAlignedRow(
 
     // For display: prefer left line for context/removed; right line for added/changed-new.
     val displayLineNum = row.left ?: row.right ?: 0L
-    val displayText = when {
+    val rawText = when {
         row.left != null -> leftLines.getOrElse(row.left.toInt()) { "" }
         row.right != null -> rightLines.getOrElse(row.right.toInt()) { "" }
         else -> ""
     }
 
-    // TalkBack content description (NFR-A1)
-    val a11yDescription = buildA11yDescription(row, displayLineNum, displayText)
+    // Compute intra-line highlight for CHANGED rows (R-26).
+    val displayContent: AnnotatedString = remember(row, rawText, granularity) {
+        when (row.type) {
+            RowType.CHANGED_OLD -> {
+                val leftIdx = row.left ?: return@remember AnnotatedString(rawText)
+                val hunk = row.hunkIndex?.let { hunks.getOrNull(it) }
+                    ?: return@remember AnnotatedString(rawText)
+                val offset = leftIdx - hunk.leftStart
+                val rightIdx = hunk.rightStart + offset
+                if (rightIdx >= hunk.rightEnd) return@remember AnnotatedString(rawText)
+                val rightText = rightLines.getOrElse(rightIdx.toInt()) { "" }
+                val result = intraLineCache.get(rawText, rightText, leftIdx, rightIdx, granularity)
+                highlightIntraLine(rawText, result.leftRanges, colors.intraLineOldBg)
+            }
+            RowType.CHANGED_NEW -> {
+                val rightIdx = row.right ?: return@remember AnnotatedString(rawText)
+                val hunk = row.hunkIndex?.let { hunks.getOrNull(it) }
+                    ?: return@remember AnnotatedString(rawText)
+                val offset = rightIdx - hunk.rightStart
+                val leftIdx = hunk.leftStart + offset
+                if (leftIdx >= hunk.leftEnd) return@remember AnnotatedString(rawText)
+                val leftText = leftLines.getOrElse(leftIdx.toInt()) { "" }
+                val result = intraLineCache.get(leftText, rawText, leftIdx, rightIdx, granularity)
+                highlightIntraLine(rawText, result.rightRanges, colors.intraLineNewBg)
+            }
+            else -> AnnotatedString(rawText)
+        }
+    }
+    // TalkBack content description (NFR-A1) uses raw text without span markup.
+    val a11yDescription = buildA11yDescription(row, displayLineNum, rawText)
 
     Row(
         modifier = Modifier
@@ -145,9 +182,9 @@ private fun UnifiedAlignedRow(
             maxLines = 1,
         )
 
-        // Content with horizontal scroll
+        // Content with horizontal scroll — uses AnnotatedString for intra-line spans (R-26).
         Text(
-            text = displayText,
+            text = displayContent,
             color = if (row.type == RowType.CONTEXT) {
                 MaterialTheme.colorScheme.onSurface
             } else {

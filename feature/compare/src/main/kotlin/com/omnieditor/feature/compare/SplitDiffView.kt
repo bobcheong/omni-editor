@@ -26,10 +26,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.omnieditor.core.model.Granularity
 import com.omnieditor.design.LocalCompareColors
 
 /**
@@ -53,6 +55,9 @@ fun SplitDiffView(
     val leftListState = rememberLazyListState()
     val rightListState = rememberLazyListState()
     val colors = LocalCompareColors.current
+    val hunks = state.result.hunks
+    val cache = state.intraLineCache
+    val granularity = state.granularity
 
     // Synchronise scroll between panes
     if (syncScroll) {
@@ -77,10 +82,14 @@ fun SplitDiffView(
         SplitPane(
             alignedRows = alignedRows,
             lines = state.leftLines,
+            pairedLines = state.rightLines,
             side = Side.LEFT,
             currentHunkIndex = state.currentDiffIndex,
             listState = leftListState,
             colors = colors,
+            hunks = hunks,
+            intraLineCache = cache,
+            granularity = granularity,
             contentPadding = contentPadding,
             modifier = Modifier.weight(1f),
         )
@@ -97,10 +106,14 @@ fun SplitDiffView(
         SplitPane(
             alignedRows = alignedRows,
             lines = state.rightLines,
+            pairedLines = state.leftLines,
             side = Side.RIGHT,
             currentHunkIndex = state.currentDiffIndex,
             listState = rightListState,
             colors = colors,
+            hunks = hunks,
+            intraLineCache = cache,
+            granularity = granularity,
             contentPadding = contentPadding,
             modifier = Modifier.weight(1f),
         )
@@ -111,10 +124,15 @@ fun SplitDiffView(
 private fun SplitPane(
     alignedRows: List<AlignedRow>,
     lines: List<String>,
+    /** The opposite side's lines — used to compute intra-line diff for CHANGED rows (R-26). */
+    pairedLines: List<String>,
     side: Side,
     currentHunkIndex: Int,
     listState: LazyListState,
     colors: com.omnieditor.design.CompareColors,
+    hunks: List<com.omnieditor.core.model.Hunk>,
+    intraLineCache: IntraLineCache,
+    granularity: Granularity,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -126,7 +144,7 @@ private fun SplitPane(
         itemsIndexed(alignedRows, key = { idx, row -> "${side}_${row.left}_${row.right}_$idx" }) { _, row ->
             val lineIdx = if (side == Side.LEFT) row.left else row.right
             val isSpacer = lineIdx == null
-            val text = if (lineIdx != null) lines.getOrElse(lineIdx.toInt()) { "" } else ""
+            val rawText = if (lineIdx != null) lines.getOrElse(lineIdx.toInt()) { "" } else ""
 
             val bgColor = if (isSpacer) {
                 colors.gutter.copy(alpha = 0.08f)
@@ -158,7 +176,37 @@ private fun SplitPane(
             val a11y = when {
                 isSpacer -> "Spacer on $sideLabel"
                 row.type == RowType.CONTEXT -> "Unchanged on $sideLabel, line ${displayLine + 1}"
-                else -> "${row.type.name} on $sideLabel, line ${displayLine + 1}: $text"
+                else -> "${row.type.name} on $sideLabel, line ${displayLine + 1}: $rawText"
+            }
+
+            // Intra-line highlighting for CHANGED rows (R-26).
+            val displayContent: AnnotatedString = remember(row, rawText, granularity) {
+                when {
+                    isSpacer -> AnnotatedString(rawText)
+                    side == Side.LEFT && row.type == RowType.CHANGED_OLD -> {
+                        val leftIdx = lineIdx ?: return@remember AnnotatedString(rawText)
+                        val hunk = row.hunkIndex?.let { hunks.getOrNull(it) }
+                            ?: return@remember AnnotatedString(rawText)
+                        val offset = leftIdx - hunk.leftStart
+                        val rightIdx = hunk.rightStart + offset
+                        if (rightIdx >= hunk.rightEnd) return@remember AnnotatedString(rawText)
+                        val pairedText = pairedLines.getOrElse(rightIdx.toInt()) { "" }
+                        val result = intraLineCache.get(rawText, pairedText, leftIdx, rightIdx, granularity)
+                        highlightIntraLine(rawText, result.leftRanges, colors.intraLineOldBg)
+                    }
+                    side == Side.RIGHT && row.type == RowType.CHANGED_NEW -> {
+                        val rightIdx = lineIdx ?: return@remember AnnotatedString(rawText)
+                        val hunk = row.hunkIndex?.let { hunks.getOrNull(it) }
+                            ?: return@remember AnnotatedString(rawText)
+                        val offset = rightIdx - hunk.rightStart
+                        val leftIdx = hunk.leftStart + offset
+                        if (leftIdx >= hunk.leftEnd) return@remember AnnotatedString(rawText)
+                        val pairedText = pairedLines.getOrElse(leftIdx.toInt()) { "" }
+                        val result = intraLineCache.get(pairedText, rawText, leftIdx, rightIdx, granularity)
+                        highlightIntraLine(rawText, result.rightRanges, colors.intraLineNewBg)
+                    }
+                    else -> AnnotatedString(rawText)
+                }
             }
 
             Row(
@@ -186,9 +234,9 @@ private fun SplitPane(
                     modifier = Modifier.width(36.dp),
                     maxLines = 1,
                 )
-                // Content
+                // Content — AnnotatedString carries intra-line background spans (R-26).
                 Text(
-                    text = text,
+                    text = displayContent,
                     color = fgColor,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,

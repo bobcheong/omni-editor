@@ -7,8 +7,10 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.omnieditor.core.model.CompareResult
+import com.omnieditor.core.model.Granularity
 import com.omnieditor.core.model.Hunk
 import com.omnieditor.core.model.HunkType
+import com.omnieditor.core.model.RuleSet
 
 /**
  * Observable state for the compare view.
@@ -21,7 +23,17 @@ class CompareState(
     val result: CompareResult,
     val leftLines: List<String>,
     val rightLines: List<String>,
+    val ruleSet: RuleSet = RuleSet.DEFAULT,
 ) {
+    /**
+     * Intra-line diff cache — keyed by (leftLineIdx, rightLineIdx), cleared when [result]
+     * changes. Exposed so composables can pass it into rendering utilities without
+     * recomputing per frame.
+     */
+    val intraLineCache: IntraLineCache = IntraLineCache()
+
+    /** Granularity from the active rule set, forwarded to intra-line computation. */
+    val granularity: Granularity get() = ruleSet.granularity
     /** Currently focused difference index (0-based). */
     var currentDiffIndex by mutableIntStateOf(0)
         internal set

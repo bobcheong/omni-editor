@@ -130,6 +130,10 @@ data class CompareColors(
     val changedFg: Color, val changedBg: Color,
     val conflictFg: Color, val conflictBg: Color,
     val gutter: Color,
+    /** Character/word-level highlight on the old (left) side of a CHANGED row. */
+    val intraLineOldBg: Color,
+    /** Character/word-level highlight on the new (right) side of a CHANGED row. */
+    val intraLineNewBg: Color,
 )
 
 val LightCompareColors = CompareColors(
@@ -138,6 +142,8 @@ val LightCompareColors = CompareColors(
     changedFg = Color(0xFF6B4A00), changedBg = Color(0xFFFBF0D5),
     conflictFg = Color(0xFF5B2C83), conflictBg = Color(0xFFEFE3F7),
     gutter = Color(0xFF5F696B),
+    intraLineOldBg = Color(0xFFF5C6C6),   // deeper red tint over removed-bg
+    intraLineNewBg = Color(0xFFC4E8CE),   // deeper green tint over added-bg (used for changed-new)
 )
 
 val DarkCompareColors = CompareColors(
@@ -146,6 +152,8 @@ val DarkCompareColors = CompareColors(
     changedFg = Color(0xFFEBCB7C), changedBg = Color(0xFF322608),
     conflictFg = Color(0xFFCFA8E8), conflictBg = Color(0xFF2B1A38),
     gutter = Color(0xFF9AA5A7),
+    intraLineOldBg = Color(0xFF6B2020),   // deeper red over dark removed-bg
+    intraLineNewBg = Color(0xFF1A4D2C),   // deeper green over dark added-bg (used for changed-new)
 )
 
 val LocalCompareColors = staticCompositionLocalOf { LightCompareColors }
