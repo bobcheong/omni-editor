@@ -46,6 +46,7 @@ import com.omnieditor.feature.editor.EditorUiState
 import com.omnieditor.feature.editor.EditorViewModel
 import com.omnieditor.feature.setup.SourceSetupScreen
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -598,6 +599,8 @@ private fun CompareDestination(
 
     var compareState by remember { mutableStateOf<CompareState?>(null) }
     var currentRuleSet by remember { mutableStateOf(RuleSet.DEFAULT) }
+    var compareProgress by remember { mutableStateOf<Float?>(null) }
+    var compareJob by remember { mutableStateOf<Job?>(null) }
 
     // R-27: create PieceTableDocuments for merge write-back.
     // Key on effective keys so documents are recreated when sides are flipped.
@@ -678,6 +681,7 @@ private fun CompareDestination(
 
             // Show loading state while re-running compare
             compareState = null
+            compareProgress = 0f
 
             // Re-run: reload document text fresh from registry (picks up external changes).
             val leftText = if (rerunVersion > 0) {
@@ -693,24 +697,31 @@ private fun CompareDestination(
 
             val leftLines = leftText.lines()
             val rightLines = rightText.lines()
-            val result = withContext(Dispatchers.Default) {
-                com.omnieditor.core.diff.DiffEngine.compare(
+            val job = scope.launch(Dispatchers.Default) {
+                val result = com.omnieditor.core.diff.DiffEngine.compare(
                     leftLineCount = leftLines.size.toLong(),
                     rightLineCount = rightLines.size.toLong(),
                     leftLine = { leftLines[it.toInt()] },
                     rightLine = { rightLines[it.toInt()] },
                     rules = currentRuleSet,
+                    progress = { p ->
+                        val total = p.total ?: 1L
+                        compareProgress = if (total > 0) p.done.toFloat() / total.toFloat() else 0f
+                    },
                 )
+                compareState = CompareState(
+                    result, leftLines, rightLines,
+                    leftDocument = leftDocument,
+                    rightDocument = rightDocument,
+                )
+                compareProgress = null
+                // R-34a: persist result so it survives process death (only for default rules).
+                if (currentRuleSet == RuleSet.DEFAULT) {
+                    resultStore.store(sessionId, result)
+                }
             }
-            compareState = CompareState(
-                result, leftLines, rightLines,
-                leftDocument = leftDocument,
-                rightDocument = rightDocument,
-            )
-            // R-34a: persist result so it survives process death (only for default rules).
-            if (currentRuleSet == RuleSet.DEFAULT) {
-                scope.launch { resultStore.store(sessionId, result) }
-            }
+            compareJob = job
+            job.join()
         }
     }
 
@@ -753,40 +764,14 @@ private fun CompareDestination(
     val exportReport: () -> Unit = {
         val state = compareState
         if (state != null) {
-            val timestamp = DateTimeFormatter
-                .ofPattern("yyyy-MM-dd HH:mm:ss z")
-                .withZone(ZoneId.systemDefault())
-                .format(Instant.now())
-            val meta = ReportGenerator.ReportMeta(
-                leftLabel = leftCached?.label ?: "left",
-                rightLabel = rightCached?.label ?: "right",
-                timestamp = timestamp,
-                rules = currentRuleSet,
-                engineMode = "histogram",
-            )
             scope.launch {
-                val reportText = withContext(Dispatchers.Default) {
-                    buildString {
-                        append(ReportGenerator.plainTextSummary(state.result, meta))
-                        appendLine()
-                        appendLine("--- Unified Diff Patch ---")
-                        append(ReportGenerator.unifiedDiffPatch(
-                            result = state.result,
-                            leftLines = state.leftLines,
-                            rightLines = state.rightLines,
-                            meta = meta,
-                        ))
-                    }
-                }
-                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, reportText)
-                    putExtra(
-                        Intent.EXTRA_SUBJECT,
-                        "Compare report: ${meta.leftLabel} vs ${meta.rightLabel}",
-                    )
-                }
-                context.startActivity(Intent.createChooser(shareIntent, "Export report"))
+                shareCompareReport(
+                    context = context,
+                    state = state,
+                    leftLabel = leftCached?.label ?: "left",
+                    rightLabel = rightCached?.label ?: "right",
+                    currentRuleSet = currentRuleSet,
+                )
             }
         }
     }
@@ -813,7 +798,58 @@ private fun CompareDestination(
         onFlipSides = { flipped = !flipped },
         onRerunCompare = { rerunVersion++ },
         onExportReport = exportReport,
+        compareProgress = compareProgress,
+        onCancelCompare = {
+            compareJob?.cancel()
+            compareJob = null
+            compareProgress = null
+        },
     )
+}
+
+/**
+ * R-30: Generate and share a compare report as a plain-text unified diff.
+ *
+ * Extracted from [CompareDestination] to keep method length within budget.
+ * Must be called from a coroutine (uses [withContext]).
+ */
+private suspend fun shareCompareReport(
+    context: android.content.Context,
+    state: com.omnieditor.feature.compare.CompareState,
+    leftLabel: String,
+    rightLabel: String,
+    currentRuleSet: RuleSet,
+) {
+    val timestamp = DateTimeFormatter
+        .ofPattern("yyyy-MM-dd HH:mm:ss z")
+        .withZone(ZoneId.systemDefault())
+        .format(Instant.now())
+    val meta = ReportGenerator.ReportMeta(
+        leftLabel = leftLabel,
+        rightLabel = rightLabel,
+        timestamp = timestamp,
+        rules = currentRuleSet,
+        engineMode = "histogram",
+    )
+    val reportText = withContext(Dispatchers.Default) {
+        buildString {
+            append(ReportGenerator.plainTextSummary(state.result, meta))
+            appendLine()
+            appendLine("--- Unified Diff Patch ---")
+            append(ReportGenerator.unifiedDiffPatch(
+                result = state.result,
+                leftLines = state.leftLines,
+                rightLines = state.rightLines,
+                meta = meta,
+            ))
+        }
+    }
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, reportText)
+        putExtra(Intent.EXTRA_SUBJECT, "Compare report: $leftLabel vs $rightLabel")
+    }
+    context.startActivity(Intent.createChooser(shareIntent, "Export report"))
 }
 
 /**

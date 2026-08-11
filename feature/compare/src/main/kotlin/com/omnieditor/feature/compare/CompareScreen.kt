@@ -4,11 +4,19 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -17,6 +25,9 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -27,14 +38,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.dp
 import com.omnieditor.core.model.RuleSet
+import com.omnieditor.core.model.WhitespaceRule
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,8 +64,6 @@ fun CompareScreen(
     rightLabel: String = "Right",
     onNavigateBack: () -> Unit = {},
     onSave: (() -> Unit)? = null,
-    onMerge: () -> Unit = {},
-    onFind: () -> Unit = {},
     /** Open the left side in the viewer (read-only editor). */
     onOpenLeft: (() -> Unit)? = null,
     /** Open the right side in the viewer (read-only editor). */
@@ -59,6 +74,10 @@ fun CompareScreen(
     onRerunCompare: (() -> Unit)? = null,
     /** Generate and share a report of the current compare result. */
     onExportReport: (() -> Unit)? = null,
+    /** Determinate progress [0f..1f] while compare is running; null when not loading. */
+    compareProgress: Float? = null,
+    /** Called when the user taps "Cancel" during compare. */
+    onCancelCompare: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -68,6 +87,29 @@ fun CompareScreen(
     var showRuleSheet by remember { mutableStateOf(false) }
     var showAcceptAllConfirm by remember { mutableStateOf<MergeDirection?>(null) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
+
+    // Find-within-compare state (OE-FND-1)
+    var showFindBar by remember { mutableStateOf(false) }
+    var findQuery by remember { mutableStateOf("") }
+    var findMatchIndex by remember { mutableIntStateOf(0) }
+    // Match indices: rows where either left or right text contains the query (case-insensitive).
+    val findMatches by remember(state, findQuery) {
+        derivedStateOf {
+            if (state == null || findQuery.isBlank()) emptyList()
+            else {
+                val q = findQuery.lowercase()
+                state.buildAlignedRows().mapIndexedNotNull { idx, row ->
+                    val leftText = row.left?.let { state.leftLines.getOrElse(it.toInt()) { "" } } ?: ""
+                    val rightText = row.right?.let { state.rightLines.getOrElse(it.toInt()) { "" } } ?: ""
+                    if (leftText.lowercase().contains(q) || rightText.lowercase().contains(q)) idx else null
+                }
+            }
+        }
+    }
+    // Clamp findMatchIndex when matches change
+    LaunchedEffect(findMatches) {
+        if (findMatchIndex >= findMatches.size) findMatchIndex = 0
+    }
 
     // Intercept back gesture when either side has unsaved merge changes.
     val isDirty = state?.leftDirty == true || state?.rightDirty == true
@@ -122,35 +164,17 @@ fun CompareScreen(
                     onNext = { state.nextDiff() },
                     onMergeLeftToRight = {
                         if (state.currentHunk != null) {
-                            val applied = state.mergeHunk(
-                                state.currentDiffIndex,
-                                MergeDirection.LEFT_TO_RIGHT,
-                            )
+                            val applied = state.mergeHunk(state.currentDiffIndex, MergeDirection.LEFT_TO_RIGHT)
                             scope.launch {
-                                if (applied) {
-                                    snackbarHostState.showSnackbar(
-                                        state.mergeMessage ?: "Merged"
-                                    )
-                                } else {
-                                    snackbarHostState.showSnackbar("Already merged")
-                                }
+                                snackbarHostState.showSnackbar(mergeSnackbarMessage(applied, state))
                             }
                         }
                     },
                     onMergeRightToLeft = {
                         if (state.currentHunk != null) {
-                            val applied = state.mergeHunk(
-                                state.currentDiffIndex,
-                                MergeDirection.RIGHT_TO_LEFT,
-                            )
+                            val applied = state.mergeHunk(state.currentDiffIndex, MergeDirection.RIGHT_TO_LEFT)
                             scope.launch {
-                                if (applied) {
-                                    snackbarHostState.showSnackbar(
-                                        state.mergeMessage ?: "Merged"
-                                    )
-                                } else {
-                                    snackbarHostState.showSnackbar("Already merged")
-                                }
+                                snackbarHostState.showSnackbar(mergeSnackbarMessage(applied, state))
                             }
                         }
                     },
@@ -160,93 +184,48 @@ fun CompareScreen(
                     onAcceptAllRightToLeft = {
                         showAcceptAllConfirm = MergeDirection.RIGHT_TO_LEFT
                     },
-                    onFind = onFind,
+                    onFind = { showFindBar = !showFindBar },
                     canMerge = state.canMerge,
                 )
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        Column(modifier = modifier.fillMaxSize().padding(padding)) {
-            if (state != null) {
-                // Filter bar
-                FilterBar(
-                    currentFilter = state.filterMode,
-                    onFilterChanged = { state.filterMode = it },
-                )
-
-                // Content + minimap
-                Row(modifier = Modifier.weight(1f)) {
-                    // Diff view
-                    AdaptiveDiffView(
-                        state = state,
-                        modifier = Modifier.weight(1f),
-                        onDiffRowTapped = { hunkIndex ->
-                            tappedHunkIndex = hunkIndex
-                            showActiveLineSheet = true
-                        },
-                    )
-
-                    // Minimap rail
-                    DiffMinimap(
-                        hunks = state.result.hunks,
-                        totalLines = maxOf(
-                            state.leftLines.size.toLong(),
-                            state.rightLines.size.toLong(),
-                        ),
-                        visibleStart = state.firstVisibleLine,
-                        visibleEnd = state.firstVisibleLine + 30,
-                        onSeek = { fraction ->
-                            val totalLines = maxOf(state.leftLines.size, state.rightLines.size)
-                            val targetLine = (fraction * totalLines).toLong()
-                            state.firstVisibleLine = targetLine.coerceIn(0, totalLines.toLong() - 1)
-                        },
-                        modifier = Modifier.fillMaxHeight(),
+        CompareContent(
+            state = state,
+            ruleSet = ruleSet,
+            compareProgress = compareProgress,
+            onCancelCompare = onCancelCompare,
+            showFindBar = showFindBar,
+            findQuery = findQuery,
+            findMatches = findMatches,
+            findMatchIndex = findMatchIndex,
+            showActiveLineSheet = showActiveLineSheet,
+            tappedHunkIndex = tappedHunkIndex,
+            onFindQueryChanged = { findQuery = it; findMatchIndex = 0 },
+            onFindPrevious = {
+                if (findMatches.isNotEmpty()) {
+                    findMatchIndex = (findMatchIndex - 1 + findMatches.size) % findMatches.size
+                }
+            },
+            onFindNext = {
+                if (findMatches.isNotEmpty()) {
+                    findMatchIndex = (findMatchIndex + 1) % findMatches.size
+                }
+            },
+            onFindClose = { showFindBar = false; findQuery = "" },
+            onDiffRowTapped = { hunkIndex -> tappedHunkIndex = hunkIndex; showActiveLineSheet = true },
+            onActiveLineSheetDismiss = { showActiveLineSheet = false },
+            onMergeHunk = { hunkIndex, direction ->
+                val applied = state?.mergeHunk(hunkIndex, direction)
+                scope.launch {
+                    snackbarHostState.showSnackbar(
+                        if (applied == true) state?.mergeMessage ?: "Merged" else "Already merged"
                     )
                 }
-
-                // Status bar
-                CompareStatusBar(state = state)
-
-                // Active line sheet — opened by tapping any diff row (R-29).
-                if (showActiveLineSheet) {
-                    val sheetHunk = tappedHunkIndex?.let { state.result.hunks.getOrNull(it) }
-                        ?: state.currentHunk
-                    val sheetHunkIndex = tappedHunkIndex ?: state.currentDiffIndex
-                    ActiveLineSheet(
-                        visible = true,
-                        hunk = sheetHunk,
-                        leftLines = state.leftLines,
-                        rightLines = state.rightLines,
-                        onDismiss = { showActiveLineSheet = false },
-                        onMergeLeftToRight = if (state.canMerge) {
-                            {
-                                val applied = state.mergeHunk(sheetHunkIndex, MergeDirection.LEFT_TO_RIGHT)
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(
-                                        if (applied) state.mergeMessage ?: "Merged" else "Already merged"
-                                    )
-                                }
-                            }
-                        } else null,
-                        onMergeRightToLeft = if (state.canMerge) {
-                            {
-                                val applied = state.mergeHunk(sheetHunkIndex, MergeDirection.RIGHT_TO_LEFT)
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(
-                                        if (applied) state.mergeMessage ?: "Merged" else "Already merged"
-                                    )
-                                }
-                            }
-                        } else null,
-                    )
-                }
-            } else {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Comparing files…")
-                }
-            }
-        }
+            },
+            modifier = modifier.fillMaxSize().padding(padding),
+        )
 
         // Accept-all confirmation dialog
         showAcceptAllConfirm?.let { direction ->
@@ -290,6 +269,145 @@ fun CompareScreen(
                 ruleSet = ruleSet,
                 onRuleSetChanged = onRuleSetChanged,
                 onDismiss = { showRuleSheet = false },
+            )
+        }
+    }
+}
+
+/**
+ * Main content area of the compare screen (R-31).
+ *
+ * Extracted to keep [CompareScreen] within method-length limits.
+ * Shows: filter bar, optional find bar, diff view or identical-state banner, status bar,
+ * and the active-line sheet. Falls back to a progress/loading view when [state] is null.
+ */
+@Composable
+private fun CompareContent(
+    state: CompareState?,
+    ruleSet: RuleSet,
+    compareProgress: Float?,
+    onCancelCompare: (() -> Unit)?,
+    showFindBar: Boolean,
+    findQuery: String,
+    findMatches: List<Int>,
+    findMatchIndex: Int,
+    showActiveLineSheet: Boolean,
+    tappedHunkIndex: Int?,
+    onFindQueryChanged: (String) -> Unit,
+    onFindPrevious: () -> Unit,
+    onFindNext: () -> Unit,
+    onFindClose: () -> Unit,
+    onDiffRowTapped: (hunkIndex: Int) -> Unit,
+    onActiveLineSheetDismiss: () -> Unit,
+    onMergeHunk: (hunkIndex: Int, direction: MergeDirection) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        if (state != null) {
+            FilterBar(
+                currentFilter = state.filterMode,
+                onFilterChanged = { state.filterMode = it },
+            )
+            if (showFindBar) {
+                CompareFindBar(
+                    query = findQuery,
+                    onQueryChanged = onFindQueryChanged,
+                    matchIndex = findMatchIndex,
+                    matchCount = findMatches.size,
+                    onPrevious = onFindPrevious,
+                    onNext = onFindNext,
+                    onClose = onFindClose,
+                )
+            }
+            if (state.diffCount == 0) {
+                val ruleDesc = buildRuleDescription(ruleSet)
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = if (ruleDesc.isEmpty()) "Files are identical"
+                               else "Files are identical ($ruleDesc)",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+            } else {
+                Row(modifier = Modifier.weight(1f)) {
+                    AdaptiveDiffView(
+                        state = state,
+                        modifier = Modifier.weight(1f),
+                        onDiffRowTapped = onDiffRowTapped,
+                        findMatches = findMatches,
+                        findMatchIndex = if (showFindBar && findMatches.isNotEmpty()) findMatchIndex else -1,
+                    )
+                    DiffMinimap(
+                        hunks = state.result.hunks,
+                        totalLines = maxOf(state.leftLines.size.toLong(), state.rightLines.size.toLong()),
+                        visibleStart = state.firstVisibleLine,
+                        visibleEnd = state.firstVisibleLine + state.visibleLineCount,
+                        onSeek = { fraction ->
+                            val totalLines = maxOf(state.leftLines.size, state.rightLines.size)
+                            val targetLine = (fraction * totalLines).toLong()
+                            state.firstVisibleLine = targetLine.coerceIn(0, totalLines.toLong() - 1)
+                        },
+                        modifier = Modifier.fillMaxHeight(),
+                    )
+                }
+            }
+            CompareStatusBar(state = state)
+            if (showActiveLineSheet) {
+                val sheetHunk = tappedHunkIndex?.let { state.result.hunks.getOrNull(it) }
+                    ?: state.currentHunk
+                val sheetHunkIndex = tappedHunkIndex ?: state.currentDiffIndex
+                ActiveLineSheet(
+                    visible = true,
+                    hunk = sheetHunk,
+                    leftLines = state.leftLines,
+                    rightLines = state.rightLines,
+                    onDismiss = onActiveLineSheetDismiss,
+                    onMergeLeftToRight = if (state.canMerge) {
+                        { onMergeHunk(sheetHunkIndex, MergeDirection.LEFT_TO_RIGHT) }
+                    } else null,
+                    onMergeRightToLeft = if (state.canMerge) {
+                        { onMergeHunk(sheetHunkIndex, MergeDirection.RIGHT_TO_LEFT) }
+                    } else null,
+                )
+            }
+        } else {
+            CompareLoadingState(
+                progress = compareProgress,
+                onCancel = onCancelCompare,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+/** Progress/loading state shown while the compare engine is running (R-31). */
+@Composable
+private fun CompareLoadingState(
+    progress: Float?,
+    onCancel: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+    ) {
+        Text("Comparing files\u2026", style = MaterialTheme.typography.bodyMedium)
+        androidx.compose.foundation.layout.Spacer(Modifier.padding(8.dp))
+        if (progress != null) {
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth(0.6f).padding(vertical = 8.dp),
+            )
+            if (onCancel != null) {
+                TextButton(onClick = onCancel) { Text("Cancel") }
+            }
+        } else {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(0.6f).padding(vertical = 8.dp),
             )
         }
     }
@@ -468,3 +586,68 @@ private fun FilterBar(
         }
     }
 }
+
+/**
+ * Find bar for compare — searches both left and right content (OE-FND-1).
+ */
+@Composable
+private fun CompareFindBar(
+    query: String,
+    onQueryChanged: (String) -> Unit,
+    matchIndex: Int,
+    matchCount: Int,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onClose: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChanged,
+            placeholder = { Text("Find in compare…") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { onNext() }),
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = if (matchCount == 0) "No matches"
+                   else "${matchIndex + 1}/$matchCount",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        IconButton(onClick = onPrevious, enabled = matchCount > 0) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous match")
+        }
+        IconButton(onClick = onNext, enabled = matchCount > 0) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next match")
+        }
+        IconButton(onClick = onClose) {
+            Icon(Icons.Default.Close, contentDescription = "Close find bar")
+        }
+    }
+}
+
+/**
+ * Build a short human-readable description of active compare rules for the "identical" banner.
+ * Returns empty string when no rules are active.
+ */
+private fun buildRuleDescription(ruleSet: RuleSet): String {
+    val parts = mutableListOf<String>()
+    if (ruleSet.ignoreCase) parts.add("case")
+    if (ruleSet.whitespace != com.omnieditor.core.model.WhitespaceRule.NONE) parts.add("whitespace")
+    if (ruleSet.ignoreBlankLines) parts.add("blank lines")
+    if (ruleSet.linePatterns.isNotEmpty()) parts.add("line patterns")
+    if (ruleSet.betweenMarkers.isNotEmpty()) parts.add("markers")
+    if (ruleSet.headSkip > 0 || ruleSet.tailSkip > 0) parts.add("skip")
+    return if (parts.isEmpty()) "" else "ignoring ${parts.joinToString(", ")}"
+}
+
+/** Returns the appropriate snackbar message after a merge operation. */
+private fun mergeSnackbarMessage(applied: Boolean, state: CompareState): String =
+    if (applied) state.mergeMessage ?: "Merged" else "Already merged"

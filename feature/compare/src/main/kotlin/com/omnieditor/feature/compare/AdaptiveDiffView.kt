@@ -26,6 +26,10 @@ fun AdaptiveDiffView(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     /** Called with the hunk index when a diff row (CHANGED/ADDED/REMOVED) is tapped. */
     onDiffRowTapped: ((hunkIndex: Int) -> Unit)? = null,
+    /** Row indices (in the AlignedRow list) that match the current find query. */
+    findMatches: List<Int> = emptyList(),
+    /** Index within [findMatches] that is currently focused; -1 to highlight nothing. */
+    findMatchIndex: Int = -1,
 ) {
     // Manual override: null = auto, true = split, false = unified
     var layoutOverride by rememberSaveable { mutableStateOf<Boolean?>(null) }
@@ -38,12 +42,16 @@ fun AdaptiveDiffView(
                 state = state,
                 contentPadding = contentPadding,
                 onDiffRowTapped = onDiffRowTapped,
+                findMatches = findMatches,
+                findMatchIndex = findMatchIndex,
             )
         } else {
             UnifiedDiffView(
                 state = state,
                 contentPadding = contentPadding,
                 onDiffRowTapped = onDiffRowTapped,
+                findMatches = findMatches,
+                findMatchIndex = findMatchIndex,
             )
         }
     }

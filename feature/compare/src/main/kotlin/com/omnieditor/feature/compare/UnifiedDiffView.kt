@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -50,6 +51,10 @@ fun UnifiedDiffView(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     /** Called with the hunk index when a diff row (CHANGED/ADDED/REMOVED) is tapped. */
     onDiffRowTapped: ((hunkIndex: Int) -> Unit)? = null,
+    /** Row indices (in the AlignedRow list) that match the current find query. */
+    findMatches: List<Int> = emptyList(),
+    /** Index within [findMatches] that is currently focused; -1 to highlight nothing. */
+    findMatchIndex: Int = -1,
 ) {
     val rows = remember(state.result, state.filterMode) {
         state.buildAlignedRows().filter { row ->
@@ -66,6 +71,13 @@ fun UnifiedDiffView(
     val cache = state.intraLineCache
     val granularity = state.granularity
 
+    // The focused find match row index (in the filtered rows list).
+    val focusedFindRow = remember(findMatches, findMatchIndex) {
+        if (findMatchIndex >= 0 && findMatchIndex < findMatches.size) findMatches[findMatchIndex] else -1
+    }
+    // Set of all find-match rows for highlight.
+    val findMatchSet = remember(findMatches) { findMatches.toHashSet() }
+
     // Scroll to current difference when navigating
     LaunchedEffect(state.currentDiffIndex) {
         @Suppress("UnusedVariable")
@@ -76,17 +88,36 @@ fun UnifiedDiffView(
         }
     }
 
+    // Scroll to focused find match
+    LaunchedEffect(focusedFindRow) {
+        if (focusedFindRow >= 0) {
+            listState.animateScrollToItem(focusedFindRow)
+        }
+    }
+
+    // Update first visible line and visible line count in CompareState for minimap (R-31)
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo }.collect { info ->
+            val first = info.visibleItemsInfo.firstOrNull()?.index?.toLong() ?: 0L
+            state.firstVisibleLine = first
+            val visible = info.visibleItemsInfo.size
+            if (visible > 0) state.visibleLineCount = visible
+        }
+    }
+
     LazyColumn(
         state = listState,
         contentPadding = contentPadding,
         modifier = modifier.fillMaxSize(),
     ) {
-        itemsIndexed(rows, key = { idx, row -> "${row.left}_${row.right}_${row.type}_$idx" }) { _, row ->
+        itemsIndexed(rows, key = { idx, row -> "${row.left}_${row.right}_${row.type}_$idx" }) { idx, row ->
             UnifiedAlignedRow(
                 row = row,
                 leftLines = state.leftLines,
                 rightLines = state.rightLines,
                 isCurrentHunk = row.hunkIndex != null && row.hunkIndex == state.currentDiffIndex,
+                isFindMatch = idx in findMatchSet,
+                isFocusedMatch = idx == focusedFindRow,
                 colors = colors,
                 hunks = hunks,
                 intraLineCache = cache,
@@ -107,6 +138,8 @@ private fun UnifiedAlignedRow(
     leftLines: List<String>,
     rightLines: List<String>,
     isCurrentHunk: Boolean,
+    isFindMatch: Boolean = false,
+    isFocusedMatch: Boolean = false,
     colors: com.omnieditor.design.CompareColors,
     hunks: List<com.omnieditor.core.model.Hunk>,
     intraLineCache: IntraLineCache,
@@ -160,10 +193,16 @@ private fun UnifiedAlignedRow(
     // TalkBack content description (NFR-A1) uses raw text without span markup.
     val a11yDescription = buildA11yDescription(row, displayLineNum, rawText)
 
+    val rowBg = when {
+        isFocusedMatch -> Color(0xFFFFD54F).copy(alpha = 0.7f) // amber highlight for focused find match
+        isFindMatch -> Color(0xFFFFEE58).copy(alpha = 0.4f)    // lighter for other matches
+        isCurrentHunk -> bgColor.copy(alpha = 0.7f)
+        else -> bgColor
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (isCurrentHunk) bgColor.copy(alpha = 0.7f) else bgColor)
+            .background(rowBg)
             .height(22.dp)
             .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
             .semantics { contentDescription = a11yDescription },

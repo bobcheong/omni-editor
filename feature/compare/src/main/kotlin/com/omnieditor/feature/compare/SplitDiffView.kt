@@ -53,6 +53,10 @@ fun SplitDiffView(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     /** Called with the hunk index when a diff row (CHANGED/ADDED/REMOVED) is tapped. */
     onDiffRowTapped: ((hunkIndex: Int) -> Unit)? = null,
+    /** Row indices (in the AlignedRow list) that match the current find query. */
+    findMatches: List<Int> = emptyList(),
+    /** Index within [findMatches] that is currently focused; -1 to highlight nothing. */
+    findMatchIndex: Int = -1,
 ) {
     val alignedRows = remember(state.result) { state.buildAlignedRows() }
     val leftListState = rememberLazyListState()
@@ -61,6 +65,11 @@ fun SplitDiffView(
     val hunks = state.result.hunks
     val cache = state.intraLineCache
     val granularity = state.granularity
+
+    val focusedFindRow = remember(findMatches, findMatchIndex) {
+        if (findMatchIndex >= 0 && findMatchIndex < findMatches.size) findMatches[findMatchIndex] else -1
+    }
+    val findMatchSet = remember(findMatches) { findMatches.toHashSet() }
 
     // Synchronise scroll between panes
     if (syncScroll) {
@@ -80,6 +89,23 @@ fun SplitDiffView(
         }
     }
 
+    // Scroll to focused find match
+    LaunchedEffect(focusedFindRow) {
+        if (focusedFindRow >= 0) {
+            leftListState.animateScrollToItem(focusedFindRow)
+        }
+    }
+
+    // Update first visible line and visible line count in CompareState for minimap (R-31)
+    LaunchedEffect(leftListState) {
+        snapshotFlow { leftListState.layoutInfo }.collect { info ->
+            val first = info.visibleItemsInfo.firstOrNull()?.index?.toLong() ?: 0L
+            state.firstVisibleLine = first
+            val visible = info.visibleItemsInfo.size
+            if (visible > 0) state.visibleLineCount = visible
+        }
+    }
+
     Row(modifier = modifier.fillMaxSize()) {
         // Left pane — renders left side of each AlignedRow (null → spacer)
         SplitPane(
@@ -95,6 +121,8 @@ fun SplitDiffView(
             granularity = granularity,
             contentPadding = contentPadding,
             onDiffRowTapped = onDiffRowTapped,
+            findMatchSet = findMatchSet,
+            focusedFindRow = focusedFindRow,
             modifier = Modifier.weight(1f),
         )
 
@@ -120,6 +148,8 @@ fun SplitDiffView(
             granularity = granularity,
             contentPadding = contentPadding,
             onDiffRowTapped = onDiffRowTapped,
+            findMatchSet = findMatchSet,
+            focusedFindRow = focusedFindRow,
             modifier = Modifier.weight(1f),
         )
     }
@@ -140,6 +170,8 @@ private fun SplitPane(
     granularity: Granularity,
     contentPadding: PaddingValues,
     onDiffRowTapped: ((hunkIndex: Int) -> Unit)? = null,
+    findMatchSet: Set<Int> = emptySet(),
+    focusedFindRow: Int = -1,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -147,119 +179,146 @@ private fun SplitPane(
         contentPadding = contentPadding,
         modifier = modifier,
     ) {
-        itemsIndexed(alignedRows, key = { idx, row -> "${side}_${row.left}_${row.right}_$idx" }) { _, row ->
-            val lineIdx = if (side == Side.LEFT) row.left else row.right
-            val isSpacer = lineIdx == null
-            val rawText = if (lineIdx != null) lines.getOrElse(lineIdx.toInt()) { "" } else ""
-
-            val bgColor = if (isSpacer) {
-                colors.gutter.copy(alpha = 0.08f)
-            } else {
-                when (row.type) {
-                    RowType.ADDED -> colors.addedBg
-                    RowType.REMOVED -> colors.removedBg
-                    RowType.CHANGED_OLD, RowType.CHANGED_NEW -> colors.changedBg
-                    RowType.CONTEXT -> Color.Transparent
-                }
-            }
-            val fgColor = when {
-                isSpacer -> Color.Transparent
-                row.type == RowType.ADDED -> colors.addedFg
-                row.type == RowType.REMOVED -> colors.removedFg
-                row.type == RowType.CHANGED_OLD || row.type == RowType.CHANGED_NEW -> colors.changedFg
-                else -> MaterialTheme.colorScheme.onSurface
-            }
-            val glyph = when {
-                isSpacer -> " "
-                row.type == RowType.ADDED -> "+"
-                row.type == RowType.REMOVED -> "−"
-                row.type == RowType.CHANGED_OLD || row.type == RowType.CHANGED_NEW -> "~"
-                else -> " "
-            }
-            val isCurrentHunk = row.hunkIndex != null && row.hunkIndex == currentHunkIndex
-            val sideLabel = if (side == Side.LEFT) "left" else "right"
-            val displayLine = lineIdx ?: 0L
-            val a11y = when {
-                isSpacer -> "Spacer on $sideLabel"
-                row.type == RowType.CONTEXT -> "Unchanged on $sideLabel, line ${displayLine + 1}"
-                else -> "${row.type.name} on $sideLabel, line ${displayLine + 1}: $rawText"
-            }
-
-            // Intra-line highlighting for CHANGED rows (R-26).
-            val displayContent: AnnotatedString = remember(row, rawText, granularity) {
-                when {
-                    isSpacer -> AnnotatedString(rawText)
-                    side == Side.LEFT && row.type == RowType.CHANGED_OLD -> {
-                        val leftIdx = lineIdx ?: return@remember AnnotatedString(rawText)
-                        val hunk = row.hunkIndex?.let { hunks.getOrNull(it) }
-                            ?: return@remember AnnotatedString(rawText)
-                        val offset = leftIdx - hunk.leftStart
-                        val rightIdx = hunk.rightStart + offset
-                        if (rightIdx >= hunk.rightEnd) return@remember AnnotatedString(rawText)
-                        val pairedText = pairedLines.getOrElse(rightIdx.toInt()) { "" }
-                        val result = intraLineCache.get(rawText, pairedText, leftIdx, rightIdx, granularity)
-                        highlightIntraLine(rawText, result.leftRanges, colors.intraLineOldBg)
-                    }
-                    side == Side.RIGHT && row.type == RowType.CHANGED_NEW -> {
-                        val rightIdx = lineIdx ?: return@remember AnnotatedString(rawText)
-                        val hunk = row.hunkIndex?.let { hunks.getOrNull(it) }
-                            ?: return@remember AnnotatedString(rawText)
-                        val offset = rightIdx - hunk.rightStart
-                        val leftIdx = hunk.leftStart + offset
-                        if (leftIdx >= hunk.leftEnd) return@remember AnnotatedString(rawText)
-                        val pairedText = pairedLines.getOrElse(leftIdx.toInt()) { "" }
-                        val result = intraLineCache.get(pairedText, rawText, leftIdx, rightIdx, granularity)
-                        highlightIntraLine(rawText, result.rightRanges, colors.intraLineNewBg)
-                    }
-                    else -> AnnotatedString(rawText)
-                }
-            }
-
-            val onTap: (() -> Unit)? =
-                if (onDiffRowTapped != null && !isSpacer && row.type != RowType.CONTEXT && row.hunkIndex != null) {
-                    { onDiffRowTapped(row.hunkIndex) }
-                } else {
-                    null
-                }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(if (isCurrentHunk && !isSpacer) bgColor.copy(alpha = 0.7f) else bgColor)
-                    .height(22.dp)
-                    .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
-                    .semantics { contentDescription = a11y },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Glyph
-                Text(
-                    text = glyph,
-                    color = fgColor,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    modifier = Modifier.width(16.dp).padding(start = 2.dp),
-                )
-                // Line number
-                Text(
-                    text = if (lineIdx != null) "${lineIdx + 1}" else "",
-                    color = colors.gutter,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 10.sp,
-                    modifier = Modifier.width(36.dp),
-                    maxLines = 1,
-                )
-                // Content — AnnotatedString carries intra-line background spans (R-26).
-                Text(
-                    text = displayContent,
-                    color = fgColor,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+        itemsIndexed(alignedRows, key = { idx, row -> "${side}_${row.left}_${row.right}_$idx" }) { idx, row ->
+            SplitPaneRow(
+                row = row,
+                idx = idx,
+                side = side,
+                lines = lines,
+                pairedLines = pairedLines,
+                currentHunkIndex = currentHunkIndex,
+                findMatchSet = findMatchSet,
+                focusedFindRow = focusedFindRow,
+                colors = colors,
+                hunks = hunks,
+                intraLineCache = intraLineCache,
+                granularity = granularity,
+                onDiffRowTapped = onDiffRowTapped,
+            )
         }
+    }
+}
+
+@Composable
+private fun SplitPaneRow(
+    row: AlignedRow,
+    idx: Int,
+    side: Side,
+    lines: List<String>,
+    pairedLines: List<String>,
+    currentHunkIndex: Int,
+    findMatchSet: Set<Int>,
+    focusedFindRow: Int,
+    colors: com.omnieditor.design.CompareColors,
+    hunks: List<com.omnieditor.core.model.Hunk>,
+    intraLineCache: IntraLineCache,
+    granularity: Granularity,
+    onDiffRowTapped: ((hunkIndex: Int) -> Unit)?,
+) {
+    val lineIdx = if (side == Side.LEFT) row.left else row.right
+    val isSpacer = lineIdx == null
+    val rawText = if (lineIdx != null) lines.getOrElse(lineIdx.toInt()) { "" } else ""
+
+    val bgColor = if (isSpacer) {
+        colors.gutter.copy(alpha = 0.08f)
+    } else {
+        when (row.type) {
+            RowType.ADDED -> colors.addedBg
+            RowType.REMOVED -> colors.removedBg
+            RowType.CHANGED_OLD, RowType.CHANGED_NEW -> colors.changedBg
+            RowType.CONTEXT -> Color.Transparent
+        }
+    }
+    val fgColor = when {
+        isSpacer -> Color.Transparent
+        row.type == RowType.ADDED -> colors.addedFg
+        row.type == RowType.REMOVED -> colors.removedFg
+        row.type == RowType.CHANGED_OLD || row.type == RowType.CHANGED_NEW -> colors.changedFg
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val glyph = when {
+        isSpacer -> " "
+        row.type == RowType.ADDED -> "+"
+        row.type == RowType.REMOVED -> "−"
+        row.type == RowType.CHANGED_OLD || row.type == RowType.CHANGED_NEW -> "~"
+        else -> " "
+    }
+    val isCurrentHunk = row.hunkIndex != null && row.hunkIndex == currentHunkIndex
+    val isFindMatch = idx in findMatchSet
+    val isFocusedMatch = idx == focusedFindRow
+    val sideLabel = if (side == Side.LEFT) "left" else "right"
+    val displayLine = lineIdx ?: 0L
+    val a11y = when {
+        isSpacer -> "Spacer on $sideLabel"
+        row.type == RowType.CONTEXT -> "Unchanged on $sideLabel, line ${displayLine + 1}"
+        else -> "${row.type.name} on $sideLabel, line ${displayLine + 1}: $rawText"
+    }
+
+    // Intra-line highlighting for CHANGED rows (R-26).
+    val displayContent: AnnotatedString = remember(row, rawText, granularity) {
+        splitPaneIntraLine(
+            row = row,
+            side = side,
+            lineIdx = lineIdx,
+            isSpacer = isSpacer,
+            rawText = rawText,
+            pairedLines = pairedLines,
+            hunks = hunks,
+            intraLineCache = intraLineCache,
+            granularity = granularity,
+            colors = colors,
+        )
+    }
+
+    val onTap: (() -> Unit)? =
+        if (onDiffRowTapped != null && !isSpacer && row.type != RowType.CONTEXT && row.hunkIndex != null) {
+            { onDiffRowTapped(row.hunkIndex) }
+        } else {
+            null
+        }
+
+    val rowBg = when {
+        isFocusedMatch && !isSpacer -> Color(0xFFFFD54F).copy(alpha = 0.7f)
+        isFindMatch && !isSpacer -> Color(0xFFFFEE58).copy(alpha = 0.4f)
+        isCurrentHunk && !isSpacer -> bgColor.copy(alpha = 0.7f)
+        else -> bgColor
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(rowBg)
+            .height(22.dp)
+            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
+            .semantics { contentDescription = a11y },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Glyph
+        Text(
+            text = glyph,
+            color = fgColor,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            modifier = Modifier.width(16.dp).padding(start = 2.dp),
+        )
+        // Line number
+        Text(
+            text = if (lineIdx != null) "${lineIdx + 1}" else "",
+            color = colors.gutter,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+            modifier = Modifier.width(36.dp),
+            maxLines = 1,
+        )
+        // Content — AnnotatedString carries intra-line background spans (R-26).
+        Text(
+            text = displayContent,
+            color = fgColor,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -328,4 +387,43 @@ private fun SyncScroll(
                 secondary.scrollToItem(index, offset)
             }
     }
+}
+
+/**
+ * Compute intra-line highlighted [AnnotatedString] for a split-pane row (R-26).
+ *
+ * Extracted from [SplitPaneRow] to keep cyclomatic complexity within budget.
+ */
+private fun splitPaneIntraLine(
+    row: AlignedRow,
+    side: Side,
+    lineIdx: Long?,
+    isSpacer: Boolean,
+    rawText: String,
+    pairedLines: List<String>,
+    hunks: List<com.omnieditor.core.model.Hunk>,
+    intraLineCache: IntraLineCache,
+    granularity: Granularity,
+    colors: com.omnieditor.design.CompareColors,
+): AnnotatedString {
+    if (isSpacer) return AnnotatedString(rawText)
+    if (side == Side.LEFT && row.type == RowType.CHANGED_OLD) {
+        val leftIdx = lineIdx ?: return AnnotatedString(rawText)
+        val hunk = row.hunkIndex?.let { hunks.getOrNull(it) } ?: return AnnotatedString(rawText)
+        val rightIdx = hunk.rightStart + (leftIdx - hunk.leftStart)
+        if (rightIdx >= hunk.rightEnd) return AnnotatedString(rawText)
+        val pairedText = pairedLines.getOrElse(rightIdx.toInt()) { "" }
+        val result = intraLineCache.get(rawText, pairedText, leftIdx, rightIdx, granularity)
+        return highlightIntraLine(rawText, result.leftRanges, colors.intraLineOldBg)
+    }
+    if (side == Side.RIGHT && row.type == RowType.CHANGED_NEW) {
+        val rightIdx = lineIdx ?: return AnnotatedString(rawText)
+        val hunk = row.hunkIndex?.let { hunks.getOrNull(it) } ?: return AnnotatedString(rawText)
+        val leftIdx = hunk.leftStart + (rightIdx - hunk.rightStart)
+        if (leftIdx >= hunk.leftEnd) return AnnotatedString(rawText)
+        val pairedText = pairedLines.getOrElse(leftIdx.toInt()) { "" }
+        val result = intraLineCache.get(pairedText, rawText, leftIdx, rightIdx, granularity)
+        return highlightIntraLine(rawText, result.rightRanges, colors.intraLineNewBg)
+    }
+    return AnnotatedString(rawText)
 }

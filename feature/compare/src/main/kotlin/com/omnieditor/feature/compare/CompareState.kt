@@ -41,17 +41,33 @@ class CompareState(
     /** Optional document backing the right side — enables merge write-back. */
     val rightDocument: PieceTableDocument? = null,
 ) {
+    private var _result by mutableStateOf(result)
+    private var _leftLines by mutableStateOf(leftLines)
+    private var _rightLines by mutableStateOf(rightLines)
+
     /** The current compare result — updates after merges trigger re-compare. */
-    var result by mutableStateOf(result)
-        internal set
+    var result: CompareResult
+        get() = _result
+        internal set(value) {
+            _result = value
+            cachedAlignedRows = null
+        }
 
     /** Current left-side lines — updates after merges. */
-    var leftLines by mutableStateOf(leftLines)
-        internal set
+    var leftLines: List<String>
+        get() = _leftLines
+        internal set(value) {
+            _leftLines = value
+            cachedAlignedRows = null
+        }
 
     /** Current right-side lines — updates after merges. */
-    var rightLines by mutableStateOf(rightLines)
-        internal set
+    var rightLines: List<String>
+        get() = _rightLines
+        internal set(value) {
+            _rightLines = value
+            cachedAlignedRows = null
+        }
 
     /**
      * Intra-line diff cache — keyed by (leftLineIdx, rightLineIdx), cleared when [result]
@@ -75,6 +91,12 @@ class CompareState(
     /** First visible line in the unified view. */
     var firstVisibleLine by mutableLongStateOf(0L)
         internal set
+
+    /**
+     * Number of visible lines in the viewport, measured from the actual lazy list height (R-31).
+     * Defaults to 30 until the view measures itself and updates this value.
+     */
+    var visibleLineCount by mutableIntStateOf(30)
 
     /** Set of hunk indices already merged (prevents double-merge). */
     var mergedHunks by mutableStateOf(emptySet<Int>())
@@ -283,9 +305,18 @@ class CompareState(
      * One List<AlignedRow> drives both views. Sync holds by construction because both
      * panes iterate the same list: left pane renders left-side rows, right pane renders
      * right-side rows, and spacer rows (null on one side) keep matched lines visually aligned.
+     *
+     * Result is cached and only rebuilt when result/leftLines/rightLines change (R-31).
      */
-    fun buildAlignedRows(): List<AlignedRow> =
-        buildAlignedRows(result.hunks, leftLines.size, rightLines.size)
+    private var cachedAlignedRows: List<AlignedRow>? = null
+
+    fun buildAlignedRows(): List<AlignedRow> {
+        val cached = cachedAlignedRows
+        if (cached != null) return cached
+        val built = buildAlignedRows(result.hunks, leftLines.size, rightLines.size)
+        cachedAlignedRows = built
+        return built
+    }
 
     /**
      * Build the unified view rows from the compare result.
