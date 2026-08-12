@@ -52,6 +52,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.omnieditor.core.model.RuleSet
 import com.omnieditor.core.model.WhitespaceRule
+import com.omnieditor.design.KeyboardShortcutsSheet
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,6 +90,7 @@ fun CompareScreen(
     var showRuleSheet by remember { mutableStateOf(false) }
     var showAcceptAllConfirm by remember { mutableStateOf<MergeDirection?>(null) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
+    var showShortcutsSheet by remember { mutableStateOf(false) }
 
     // Find-within-compare state (OE-FND-1)
     var showFindBar by remember { mutableStateOf(false) }
@@ -127,6 +129,11 @@ fun CompareScreen(
         )
     }
 
+    // ── Keyboard shortcuts sheet (R-37) ──
+    if (showShortcutsSheet) {
+        KeyboardShortcutsSheet(onDismiss = { showShortcutsSheet = false })
+    }
+
     Scaffold(
         topBar = {
             CompareTopBar(
@@ -155,6 +162,7 @@ fun CompareScreen(
                 onFlipSides = onFlipSides,
                 onRerunCompare = onRerunCompare,
                 onExportReport = onExportReport,
+                onKeyboardShortcuts = { showShortcutsSheet = true },
             )
         },
         bottomBar = {
@@ -448,6 +456,7 @@ private fun CompareTopBar(
     onFlipSides: (() -> Unit)?,
     onRerunCompare: (() -> Unit)?,
     onExportReport: (() -> Unit)?,
+    onKeyboardShortcuts: () -> Unit = {},
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -559,6 +568,14 @@ private fun CompareTopBar(
                         },
                     )
                 }
+                androidx.compose.material3.HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("Keyboard shortcuts") },
+                    onClick = {
+                        menuExpanded = false
+                        onKeyboardShortcuts()
+                    },
+                )
             }
         },
     )

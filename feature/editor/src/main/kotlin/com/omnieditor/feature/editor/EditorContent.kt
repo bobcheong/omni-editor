@@ -1,5 +1,10 @@
 package com.omnieditor.feature.editor
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -58,6 +63,7 @@ import com.omnieditor.core.diff.syntax.SyntaxToken
 import com.omnieditor.core.diff.syntax.TokenType
 import com.omnieditor.core.model.DisplaySettings
 import com.omnieditor.design.LocalCompareColors
+import com.omnieditor.design.LocalReduceMotion
 import com.omnieditor.design.LocalSyntaxColors
 import com.omnieditor.design.SyntaxColorScheme
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -76,6 +82,23 @@ fun EditorContent(
 ) {
     val listState = rememberLazyListState()
     val compareColors = LocalCompareColors.current
+    val reduceMotion = LocalReduceMotion.current
+    // Caret blink animation — suppressed when system reduce-motion is on (R-37, NFR-A1).
+    val caretAlpha: Float = if (reduceMotion) {
+        1f
+    } else {
+        val infiniteTransition = rememberInfiniteTransition(label = "caretBlink")
+        val animatedAlpha by infiniteTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = 0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 530),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "caretAlpha",
+        )
+        animatedAlpha
+    }
     val onSurface = MaterialTheme.colorScheme.onSurface
     val whitespaceColor = onSurface.copy(alpha = 0.35f)
     val horizontalScrollState = rememberScrollState()
@@ -475,7 +498,7 @@ fun EditorContent(
                                 }
                             }
 
-                            // Draw caret on this line
+                            // Draw caret on this line (blinking respects reduce-motion, R-37).
                             if (isCaretLine) {
                                 val layout = layoutCache.measure(
                                     lineIndex = lineIdx,
@@ -490,11 +513,8 @@ fun EditorContent(
                                 val caretRect = layoutCache.cursorRect(layout, caretCol)
                                 val caretWidthPx = with(density) { 2.dp.toPx() }
                                 val lh = layoutCache.lineHeight(layout)
-
-                                // The caret alpha is handled by BlinkingCaret composable
-                                // but for the drawWithContent approach we draw directly
                                 drawRect(
-                                    color = primaryColor,
+                                    color = primaryColor.copy(alpha = caretAlpha),
                                     topLeft = Offset(gutterWidthPx + caretRect.left, caretRect.top),
                                     size = Size(caretWidthPx, lh),
                                 )

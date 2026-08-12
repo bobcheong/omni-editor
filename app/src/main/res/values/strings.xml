@@ -1,12 +1,120 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Omni Editor</string>
+
+    <!-- Home screen -->
     <string name="home_empty_title">Nothing open yet</string>
     <string name="home_empty_body">Open a file to edit, or pick two files to compare.</string>
     <string name="home_open_file">Open a file</string>
     <string name="home_new_compare">New compare</string>
+
+    <!-- App shortcuts (launcher) -->
     <string name="shortcut_new_compare">New compare</string>
     <string name="shortcut_new_compare_long">Start a new file comparison</string>
     <string name="shortcut_open_file">Open file</string>
     <string name="shortcut_open_file_long">Open a file in the editor</string>
+
+    <!-- Editor screen -->
+    <string name="editor_title_fallback">Editor</string>
+    <string name="editor_title_saving">saving\u2026</string>
+    <string name="editor_unsaved_title">Unsaved changes</string>
+    <string name="editor_unsaved_body">Do you want to save your changes before leaving?</string>
+    <string name="editor_btn_save">Save</string>
+    <string name="editor_btn_discard">Discard</string>
+    <string name="editor_btn_cancel">Cancel</string>
+    <string name="editor_btn_apply">Apply</string>
+    <string name="editor_btn_go">Go</string>
+    <string name="editor_menu_undo">Undo</string>
+    <string name="editor_menu_redo">Redo</string>
+    <string name="editor_menu_goto_line">Go to line\u2026</string>
+    <string name="editor_menu_text_tools">Text tools \u25B8</string>
+    <string name="editor_menu_case_conversion">Case conversion \u25B8</string>
+    <string name="editor_menu_bookmarks">Bookmarks \u25B8</string>
+    <string name="editor_menu_column_select">Column select</string>
+    <string name="editor_menu_line_ending">Line ending \u25B8</string>
+    <string name="editor_menu_keyboard_shortcuts">Keyboard shortcuts</string>
+    <string name="editor_menu_compare_with">Compare with\u2026</string>
+    <string name="editor_menu_sort_lines">Sort lines</string>
+    <string name="editor_menu_remove_duplicates">Remove duplicates</string>
+    <string name="editor_menu_trim_trailing">Trim trailing spaces</string>
+    <string name="editor_menu_reverse_lines">Reverse lines</string>
+    <string name="editor_menu_remove_blank_lines">Remove blank lines</string>
+    <string name="editor_menu_join_lines">Join lines</string>
+    <string name="editor_menu_tabs_to_spaces">Tabs \u2192 Spaces</string>
+    <string name="editor_menu_spaces_to_tabs">Spaces \u2192 Tabs</string>
+    <string name="editor_menu_to_uppercase">To UPPERCASE</string>
+    <string name="editor_menu_to_lowercase">To lowercase</string>
+    <string name="editor_menu_to_titlecase">To Title Case</string>
+    <string name="editor_menu_toggle_bookmark">Toggle bookmark</string>
+    <string name="editor_menu_next_bookmark">Next bookmark</string>
+    <string name="editor_menu_prev_bookmark">Previous bookmark</string>
+    <string name="editor_menu_crlf">Convert to CRLF (Windows)</string>
+    <string name="editor_menu_lf">Convert to LF (Unix)</string>
+    <string name="editor_menu_cr">Convert to CR (Classic Mac)</string>
+    <string name="editor_goto_line_title">Go to line</string>
+    <string name="editor_goto_line_label">Line number</string>
+    <string name="editor_file_too_large">File too large</string>
+    <string name="editor_file_changed_on_disk">File changed on disk</string>
+    <string name="editor_btn_reload">Reload</string>
+    <string name="editor_btn_keep_mine">Keep mine</string>
+    <string name="editor_state_saving">Saving\u2026</string>
+
+    <!-- Compare screen -->
+    <string name="compare_unsaved_title">Unsaved changes</string>
+    <string name="compare_unsaved_body">Save merged changes before leaving?</string>
+    <string name="compare_btn_save">Save</string>
+    <string name="compare_btn_discard">Discard</string>
+    <string name="compare_btn_cancel">Cancel</string>
+    <string name="compare_btn_apply">Apply</string>
+    <string name="compare_accept_all_title">Accept all changes?</string>
+    <string name="compare_menu_save_merged">Save merged</string>
+    <string name="compare_menu_restore_originals">Restore originals</string>
+    <string name="compare_menu_open_left">Open left in viewer</string>
+    <string name="compare_menu_open_right">Open right in viewer</string>
+    <string name="compare_menu_flip_sides">Flip sides</string>
+    <string name="compare_menu_rerun">Re-run compare</string>
+    <string name="compare_menu_export">Export report</string>
+    <string name="compare_menu_keyboard_shortcuts">Keyboard shortcuts</string>
+    <string name="compare_filter_all">All</string>
+    <string name="compare_filter_diffs">Diffs</string>
+    <string name="compare_filter_matches">Matches</string>
+    <string name="compare_loading">Comparing files\u2026</string>
+    <string name="compare_btn_cancel_compare">Cancel</string>
+    <string name="compare_files_identical">Files are identical</string>
+    <string name="compare_restored_original">Restored to original</string>
+    <string name="compare_find_placeholder">Find in compare\u2026</string>
+    <string name="compare_find_no_matches">No matches</string>
+
+    <!-- Keyboard shortcuts sheet -->
+    <string name="shortcuts_sheet_title">Keyboard shortcuts</string>
+    <string name="shortcuts_section_file">File</string>
+    <string name="shortcuts_section_navigation">Navigation</string>
+    <string name="shortcuts_section_compare">Compare</string>
+    <string name="shortcuts_section_edit">Edit</string>
+
+    <!-- Settings screen -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_licences_title">Licences</string>
+    <string name="settings_section_editor">Editor</string>
+    <string name="settings_section_compare">Compare</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_section_about">About</string>
+    <string name="settings_word_wrap">Word wrap</string>
+    <string name="settings_line_numbers">Show line numbers</string>
+    <string name="settings_show_whitespace">Show whitespace</string>
+    <string name="settings_tab_width">Tab width</string>
+    <string name="settings_tab_width_spaces">%d spaces</string>
+    <string name="settings_default_layout">Default layout</string>
+    <string name="settings_sync_scroll">Sync scroll</string>
+    <string name="settings_granularity">Intra-line granularity</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_system">System default</string>
+    <string name="settings_dynamic_colour">Dynamic colour</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_licences">Licences</string>
+    <string name="settings_licences_count">%d open-source libraries</string>
+    <string name="settings_layout_split">Split</string>
+    <string name="settings_layout_unified">Unified</string>
 </resources>

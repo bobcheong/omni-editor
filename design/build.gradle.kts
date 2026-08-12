@@ -14,6 +14,9 @@ android {
     kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21) } }
 }
 dependencies {
+    // KeyboardShortcuts model needed for the shared shortcuts sheet (R-37).
+    api(project(":core:model"))
+
     implementation(platform(libs.compose.bom))
     api(libs.compose.ui)
     api(libs.compose.material3)

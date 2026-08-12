@@ -47,6 +47,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.omnieditor.design.KeyboardShortcutsSheet
 
 /**
  * Grouped callbacks for the editor top-bar menu, keeping [EditorTopBar]'s parameter count
@@ -75,6 +76,8 @@ data class EditorMenuCallbacks(
     val onConvertLineEndingCRLF: () -> Unit = {},
     val onConvertLineEndingLF: () -> Unit = {},
     val onConvertLineEndingCR: () -> Unit = {},
+    /** Open the keyboard shortcuts reference sheet (R-37). */
+    val onKeyboardShortcuts: () -> Unit = {},
 )
 
 @Suppress("LongMethod")
@@ -97,6 +100,7 @@ fun EditorScreen(
     var lastSearchQuery by remember { mutableStateOf("") }
     var showUnsavedDialog by remember { mutableStateOf(false) }
     var showGoToLineDialog by remember { mutableStateOf(false) }
+    var showShortcutsSheet by remember { mutableStateOf(false) }
 
     val isDirty = (uiState as? EditorUiState.Loaded)?.editorState?.document?.dirty == true
 
@@ -141,6 +145,11 @@ fun EditorScreen(
                 showGoToLineDialog = false
             },
         )
+    }
+
+    // ── Keyboard shortcuts sheet (R-37) ──
+    if (showShortcutsSheet) {
+        KeyboardShortcutsSheet(onDismiss = { showShortcutsSheet = false })
     }
 
     // ── Destructive-tool confirmation dialog (spec §2.3) ──
@@ -197,6 +206,7 @@ fun EditorScreen(
                     onConvertLineEndingCRLF = { viewModel.convertLineEnding("\r\n") },
                     onConvertLineEndingLF = { viewModel.convertLineEnding("\n") },
                     onConvertLineEndingCR = { viewModel.convertLineEnding("\r") },
+                    onKeyboardShortcuts = { showShortcutsSheet = true },
                 ),
             )
         },
@@ -368,6 +378,10 @@ private fun EditorTopBar(
                 })
                 DropdownMenuItem(text = { Text("Line ending ▸") }, onClick = {
                     menuExpanded = false; lineEndingExpanded = true
+                })
+                HorizontalDivider()
+                DropdownMenuItem(text = { Text("Keyboard shortcuts") }, onClick = {
+                    menuExpanded = false; callbacks.onKeyboardShortcuts()
                 })
                 HorizontalDivider()
                 DropdownMenuItem(text = { Text("Compare with…") }, onClick = { menuExpanded = false; onCompareWith() })

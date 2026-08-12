@@ -1,6 +1,7 @@
 package com.omnieditor.design
 
 import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -9,6 +10,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
@@ -158,6 +160,14 @@ val DarkCompareColors = CompareColors(
 
 val LocalCompareColors = staticCompositionLocalOf { LightCompareColors }
 
+/**
+ * True when the system "remove animations" setting is active
+ * (Settings.Global.ANIMATOR_DURATION_SCALE == 0).
+ *
+ * Consumers: caret blink suppression, sheet transition suppression (R-37, NFR-A1).
+ */
+val LocalReduceMotion = compositionLocalOf { false }
+
 private val LightScheme = lightColorScheme(
     primary = Color(0xFF0B5B58),
     secondary = Color(0xFF3F5F5D),
@@ -181,9 +191,20 @@ fun OmniTheme(
         darkTheme -> DarkScheme
         else -> LightScheme
     }
+    // Read system "reduce animations" preference (NFR-A1, R-37).
+    // Settings.Global.ANIMATOR_DURATION_SCALE == 0 means animations are disabled.
+    val reduceMotion = remember(context) {
+        val scale = Settings.Global.getFloat(
+            context.contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f,
+        )
+        scale == 0f
+    }
     CompositionLocalProvider(
         LocalCompareColors provides if (darkTheme) DarkCompareColors else LightCompareColors,
         LocalSyntaxColors provides if (darkTheme) DarkSyntaxColors else LightSyntaxColors,
+        LocalReduceMotion provides reduceMotion,
     ) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
