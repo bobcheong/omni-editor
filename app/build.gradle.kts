@@ -83,6 +83,18 @@ android {
         }
     }
 
+    testOptions {
+        managedDevices {
+            localDevices {
+                create("pixel6api34") {
+                    device = "Pixel 6"
+                    apiLevel = 34
+                    systemImageSource = "aosp-atd"
+                }
+            }
+        }
+    }
+
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
