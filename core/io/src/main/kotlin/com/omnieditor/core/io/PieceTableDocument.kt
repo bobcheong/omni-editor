@@ -33,6 +33,11 @@ class PieceTableDocument private constructor(
     private val undoStack = mutableListOf<JournalEntry>()
     private val redoStack = mutableListOf<JournalEntry>()
 
+    // ── Typing coalescing state (R-17b) ──
+    private var lastTypingTime = 0L
+    private var lastTypingLine = -1L
+    private val COALESCE_WINDOW_MS = 2000L
+
     private var _editGeneration = 0L
     override val editGeneration: Long get() = _editGeneration
 
@@ -106,10 +111,109 @@ class PieceTableDocument private constructor(
     }
 
     /**
+     * Variant of [edit] that coalesces consecutive typing keystrokes on the same
+     * line within a 2-second window into a single undo step (R-17b).
+     *
+     * Call this from EditorState.insertAtCaret for every character-at-a-time typing
+     * operation. Text tools and replace-all should call [replaceAll] directly.
+     *
+     * Coalescing breaks when:
+     *  - [isTyping] is false
+     *  - The line changes (caret jumped to a different line)
+     *  - More than [COALESCE_WINDOW_MS] ms have elapsed since the last typing edit
+     *  - [breakCoalescing] is called explicitly (e.g., on save or non-typing op)
+     */
+    fun editCoalesced(range: LongRange, replacement: CharSequence, isTyping: Boolean = false): Long {
+        val now = System.currentTimeMillis()
+        val canCoalesce = isTyping &&
+            undoStack.isNotEmpty() &&
+            lastTypingLine == range.first &&
+            (now - lastTypingTime) < COALESCE_WINDOW_MS
+
+        return if (canCoalesce) {
+            // Pop the last entry and reverse it so the piece table is back to the
+            // state just before that entry was applied.
+            val last = undoStack.removeAt(undoStack.lastIndex)
+            applyReverse(last.record)
+
+            // Now apply the new replacement over the same starting offset.
+            // Use the same offset as the original entry so the compound record
+            // spans from the pre-coalesce state to the new state.
+            val compoundOffset = last.record.offset
+            val originalDeleted = last.record.deleted
+
+            // Compute the real byte-level span for the new replacement the same
+            // way edit() does, but we already know the offset from the original.
+            val endOffset = if (range.last >= lineCount - 1) {
+                table.length
+            } else {
+                val nextLineStart = table.lineToOffset((range.last + 1).toInt())
+                val charBefore = table.charAt(nextLineStart - 1)
+                if (charBefore == '\n' && nextLineStart >= 2 && table.charAt(nextLineStart - 2) == '\r') {
+                    nextLineStart - 2
+                } else {
+                    nextLineStart - 1
+                }
+            }
+            val count = endOffset - compoundOffset
+            val text = replacement.toString()
+            val newRecord = table.replace(compoundOffset, count, text)
+
+            // Build a compound record: original deleted text → new inserted text
+            val compoundRecord = EditRecord(
+                type = EditRecord.Type.REPLACE,
+                offset = compoundOffset,
+                deleted = originalDeleted,
+                inserted = newRecord.inserted,
+            )
+            val editId = ++editIdCounter
+            val compoundEntry = JournalEntry(editId, compoundRecord)
+            undoStack.add(compoundEntry)
+            redoStack.clear()
+
+            journal?.append(compoundEntry)
+            _editGeneration++
+
+            lastTypingTime = now
+            lastTypingLine = range.first
+
+            _changes.tryEmit(
+                DocumentChange(editId, range.first, range.last + 1, range.first + countLines(text))
+            )
+            editId
+        } else {
+            // Not coalescing: delegate to the normal edit path.
+            val editId = edit(range, replacement)
+            if (isTyping) {
+                lastTypingTime = now
+                lastTypingLine = range.first
+            } else {
+                // Non-typing op breaks any future coalescing.
+                lastTypingLine = -1L
+            }
+            editId
+        }
+    }
+
+    /**
+     * Explicitly break the coalescing window. Call this on save or after any
+     * non-typing operation that should prevent the next keystroke from merging
+     * with previous ones.
+     */
+    fun breakCoalescing() {
+        lastTypingLine = -1L
+        lastTypingTime = 0L
+    }
+
+    /**
      * Replace [length] characters at character [offset] with [replacement] as a single
      * journalled, undoable step. Use for text tools and find/replace-all.
+     *
+     * Always breaks the coalescing window so that subsequent typing starts a
+     * fresh undo step.
      */
     override fun replaceAll(offset: Int, length: Int, replacement: String): Long {
+        breakCoalescing()
         val editId = ++editIdCounter
         val record = table.replace(offset, length, replacement)
         val entry = JournalEntry(editId, record)
@@ -124,6 +228,7 @@ class PieceTableDocument private constructor(
 
     override fun undo(): Long? {
         if (undoStack.isEmpty()) return null
+        breakCoalescing()
         val entry = undoStack.removeAt(undoStack.lastIndex)
         applyReverse(entry.record)
         redoStack.add(entry)
@@ -135,6 +240,7 @@ class PieceTableDocument private constructor(
 
     override fun redo(): Long? {
         if (redoStack.isEmpty()) return null
+        breakCoalescing()
         val entry = redoStack.removeAt(redoStack.lastIndex)
         applyForward(entry.record)
         undoStack.add(entry)
@@ -172,6 +278,7 @@ class PieceTableDocument private constructor(
      */
     fun markSaved() {
         savedUndoDepth = undoStack.size
+        breakCoalescing()
     }
 
     /** Get the full text. Use for testing; prefer materialise for save. */

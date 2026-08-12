@@ -396,4 +396,113 @@ class PieceTableDocumentTest {
         doc.markSaved() // no-op effectively
         doc.dirty shouldBe false
     }
+
+    // ── R-17b: Typing-level undo coalescing ──
+
+    @Test
+    fun `typing multiple characters on same line coalesces into one undo step`() {
+        // Start: "hello", simulate typing to build "helloworld" one char at a time.
+        val doc = PieceTableDocument.create("hello")
+        // Each editCoalesced replaces line 0 with progressively longer text.
+        doc.editCoalesced(0L..0L, "hellow", isTyping = true)
+        doc.editCoalesced(0L..0L, "hellowo", isTyping = true)
+        doc.editCoalesced(0L..0L, "hellowor", isTyping = true)
+        doc.editCoalesced(0L..0L, "helloworl", isTyping = true)
+        doc.editCoalesced(0L..0L, "helloworld", isTyping = true)
+        // All five typing edits should have collapsed to a single undo entry.
+        doc.undoCount shouldBe 1
+        doc.undo()
+        doc.text() shouldBe "hello"
+    }
+
+    @Test
+    fun `typing then undoing removes the whole coalesced word`() {
+        val doc = PieceTableDocument.create("hello")
+        val chars = "world"
+        var content = "hello"
+        for (c in chars) {
+            content += c
+            doc.editCoalesced(0L..0L, content, isTyping = true)
+        }
+        // One undo should restore original content, not just remove last char.
+        doc.undo()
+        doc.text() shouldBe "hello"
+    }
+
+    @Test
+    fun `caret jump to different line breaks coalescing`() {
+        // Two-line document. Type on line 0, then type on line 1 → two undo steps.
+        val doc = PieceTableDocument.create("ab\ncd")
+        doc.editCoalesced(0L..0L, "aXb", isTyping = true) // type X on line 0
+        doc.editCoalesced(1L..1L, "cYd", isTyping = true) // type Y on line 1 (different line)
+        doc.undoCount shouldBe 2
+        doc.undo() // undoes line-1 change
+        doc.line(1).toString() shouldBe "cd"
+        doc.undo() // undoes line-0 change
+        doc.line(0).toString() shouldBe "ab"
+    }
+
+    @Test
+    fun `non-typing editCoalesced does not coalesce`() {
+        val doc = PieceTableDocument.create("hello")
+        doc.editCoalesced(0L..0L, "helloA", isTyping = false)
+        doc.editCoalesced(0L..0L, "helloAB", isTyping = false)
+        // Non-typing calls must not coalesce: each is its own undo step.
+        doc.undoCount shouldBe 2
+    }
+
+    @Test
+    fun `markSaved breaks coalescing`() {
+        val doc = PieceTableDocument.create("hello")
+        doc.editCoalesced(0L..0L, "helloA", isTyping = true)
+        doc.markSaved() // should break the coalescing window
+        doc.editCoalesced(0L..0L, "helloAB", isTyping = true)
+        // After markSaved the second edit cannot merge with the first.
+        doc.undoCount shouldBe 2
+    }
+
+    @Test
+    fun `breakCoalescing explicitly breaks the window`() {
+        val doc = PieceTableDocument.create("hello")
+        doc.editCoalesced(0L..0L, "helloA", isTyping = true)
+        doc.breakCoalescing()
+        doc.editCoalesced(0L..0L, "helloAB", isTyping = true)
+        doc.undoCount shouldBe 2
+    }
+
+    @Test
+    fun `coalescing preserves redo-stack clearing`() {
+        val doc = PieceTableDocument.create("hello")
+        doc.editCoalesced(0L..0L, "helloA", isTyping = true)
+        doc.undo()
+        doc.redoCount shouldBe 1
+        // A new typing edit should clear redo just like a normal edit does.
+        doc.editCoalesced(0L..0L, "helloB", isTyping = true)
+        doc.redoCount shouldBe 0
+    }
+
+    @Test
+    fun `editCoalesced with isTyping false then isTyping true does not coalesce`() {
+        val doc = PieceTableDocument.create("hello")
+        // First edit is non-typing
+        doc.editCoalesced(0L..0L, "helloX", isTyping = false)
+        // Second edit is typing on same line — must NOT merge with non-typing entry
+        doc.editCoalesced(0L..0L, "helloXY", isTyping = true)
+        doc.undoCount shouldBe 2
+        doc.undo()
+        doc.text() shouldBe "helloX"
+        doc.undo()
+        doc.text() shouldBe "hello"
+    }
+
+    @Test
+    fun `replaceAll does not interfere with coalescing tracking`() {
+        val doc = PieceTableDocument.create("hello")
+        doc.editCoalesced(0L..0L, "helloA", isTyping = true)
+        // replaceAll is a non-typing bulk op, should break coalescing window
+        doc.replaceAll(0, doc.length, "replaced")
+        doc.editCoalesced(0L..0L, "replacedX", isTyping = true)
+        // There should be 3 separate undo steps: typing-A, replaceAll, typing-X
+        doc.undoCount shouldBe 3
+    }
 }
