@@ -101,6 +101,7 @@ fun EditorContent(
     }
     val onSurface = MaterialTheme.colorScheme.onSurface
     val whitespaceColor = onSurface.copy(alpha = 0.35f)
+    val horizontalScrollState = rememberScrollState()
     val clipboardManager = LocalClipboardManager.current
     val primaryColor = MaterialTheme.colorScheme.primary
     val selectionColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
@@ -220,17 +221,10 @@ fun EditorContent(
         TextRange(anchor, state.caretColumn)
     }
 
-    // When word wrap is off, the whole editor scrolls horizontally as one unit.
-    val editorHorizontalScroll = rememberScrollState()
-
     Box(
         modifier = modifier
             .fillMaxSize()
             .onGloballyPositioned { containerSize = it.size }
-            .then(
-                if (!displaySettings.wordWrap) Modifier.horizontalScroll(editorHorizontalScroll)
-                else Modifier
-            )
             .semantics {
                 editableText = semanticsText
                 textSelectionRange = semanticsSelectionRange
@@ -559,6 +553,7 @@ fun EditorContent(
                             fontSize = 14.sp,
                             color = onSurface,
                             modifier = Modifier
+                                .horizontalScroll(horizontalScrollState)
                                 .padding(vertical = 2.dp),
                             softWrap = false,
                             maxLines = 1,

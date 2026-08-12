@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -67,6 +66,8 @@ fun UnifiedDiffView(
         }
     }
     val listState = rememberLazyListState()
+    // Shared horizontal scroll — all rows scroll together as one document.
+    val sharedHScroll = rememberScrollState()
     val colors = LocalCompareColors.current
     val hunks = state.result.hunks
     val cache = state.intraLineCache
@@ -106,46 +107,30 @@ fun UnifiedDiffView(
         }
     }
 
-    // Compute the approximate width needed for the longest line so all rows
-    // share the same width and horizontal scroll moves the whole document.
-    val longestLine = remember(state.leftLines, state.rightLines) {
-        val maxLeft = state.leftLines.maxOfOrNull { it.length } ?: 0
-        val maxRight = state.rightLines.maxOfOrNull { it.length } ?: 0
-        maxOf(maxLeft, maxRight)
-    }
-    // ~7.8dp per monospace character at 13sp + gutter width + padding
-    val estimatedContentWidth = (longestLine * 7.8f + 80).dp
-    val horizontalScrollState = rememberScrollState()
-
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .horizontalScroll(horizontalScrollState),
+    LazyColumn(
+        state = listState,
+        contentPadding = contentPadding,
+        modifier = modifier.fillMaxSize(),
     ) {
-        LazyColumn(
-            state = listState,
-            contentPadding = contentPadding,
-            modifier = Modifier.widthIn(min = estimatedContentWidth),
-        ) {
-            itemsIndexed(rows, key = { idx, row -> "${row.left}_${row.right}_${row.type}_$idx" }) { idx, row ->
-                UnifiedAlignedRow(
-                    row = row,
-                    leftLines = state.leftLines,
-                    rightLines = state.rightLines,
-                    isCurrentHunk = row.hunkIndex != null && row.hunkIndex == state.currentDiffIndex,
-                    isFindMatch = idx in findMatchSet,
-                    isFocusedMatch = idx == focusedFindRow,
-                    colors = colors,
-                    hunks = hunks,
-                    intraLineCache = cache,
-                    granularity = granularity,
-                    onTap = if (onDiffRowTapped != null && row.type != RowType.CONTEXT && row.hunkIndex != null) {
-                        { onDiffRowTapped(row.hunkIndex) }
-                    } else {
-                        null
-                    },
-                )
-            }
+        itemsIndexed(rows, key = { idx, row -> "${row.left}_${row.right}_${row.type}_$idx" }) { idx, row ->
+            UnifiedAlignedRow(
+                row = row,
+                leftLines = state.leftLines,
+                rightLines = state.rightLines,
+                isCurrentHunk = row.hunkIndex != null && row.hunkIndex == state.currentDiffIndex,
+                isFindMatch = idx in findMatchSet,
+                isFocusedMatch = idx == focusedFindRow,
+                colors = colors,
+                hunks = hunks,
+                intraLineCache = cache,
+                granularity = granularity,
+                hScrollState = sharedHScroll,
+                onTap = if (onDiffRowTapped != null && row.type != RowType.CONTEXT && row.hunkIndex != null) {
+                    { onDiffRowTapped(row.hunkIndex) }
+                } else {
+                    null
+                },
+            )
         }
     }
 }
@@ -162,6 +147,7 @@ private fun UnifiedAlignedRow(
     hunks: List<com.omnieditor.core.model.Hunk>,
     intraLineCache: IntraLineCache,
     granularity: Granularity,
+    hScrollState: androidx.compose.foundation.ScrollState,
     onTap: (() -> Unit)? = null,
 ) {
     val (bgColor, fgColor, glyph) = when (row.type) {
@@ -263,7 +249,9 @@ private fun UnifiedAlignedRow(
             fontSize = 13.sp,
             maxLines = 1,
             softWrap = false,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(hScrollState),
         )
     }
 }
