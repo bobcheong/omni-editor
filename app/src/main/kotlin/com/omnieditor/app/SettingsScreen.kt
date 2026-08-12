@@ -1,5 +1,7 @@
 package com.omnieditor.app
 
+import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,6 +52,8 @@ fun SettingsScreen(
     val granularity by viewModel.granularity.collectAsStateWithLifecycle()
     val theme by viewModel.theme.collectAsStateWithLifecycle()
     val dynamicColor by viewModel.dynamicColor.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
 
     // Local UI-only state — not persisted
     var showLicences by remember { mutableStateOf(false) }
@@ -153,6 +158,10 @@ fun SettingsScreen(
                     title = "Licences",
                     subtitle = "${LicenceInfo.entries.size} open-source libraries",
                 ) { showLicences = true }
+                SettingsItem(
+                    title = "Share diagnostic report",
+                    subtitle = "Send crash and ANR logs to a support contact",
+                ) { shareDiagnosticReport(context) }
             }
         }
     }
@@ -199,4 +208,39 @@ private fun SwitchItem(title: String, checked: Boolean, onCheckedChange: (Boolea
         Text(text = title, style = MaterialTheme.typography.bodyLarge)
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
+}
+
+/**
+ * R-41: Collect recent crash and ANR logs and share them via ACTION_SEND.
+ *
+ * User-initiated only. No automatic upload. Reports contain only device info,
+ * build version and stack traces — no file paths, file contents or user data.
+ */
+private fun shareDiagnosticReport(context: Context) {
+    val crashLogs = CrashLogger.recentLogs(context)
+    val anrLogs = AnrWatchdog.recentLogs(context)
+    val allLogs = (crashLogs + anrLogs).sortedByDescending { it.lastModified() }
+
+    val body = if (allLogs.isEmpty()) {
+        "No diagnostic logs found."
+    } else {
+        buildString {
+            for (log in allLogs) {
+                appendLine("=== ${log.name} ===")
+                try {
+                    appendLine(log.readText())
+                } catch (_: Exception) {
+                    appendLine("[unreadable]")
+                }
+                appendLine()
+            }
+        }
+    }
+
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "Omni Editor diagnostic report")
+        putExtra(Intent.EXTRA_TEXT, body)
+    }
+    context.startActivity(Intent.createChooser(shareIntent, "Share diagnostic report"))
 }

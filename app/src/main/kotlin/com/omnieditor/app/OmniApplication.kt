@@ -10,6 +10,12 @@ import dagger.hilt.android.HiltAndroidApp
 class OmniApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // R-41: install crash logger before anything else so that early
+        // failures are captured. Safe to call multiple times (no-op if already set).
+        CrashLogger.install(this)
+        // R-41: start ANR watchdog as a daemon thread — it will not prevent
+        // process exit but will log main-thread stalls > 5 seconds.
+        AnrWatchdog(this).start()
         validateBuiltInThemeContrast()
     }
 }
