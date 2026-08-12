@@ -61,12 +61,83 @@ was built and what P1 requires.
   undo step. `EditorViewModel.getPieceTable()` and all reflection calls deleted. Property
   test rewritten to use public API.
 
-### Phase 5 — Compare and viewer (not started)
+### Phase 5 — Compare and viewer (complete)
 
-Next: R-24 (Rule set UI).
+- **R-24** `21c326a` — Rule set UI: bottom sheet with all RuleSet fields, live re-run with
+  progress and cancel, active-rules chip showing count of non-default rules.
+- **R-25** `d45520f` — Alignment model: single `List<AlignedRow>` drives both unified and
+  split views. Sync holds by construction via spacer rows.
+- **R-18a** `8a594d4` — Rendering correctness: monotonic `editGeneration` counter replaces
+  broken `dirty` Boolean as recomposition key. Scroll feedback loop fixed. Word wrap, show-
+  whitespace, long-line truncation with expand.
+- **R-19** `8cb7ceb` — Syntax highlighting with carried lexer state: `IntArray` entry-state
+  per line, lazy re-lex for visible rows, early termination when recomputed state matches
+  cached. Token colours moved to design module with light/dark/high-contrast variants.
+- **R-26** `2cc09ee` — Intra-line highlighting: `IntraLineDiff` wired into both views.
+  Changed characters highlighted with background spans. Cached per row. Respects Granularity.
+- **R-27** `606d986` — Merge applies changes: `replaceAll` per hunk (one undo step). Direction
+  per hunk (← →). Accept-all as single batched edit with counted confirmation.
+- **R-28** `b5c3f5e` — Merge safety wired: pre-write backup via `MergeSafety`, restore-
+  originals via full undo, dirty prompt on compare exit, external change check before save.
+- **R-29** `f196b75` — Active-line sheet: tap diff row to open. Both versions with intra-line
+  highlighting, merge ← / → buttons, copy either side.
+- **R-30** `1b43fce` — Four dead menu items wired: open in viewer (same document instance),
+  flip sides (swap and re-run), re-run compare (picks up external changes), export report
+  (unified-diff patch + plain-text via `ReportGenerator`, shared via `ACTION_SEND`).
+- **R-31** `e9e085e` — Progress bar with cancel, "Files are identical" state naming active
+  rules, cached aligned rows, measured minimap viewport, find within compare (OE-FND-1).
+- **R-32** `cbd3863` — 3-way conflict resolution: `CONFLICT` rows visually distinct (purple +
+  `!` glyph), resolution through active-line sheet (take left / take base / take right),
+  conflict counter and next/prev navigation. Three-pane layout deferred (ADR-008).
 
-### Phase 6 — Shell and tools (not started)
+### Phase 6 — Shell and tools (complete)
 
-### Phase 3 — Custom editing surface / v0.2 (not started)
+- **R-33** `02c15a8` — Entry points: `initialAction` consumed in NavGraph, intent filters
+  (`ACTION_VIEW`, `ACTION_EDIT`, `ACTION_SEND`, `ACTION_SEND_MULTIPLE`), app shortcuts,
+  `handleSend` fixed (EXTRA_STREAM before EXTRA_TEXT), deprecated `getParcelableExtra` replaced.
+- **R-34b** `32023a7` — Home, sessions, tabs: `TabStrip` populated with open sessions, correct
+  `CompareMode` labels, session persistence via `SessionStore`, LRU eviction preserving
+  unsaved edits.
+- **R-35** `349bd06` — Settings persist via DataStore: `SettingsRepository` with 10 typed flows,
+  `SettingsViewModel`, every toggle wired and surviving restart. Theme/dynamic-colour honoured.
+- **R-36a** `c12b1b4` — Programmatic text tools: line-ending/encoding conversion, join/split
+  lines, go-to-line dialog. Counted confirmation for tools changing >50% of lines. Case
+  conversion excluded from v0.1.
 
-### Phase 7 — Hardening and release (not started)
+── v0.1 "Compare + Viewer" ship line ──
+
+### Phase 3 — Custom editing surface / v0.2 (complete)
+
+- **R-00b** `17b7f22` — Device test tier: Gradle Managed Devices configured (Pixel 6, API 34,
+  aosp-atd). Robolectric dropped (incompatible with SDK 37 / AGP 9.x). ADR-001 updated.
+- **R-14** `0f1c03b` — LineLayoutCache: per-line `TextLayoutResult` from `TextMeasurer`. Tab
+  expansion with bidirectional display-column ↔ character-offset maps. 25 JVM tests.
+- **R-15** `f2d8797` — Caret, selection, gestures, semantics: blinking caret with tap-to-place,
+  drag selection, long-press/double-tap word select, draggable handles ≥48dp, floating toolbar
+  (cut/copy/paste/select all/share), TalkBack semantics, column selection model prepared.
+- **R-16** `43fda2b` — IME connection: invisible `BasicTextField` bridge for soft keyboard
+  input, composing region with underline, hardware keyboard shortcuts (Ctrl+Z/Y/S/A/C/X,
+  arrows with Shift, Home/End, Tab), `imePadding`, autocorrect off by default.
+- **R-17b** `47e098d` — Typing-level undo coalescing: consecutive keystrokes within one line
+  and 2s window collapse to one step. Window breaks on caret jump, save, non-typing op.
+- **R-18b** `cfd8a11` — Caret navigation across wrapped rows: `WrappedRowCache` stores visual-
+  row boundaries, up/down navigate visual rows before crossing logical lines, smart Home/End.
+- **R-36b** `37b61de` — Selection-scoped tools, case conversion (uppercase/lowercase/title case),
+  bookmarks with gutter indicator and next/prev navigation, column selection mode toggle.
+
+### Phase 7 — Hardening and release (complete)
+
+- **R-37** `033612f` — Accessibility audit: keyboard shortcuts sheet in design module, gutter
+  glyphs confirmed (+ − ~ !), ~90 strings extracted to `strings.xml`, `LocalReduceMotion`
+  composition local, `ContrastChecker` wired at startup.
+- **R-38** `b2397ad` — JVM performance budget references: 6 benchmark tests (creation, heap,
+  typing latency, line access, compare throughput, intra-line ranges). DocumentLimits unchanged
+  pending device measurement. Monospace fast path deferred. ADR-003 updated.
+- **R-39** `1cf505f` — Dead code sweep: 9 of 13 original types confirmed wired, 5 deferred
+  with ADR-010. Empty lambdas audited (3 legitimate display-only). KDoc honesty verified.
+  `checkUnusedPublicTypes` task added.
+- **R-40** `86a7080` — Release: `versionName = "0.2.0"`, signing config verified, `licenses.md`
+  and in-app licences complete, Navigation Compose and DataStore entries added.
+- **R-41** `ca63dd0` — On-device diagnostics: `CrashLogger` (ring buffer of 10 crash logs),
+  `AnrWatchdog` (5s main-thread watchdog), "Share diagnostic report" in settings (user-
+  initiated, redacted, no file paths/content, no network).
