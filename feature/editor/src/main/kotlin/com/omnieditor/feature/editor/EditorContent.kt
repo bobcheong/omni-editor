@@ -48,6 +48,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
@@ -361,6 +362,26 @@ fun EditorContent(
                     }
                 }
 
+                // Apply composing region underline (R-16: CJK/predictive IME)
+                val finalAnnotated = if (
+                    state.isComposing &&
+                    state.composingLine == index.toLong() &&
+                    state.composingStart >= 0 &&
+                    state.composingEnd > state.composingStart &&
+                    state.composingEnd <= displayText.length
+                ) {
+                    buildAnnotatedString {
+                        append(annotated)
+                        addStyle(
+                            SpanStyle(textDecoration = TextDecoration.Underline),
+                            state.composingStart,
+                            state.composingEnd,
+                        )
+                    }
+                } else {
+                    annotated
+                }
+
                 // Selection bounds for this line
                 val selBounds = state.selectionBounds()
                 val lineIdx = index.toLong()
@@ -451,10 +472,10 @@ fun EditorContent(
                         maxLines = 1,
                     )
 
-                    // Content
+                    // Content (uses finalAnnotated which includes composing underline)
                     if (displaySettings.wordWrap) {
                         Text(
-                            text = annotated,
+                            text = finalAnnotated,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 14.sp,
                             color = onSurface,
@@ -465,7 +486,7 @@ fun EditorContent(
                         )
                     } else {
                         Text(
-                            text = annotated,
+                            text = finalAnnotated,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 14.sp,
                             color = onSurface,

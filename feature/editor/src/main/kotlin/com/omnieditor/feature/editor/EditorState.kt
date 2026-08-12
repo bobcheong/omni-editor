@@ -51,6 +51,23 @@ class EditorState(
     /** Whether the document is in read-only mode. */
     var readOnly by mutableStateOf(false)
 
+    // ── IME composing region (R-16) ──────────────────────────────────────
+
+    /** Start of the composing region within the composing line, or -1 when inactive. */
+    var composingStart by mutableStateOf(-1)
+        internal set
+
+    /** End (exclusive) of the composing region within the composing line, or -1 when inactive. */
+    var composingEnd by mutableStateOf(-1)
+        internal set
+
+    /** Line on which the composing region lives. Only meaningful when [composingStart] >= 0. */
+    var composingLine by mutableLongStateOf(0L)
+        internal set
+
+    /** Whether a composing region is currently active. */
+    val isComposing: Boolean get() = composingStart >= 0
+
     /** Total line count, derived from document. */
     val lineCount: Long get() = document.lineCount
 
@@ -221,6 +238,120 @@ class EditorState(
         val clampedLine = line.coerceIn(0, maxOf(lineCount - 1, 0))
         val text = document.line(clampedLine).toString()
         setSelection(clampedLine, 0, clampedLine, text.length)
+    }
+
+    // ── IME composing text operations (R-16) ───────────────────────────
+
+    /**
+     * Set or replace the composing (pre-edit) text. CJK IMEs use this to show
+     * uncommitted characters with an underline. If a composing region already
+     * exists it is replaced; otherwise one is created at the caret.
+     *
+     * @param text The new composing text.
+     * @param newCursorPosition Relative cursor position after composing text
+     *        (1 = immediately after composing text, per Android InputConnection convention).
+     */
+    fun setComposingText(text: String, @Suppress("UNUSED_PARAMETER") newCursorPosition: Int = 1) {
+        if (readOnly) return
+        // If there's an existing composing region, remove it first
+        if (isComposing && composingLine < lineCount) {
+            val lineText = document.line(composingLine).toString()
+            val safeStart = composingStart.coerceIn(0, lineText.length)
+            val safeEnd = composingEnd.coerceIn(safeStart, lineText.length)
+            val withoutComposing = lineText.removeRange(safeStart, safeEnd)
+            document.edit(composingLine..composingLine, withoutComposing)
+            // Restore caret to composing start
+            caretLine = composingLine
+            caretColumn = safeStart
+        }
+        // Insert the new composing text at caret
+        if (text.isNotEmpty()) {
+            val lineText = document.line(caretLine).toString()
+            val col = caretColumn.coerceAtMost(lineText.length)
+            val newLine = lineText.substring(0, col) + text + lineText.substring(col)
+            document.edit(caretLine..caretLine, newLine)
+            composingLine = caretLine
+            composingStart = col
+            composingEnd = col + text.length
+            caretColumn = composingEnd
+        } else {
+            clearComposingRegion()
+        }
+    }
+
+    /**
+     * Commit (finalise) the composing text. The composing region is cleared
+     * and the text becomes permanent. Called when the IME confirms input.
+     */
+    fun commitComposingText() {
+        clearComposingRegion()
+    }
+
+    /** Clear the composing region markers without modifying the document. */
+    fun clearComposingRegion() {
+        composingStart = -1
+        composingEnd = -1
+    }
+
+    // ── Delete operations (R-16) ─────────────────────────────────────────
+
+    /**
+     * Delete one character backward (backspace). If a selection is active,
+     * deletes the selection instead. If the caret is at the start of a line,
+     * joins with the previous line.
+     */
+    fun deleteBackward() {
+        if (readOnly) return
+        if (hasSelection) { deleteSelection(); return }
+        if (caretColumn > 0) {
+            val lineText = document.line(caretLine).toString()
+            val newLine = lineText.removeRange(caretColumn - 1, caretColumn)
+            document.edit(caretLine..caretLine, newLine)
+            caretColumn--
+        } else if (caretLine > 0) {
+            // Join with previous line
+            val prevText = document.line(caretLine - 1).toString()
+            val curText = document.line(caretLine).toString()
+            document.edit((caretLine - 1)..caretLine, prevText + curText)
+            caretLine--
+            caretColumn = prevText.length
+        }
+    }
+
+    /**
+     * Delete one character forward (delete key). If a selection is active,
+     * deletes the selection instead. If the caret is at the end of a line,
+     * joins with the next line.
+     */
+    fun deleteForward() {
+        if (readOnly) return
+        if (hasSelection) { deleteSelection(); return }
+        val lineText = document.line(caretLine).toString()
+        if (caretColumn < lineText.length) {
+            val newLine = lineText.removeRange(caretColumn, caretColumn + 1)
+            document.edit(caretLine..caretLine, newLine)
+        } else if (caretLine < lineCount - 1) {
+            // Join with next line
+            val nextText = document.line(caretLine + 1).toString()
+            document.edit(caretLine..(caretLine + 1), lineText + nextText)
+        }
+    }
+
+    /**
+     * Delete [beforeLength] characters before the caret and [afterLength]
+     * characters after the caret. Used by IME DeleteSurroundingTextCommand.
+     */
+    fun deleteSurrounding(beforeLength: Int, afterLength: Int) {
+        if (readOnly) return
+        val lineText = document.line(caretLine).toString()
+        val col = caretColumn.coerceAtMost(lineText.length)
+        val deleteStart = (col - beforeLength).coerceAtLeast(0)
+        val deleteEnd = (col + afterLength).coerceAtMost(lineText.length)
+        if (deleteStart < deleteEnd) {
+            val newLine = lineText.removeRange(deleteStart, deleteEnd)
+            document.edit(caretLine..caretLine, newLine)
+            caretColumn = deleteStart
+        }
     }
 
     private fun buildReplacementForInsert(text: String): String {
