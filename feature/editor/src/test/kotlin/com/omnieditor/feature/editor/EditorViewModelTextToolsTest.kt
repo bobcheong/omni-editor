@@ -298,23 +298,177 @@ class EditorViewModelTextToolsTest {
         vm.currentText() shouldBe original
     }
 
-    // ── case conversion excluded from v0.1 ────────────────────────────────────
+    // ── case conversion (R-36b, v0.2) ─────────────────────────────────────────
 
     @Test
-    fun `EditorViewModel does not expose toUpperCase method`() {
-        // Verify at compile time by ensuring the method name is absent.
-        // If this file compiles, the assertion is satisfied.
-        val methods = EditorViewModel::class.java.declaredMethods.map { it.name }
-        assert("toUpperCase" !in methods) {
-            "toUpperCase must not be in EditorViewModel in v0.1 (excluded per spec §2.3)"
-        }
+    fun `toUpperCase converts selection to uppercase`() {
+        val vm = vmWith("hello world\nfoo bar")
+        val state = (vm.uiState.value as EditorUiState.Loaded).editorState
+        // Select "hello" on line 0
+        state.setSelection(0L, 0, 0L, 5)
+        vm.toUpperCase()
+        vm.currentText() shouldBe "HELLO world\nfoo bar"
     }
 
     @Test
-    fun `EditorViewModel does not expose toLowerCase method`() {
-        val methods = EditorViewModel::class.java.declaredMethods.map { it.name }
-        assert("toLowerCase" !in methods) {
-            "toLowerCase must not be in EditorViewModel in v0.1 (excluded per spec §2.3)"
-        }
+    fun `toLowerCase converts selection to lowercase`() {
+        val vm = vmWith("HELLO WORLD\nFOO")
+        val state = (vm.uiState.value as EditorUiState.Loaded).editorState
+        // Select "HELLO" on line 0
+        state.setSelection(0L, 0, 0L, 5)
+        vm.toLowerCase()
+        vm.currentText() shouldBe "hello WORLD\nFOO"
+    }
+
+    @Test
+    fun `toTitleCase converts whole document when no selection`() {
+        val vm = vmWith("hello world")
+        vm.toTitleCase()
+        // 1 of 1 lines changed → >50% → confirmation
+        vm.pendingTool.value.shouldNotBeNull()
+        vm.confirmPendingTool()
+        vm.currentText() shouldBe "Hello World"
+    }
+
+    @Test
+    fun `toUpperCase on whole document requires confirmation`() {
+        val vm = vmWith("hello\nworld")
+        vm.toUpperCase()
+        vm.pendingTool.value.shouldNotBeNull()
+        vm.confirmPendingTool()
+        vm.currentText() shouldBe "HELLO\nWORLD"
+    }
+
+    @Test
+    fun `toUpperCase is a single undo step`() {
+        val original = "hello world"
+        val vm = vmWith(original)
+        val state = (vm.uiState.value as EditorUiState.Loaded).editorState
+        state.setSelection(0L, 0, 0L, 5)
+        vm.toUpperCase()
+        vm.currentText() shouldBe "HELLO world"
+        vm.undo()
+        vm.currentText() shouldBe original
+    }
+
+    // ── bookmarks (R-36b) ─────────────────────────────────────────────────────
+
+    @Test
+    fun `toggleBookmark adds and removes bookmark on caret line`() {
+        val vm = vmWith("a\nb\nc")
+        val state = (vm.uiState.value as EditorUiState.Loaded).editorState
+        state.moveCaret(1L, 0)
+        vm.toggleBookmark()
+        assert(1L in state.bookmarks) { "bookmark should be on line 1" }
+        vm.toggleBookmark()
+        assert(1L !in state.bookmarks) { "bookmark should be removed" }
+    }
+
+    @Test
+    fun `nextBookmark moves caret to next bookmarked line`() {
+        val vm = vmWith("a\nb\nc\nd\ne")
+        val state = (vm.uiState.value as EditorUiState.Loaded).editorState
+        state.moveCaret(0L, 0)
+        state.bookmarks.add(2L)
+        state.bookmarks.add(4L)
+        vm.nextBookmark()
+        state.caretLine shouldBe 2L
+        vm.nextBookmark()
+        state.caretLine shouldBe 4L
+    }
+
+    @Test
+    fun `nextBookmark wraps around to first bookmark`() {
+        val vm = vmWith("a\nb\nc")
+        val state = (vm.uiState.value as EditorUiState.Loaded).editorState
+        state.bookmarks.add(1L)
+        state.moveCaret(2L, 0)
+        vm.nextBookmark()
+        state.caretLine shouldBe 1L
+    }
+
+    @Test
+    fun `prevBookmark moves caret to previous bookmarked line`() {
+        val vm = vmWith("a\nb\nc\nd\ne")
+        val state = (vm.uiState.value as EditorUiState.Loaded).editorState
+        state.bookmarks.add(0L)
+        state.bookmarks.add(2L)
+        state.moveCaret(4L, 0)
+        vm.prevBookmark()
+        state.caretLine shouldBe 2L
+        vm.prevBookmark()
+        state.caretLine shouldBe 0L
+    }
+
+    @Test
+    fun `prevBookmark wraps around to last bookmark`() {
+        val vm = vmWith("a\nb\nc")
+        val state = (vm.uiState.value as EditorUiState.Loaded).editorState
+        state.bookmarks.add(2L)
+        state.moveCaret(0L, 0)
+        vm.prevBookmark()
+        state.caretLine shouldBe 2L
+    }
+
+    @Test
+    fun `nextBookmark and prevBookmark are no-ops when no bookmarks`() {
+        val vm = vmWith("a\nb\nc")
+        val state = (vm.uiState.value as EditorUiState.Loaded).editorState
+        state.moveCaret(1L, 0)
+        vm.nextBookmark()
+        state.caretLine shouldBe 1L
+        vm.prevBookmark()
+        state.caretLine shouldBe 1L
+    }
+
+    // ── selection-scoped tools (R-36b) ────────────────────────────────────────
+
+    @Test
+    fun `sortLines on selection only sorts selected text`() {
+        val vm = vmWith("z\nb\na\nw")
+        val state = (vm.uiState.value as EditorUiState.Loaded).editorState
+        // Select lines 1-2 ("b\na")
+        state.setSelection(1L, 0, 2L, 1)
+        vm.sortLines()
+        // No pending tool — selection path does not require confirmation
+        vm.pendingTool.value.shouldBeNull()
+        // Lines 1-2 should be sorted, lines 0 and 3 unchanged
+        vm.currentText() shouldBe "z\na\nb\nw"
+    }
+
+    @Test
+    fun `trimTrailing on selection only trims selected text`() {
+        val vm = vmWith("keep   \ntrim   \nkeep   ")
+        val state = (vm.uiState.value as EditorUiState.Loaded).editorState
+        // Select line 1 only
+        state.setSelection(1L, 0, 1L, 7)
+        vm.trimTrailing()
+        vm.pendingTool.value.shouldBeNull()
+        vm.currentText() shouldBe "keep   \ntrim\nkeep   "
+    }
+
+    // ── column select (R-36b) ─────────────────────────────────────────────────
+
+    @Test
+    fun `toggleColumnSelectMode switches between LINEAR and COLUMN`() {
+        val vm = vmWith("hello")
+        val state = (vm.uiState.value as EditorUiState.Loaded).editorState
+        state.selectionMode shouldBe SelectionMode.LINEAR
+        vm.toggleColumnSelectMode()
+        state.selectionMode shouldBe SelectionMode.COLUMN
+        vm.toggleColumnSelectMode()
+        state.selectionMode shouldBe SelectionMode.LINEAR
+    }
+
+    @Test
+    fun `selectedTextForMode returns column-block text`() {
+        val vm = vmWith("abcde\nfghij\nklmno")
+        val state = (vm.uiState.value as EditorUiState.Loaded).editorState
+        state.selectionMode = SelectionMode.COLUMN
+        // Select columns 1-3 across lines 0-2
+        state.setSelection(0L, 1, 2L, 3)
+        val text = state.selectedTextForMode()
+        // Each line: chars 1..3 = "bc", "gh", "lm"
+        text shouldBe "bc\ngh\nlm"
     }
 }

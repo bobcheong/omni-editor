@@ -4,6 +4,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
 import com.omnieditor.core.io.PieceTableDocument
 
@@ -73,6 +74,68 @@ class EditorState(
      * populated.
      */
     val wrappedRowCache: WrappedRowCache = WrappedRowCache()
+
+    // ── Bookmarks (R-36b) ────────────────────────────────────────────────
+
+    /**
+     * Set of bookmarked line indices (0-based). Observable so the gutter
+     * recomposes when bookmarks change.
+     */
+    val bookmarks: MutableSet<Long> = mutableStateSetOf()
+
+    /** Toggle bookmark on the current caret line. */
+    fun toggleBookmark() {
+        if (caretLine in bookmarks) bookmarks.remove(caretLine) else bookmarks.add(caretLine)
+    }
+
+    /** Move caret to the next bookmark after the current line (wraps around). */
+    fun nextBookmark() {
+        if (bookmarks.isEmpty()) return
+        val next = bookmarks.filter { it > caretLine }.minOrNull()
+            ?: bookmarks.minOrNull()
+        if (next != null) moveCaret(next, 0)
+    }
+
+    /** Move caret to the previous bookmark before the current line (wraps around). */
+    fun prevBookmark() {
+        if (bookmarks.isEmpty()) return
+        val prev = bookmarks.filter { it < caretLine }.maxOrNull()
+            ?: bookmarks.maxOrNull()
+        if (prev != null) moveCaret(prev, 0)
+    }
+
+    // ── Column select (R-36b) ────────────────────────────────────────────
+
+    /**
+     * Toggle between LINEAR and COLUMN selection mode.
+     * In COLUMN mode the selection covers a rectangular block; rendering of
+     * the block highlight is deferred but the data model is ready.
+     */
+    fun toggleColumnSelectMode() {
+        selectionMode = if (selectionMode == SelectionMode.COLUMN) SelectionMode.LINEAR else SelectionMode.COLUMN
+        clearSelection()
+    }
+
+    /**
+     * Return the selected text for COLUMN mode: each line's slice from
+     * [startCol] to [endCol], joined with newlines.
+     * Falls back to [selectedText] when not in COLUMN mode.
+     */
+    fun selectedTextForMode(): String {
+        if (selectionMode != SelectionMode.COLUMN || !hasSelection) return selectedText()
+        val bounds = selectionBounds() ?: return ""
+        val startCol = minOf(bounds.startColumn, bounds.endColumn)
+        val endCol = maxOf(bounds.startColumn, bounds.endColumn)
+        val sb = StringBuilder()
+        for (line in bounds.startLine..bounds.endLine) {
+            val lineText = document.line(line).toString()
+            val from = startCol.coerceAtMost(lineText.length)
+            val to = endCol.coerceAtMost(lineText.length)
+            sb.append(lineText.substring(from, to))
+            if (line < bounds.endLine) sb.append('\n')
+        }
+        return sb.toString()
+    }
 
     // ── IME composing region (R-16) ──────────────────────────────────────
 

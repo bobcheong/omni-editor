@@ -48,6 +48,35 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
+/**
+ * Grouped callbacks for the editor top-bar menu, keeping [EditorTopBar]'s parameter count
+ * within the detekt LongParameterList threshold.
+ */
+data class EditorMenuCallbacks(
+    val onSave: () -> Unit = {},
+    val onUndo: () -> Unit = {},
+    val onRedo: () -> Unit = {},
+    val onGoToLine: () -> Unit = {},
+    val onSortLines: () -> Unit = {},
+    val onDeduplicate: () -> Unit = {},
+    val onTrimTrailing: () -> Unit = {},
+    val onReverseLines: () -> Unit = {},
+    val onRemoveBlankLines: () -> Unit = {},
+    val onTabsToSpaces: () -> Unit = {},
+    val onSpacesToTabs: () -> Unit = {},
+    val onJoinLines: () -> Unit = {},
+    val onToUpperCase: () -> Unit = {},
+    val onToLowerCase: () -> Unit = {},
+    val onToTitleCase: () -> Unit = {},
+    val onToggleBookmark: () -> Unit = {},
+    val onNextBookmark: () -> Unit = {},
+    val onPrevBookmark: () -> Unit = {},
+    val onToggleColumnSelect: () -> Unit = {},
+    val onConvertLineEndingCRLF: () -> Unit = {},
+    val onConvertLineEndingLF: () -> Unit = {},
+    val onConvertLineEndingCR: () -> Unit = {},
+)
+
 @Suppress("LongMethod")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -145,21 +174,30 @@ fun EditorScreen(
                 onNavigateBack = onNavigateBack,
                 onFind = { showFind = !showFind },
                 onCompareWith = onCompareWith,
-                onSave = { viewModel.save() },
-                onUndo = { viewModel.undo() },
-                onRedo = { viewModel.redo() },
-                onGoToLine = { showGoToLineDialog = true },
-                onSortLines = { viewModel.sortLines() },
-                onDeduplicate = { viewModel.deduplicateLines() },
-                onTrimTrailing = { viewModel.trimTrailing() },
-                onReverseLines = { viewModel.reverseLines() },
-                onRemoveBlankLines = { viewModel.removeBlankLines() },
-                onTabsToSpaces = { viewModel.tabsToSpaces() },
-                onSpacesToTabs = { viewModel.spacesToTabs() },
-                onJoinLines = { viewModel.joinLines() },
-                onConvertLineEndingCRLF = { viewModel.convertLineEnding("\r\n") },
-                onConvertLineEndingLF = { viewModel.convertLineEnding("\n") },
-                onConvertLineEndingCR = { viewModel.convertLineEnding("\r") },
+                callbacks = EditorMenuCallbacks(
+                    onSave = { viewModel.save() },
+                    onUndo = { viewModel.undo() },
+                    onRedo = { viewModel.redo() },
+                    onGoToLine = { showGoToLineDialog = true },
+                    onSortLines = { viewModel.sortLines() },
+                    onDeduplicate = { viewModel.deduplicateLines() },
+                    onTrimTrailing = { viewModel.trimTrailing() },
+                    onReverseLines = { viewModel.reverseLines() },
+                    onRemoveBlankLines = { viewModel.removeBlankLines() },
+                    onTabsToSpaces = { viewModel.tabsToSpaces() },
+                    onSpacesToTabs = { viewModel.spacesToTabs() },
+                    onJoinLines = { viewModel.joinLines() },
+                    onToUpperCase = { viewModel.toUpperCase() },
+                    onToLowerCase = { viewModel.toLowerCase() },
+                    onToTitleCase = { viewModel.toTitleCase() },
+                    onToggleBookmark = { viewModel.toggleBookmark() },
+                    onNextBookmark = { viewModel.nextBookmark() },
+                    onPrevBookmark = { viewModel.prevBookmark() },
+                    onToggleColumnSelect = { viewModel.toggleColumnSelectMode() },
+                    onConvertLineEndingCRLF = { viewModel.convertLineEnding("\r\n") },
+                    onConvertLineEndingLF = { viewModel.convertLineEnding("\n") },
+                    onConvertLineEndingCR = { viewModel.convertLineEnding("\r") },
+                ),
             )
         },
         bottomBar = {
@@ -288,24 +326,12 @@ private fun EditorTopBar(
     onNavigateBack: () -> Unit,
     onFind: () -> Unit,
     onCompareWith: () -> Unit,
-    onSave: () -> Unit,
-    onUndo: () -> Unit,
-    onRedo: () -> Unit,
-    onGoToLine: () -> Unit,
-    onSortLines: () -> Unit,
-    onDeduplicate: () -> Unit,
-    onTrimTrailing: () -> Unit,
-    onReverseLines: () -> Unit,
-    onRemoveBlankLines: () -> Unit,
-    onTabsToSpaces: () -> Unit,
-    onSpacesToTabs: () -> Unit,
-    onJoinLines: () -> Unit,
-    onConvertLineEndingCRLF: () -> Unit,
-    onConvertLineEndingLF: () -> Unit,
-    onConvertLineEndingCR: () -> Unit,
+    callbacks: EditorMenuCallbacks,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var textToolsExpanded by remember { mutableStateOf(false) }
+    var caseExpanded by remember { mutableStateOf(false) }
+    var bookmarkExpanded by remember { mutableStateOf(false) }
     var lineEndingExpanded by remember { mutableStateOf(false) }
 
     TopAppBar(
@@ -323,13 +349,22 @@ private fun EditorTopBar(
                 Icon(Icons.Default.MoreVert, "More")
             }
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                DropdownMenuItem(text = { Text("Save") }, onClick = { menuExpanded = false; onSave() })
-                DropdownMenuItem(text = { Text("Undo") }, onClick = { menuExpanded = false; onUndo() })
-                DropdownMenuItem(text = { Text("Redo") }, onClick = { menuExpanded = false; onRedo() })
-                DropdownMenuItem(text = { Text("Go to line…") }, onClick = { menuExpanded = false; onGoToLine() })
+                DropdownMenuItem(text = { Text("Save") }, onClick = { menuExpanded = false; callbacks.onSave() })
+                DropdownMenuItem(text = { Text("Undo") }, onClick = { menuExpanded = false; callbacks.onUndo() })
+                DropdownMenuItem(text = { Text("Redo") }, onClick = { menuExpanded = false; callbacks.onRedo() })
+                DropdownMenuItem(text = { Text("Go to line…") }, onClick = { menuExpanded = false; callbacks.onGoToLine() })
                 HorizontalDivider()
                 DropdownMenuItem(text = { Text("Text tools ▸") }, onClick = {
                     menuExpanded = false; textToolsExpanded = true
+                })
+                DropdownMenuItem(text = { Text("Case conversion ▸") }, onClick = {
+                    menuExpanded = false; caseExpanded = true
+                })
+                DropdownMenuItem(text = { Text("Bookmarks ▸") }, onClick = {
+                    menuExpanded = false; bookmarkExpanded = true
+                })
+                DropdownMenuItem(text = { Text("Column select") }, onClick = {
+                    menuExpanded = false; callbacks.onToggleColumnSelect()
                 })
                 DropdownMenuItem(text = { Text("Line ending ▸") }, onClick = {
                     menuExpanded = false; lineEndingExpanded = true
@@ -339,21 +374,33 @@ private fun EditorTopBar(
             }
             // Text tools submenu
             DropdownMenu(expanded = textToolsExpanded, onDismissRequest = { textToolsExpanded = false }) {
-                DropdownMenuItem(text = { Text("Sort lines") }, onClick = { textToolsExpanded = false; onSortLines() })
-                DropdownMenuItem(text = { Text("Remove duplicates") }, onClick = { textToolsExpanded = false; onDeduplicate() })
-                DropdownMenuItem(text = { Text("Trim trailing spaces") }, onClick = { textToolsExpanded = false; onTrimTrailing() })
-                DropdownMenuItem(text = { Text("Reverse lines") }, onClick = { textToolsExpanded = false; onReverseLines() })
-                DropdownMenuItem(text = { Text("Remove blank lines") }, onClick = { textToolsExpanded = false; onRemoveBlankLines() })
-                DropdownMenuItem(text = { Text("Join lines") }, onClick = { textToolsExpanded = false; onJoinLines() })
+                DropdownMenuItem(text = { Text("Sort lines") }, onClick = { textToolsExpanded = false; callbacks.onSortLines() })
+                DropdownMenuItem(text = { Text("Remove duplicates") }, onClick = { textToolsExpanded = false; callbacks.onDeduplicate() })
+                DropdownMenuItem(text = { Text("Trim trailing spaces") }, onClick = { textToolsExpanded = false; callbacks.onTrimTrailing() })
+                DropdownMenuItem(text = { Text("Reverse lines") }, onClick = { textToolsExpanded = false; callbacks.onReverseLines() })
+                DropdownMenuItem(text = { Text("Remove blank lines") }, onClick = { textToolsExpanded = false; callbacks.onRemoveBlankLines() })
+                DropdownMenuItem(text = { Text("Join lines") }, onClick = { textToolsExpanded = false; callbacks.onJoinLines() })
                 HorizontalDivider()
-                DropdownMenuItem(text = { Text("Tabs → Spaces") }, onClick = { textToolsExpanded = false; onTabsToSpaces() })
-                DropdownMenuItem(text = { Text("Spaces → Tabs") }, onClick = { textToolsExpanded = false; onSpacesToTabs() })
+                DropdownMenuItem(text = { Text("Tabs → Spaces") }, onClick = { textToolsExpanded = false; callbacks.onTabsToSpaces() })
+                DropdownMenuItem(text = { Text("Spaces → Tabs") }, onClick = { textToolsExpanded = false; callbacks.onSpacesToTabs() })
+            }
+            // Case conversion submenu
+            DropdownMenu(expanded = caseExpanded, onDismissRequest = { caseExpanded = false }) {
+                DropdownMenuItem(text = { Text("To UPPERCASE") }, onClick = { caseExpanded = false; callbacks.onToUpperCase() })
+                DropdownMenuItem(text = { Text("To lowercase") }, onClick = { caseExpanded = false; callbacks.onToLowerCase() })
+                DropdownMenuItem(text = { Text("To Title Case") }, onClick = { caseExpanded = false; callbacks.onToTitleCase() })
+            }
+            // Bookmarks submenu
+            DropdownMenu(expanded = bookmarkExpanded, onDismissRequest = { bookmarkExpanded = false }) {
+                DropdownMenuItem(text = { Text("Toggle bookmark") }, onClick = { bookmarkExpanded = false; callbacks.onToggleBookmark() })
+                DropdownMenuItem(text = { Text("Next bookmark") }, onClick = { bookmarkExpanded = false; callbacks.onNextBookmark() })
+                DropdownMenuItem(text = { Text("Previous bookmark") }, onClick = { bookmarkExpanded = false; callbacks.onPrevBookmark() })
             }
             // Line-ending conversion submenu
             DropdownMenu(expanded = lineEndingExpanded, onDismissRequest = { lineEndingExpanded = false }) {
-                DropdownMenuItem(text = { Text("Convert to CRLF (Windows)") }, onClick = { lineEndingExpanded = false; onConvertLineEndingCRLF() })
-                DropdownMenuItem(text = { Text("Convert to LF (Unix)") }, onClick = { lineEndingExpanded = false; onConvertLineEndingLF() })
-                DropdownMenuItem(text = { Text("Convert to CR (Classic Mac)") }, onClick = { lineEndingExpanded = false; onConvertLineEndingCR() })
+                DropdownMenuItem(text = { Text("Convert to CRLF (Windows)") }, onClick = { lineEndingExpanded = false; callbacks.onConvertLineEndingCRLF() })
+                DropdownMenuItem(text = { Text("Convert to LF (Unix)") }, onClick = { lineEndingExpanded = false; callbacks.onConvertLineEndingLF() })
+                DropdownMenuItem(text = { Text("Convert to CR (Classic Mac)") }, onClick = { lineEndingExpanded = false; callbacks.onConvertLineEndingCR() })
             }
         },
     )

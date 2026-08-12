@@ -36,7 +36,8 @@ naming:
     functionPattern: '[a-zA-Z][a-zA-Z0-9]*'
   MatchingDeclarationName:
     # Theme.kt and TabStrip.kt intentionally aggregate multiple declarations.
-    excludes: ['**/Theme.kt', '**/TabStrip.kt']
+    # EditorScreen.kt also contains EditorMenuCallbacks (a callback-grouping type).
+    excludes: ['**/Theme.kt', '**/TabStrip.kt', '**/EditorScreen.kt']
   MemberNameEqualsClassName:
     active: false
 

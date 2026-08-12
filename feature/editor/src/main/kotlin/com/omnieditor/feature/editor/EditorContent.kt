@@ -501,12 +501,13 @@ fun EditorContent(
                             }
                         },
                 ) {
-                    // Gutter
+                    // Gutter (with bookmark indicator)
+                    val isBookmarked = lineIdx in state.bookmarks
                     Text(
-                        text = "${index + 1}",
+                        text = if (isBookmarked) "\u25CF${index + 1}" else "${index + 1}",
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
-                        color = compareColors.gutter,
+                        color = if (isBookmarked) MaterialTheme.colorScheme.primary else compareColors.gutter,
                         modifier = Modifier
                             .width(gutterWidth)
                             .padding(end = 8.dp, top = 2.dp, bottom = 2.dp),

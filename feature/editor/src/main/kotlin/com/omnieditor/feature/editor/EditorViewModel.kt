@@ -243,40 +243,46 @@ class EditorViewModel @Inject constructor() : ViewModel() {
         findOptions = FindReplace.FindOptions(caseSensitive, wholeWord, regex)
     }
 
-    // ── Text Tools ──
-    // Case conversion (toUpperCase / toLowerCase) is excluded from v0.1 per spec §2.3.
-    // It ships in v0.2 with R-36b (selection-scoped).
+    // ── Text Tools (R-36b: selection-scoped) ──────────────────────────────
 
-    fun sortLines() = applyTextToolWithConfirmation("Sort lines") { lines ->
+    fun sortLines() = applyTextTool("Sort lines") { text ->
+        val lines = text.split("\n")
         TextTools.sortLines(lines).joinToString("\n")
     }
 
-    fun deduplicateLines() = applyTextToolWithConfirmation("Remove duplicates") { lines ->
+    fun deduplicateLines() = applyTextTool("Remove duplicates") { text ->
+        val lines = text.split("\n")
         TextTools.deduplicateLines(lines).joinToString("\n")
     }
 
-    fun trimTrailing() = applyTextToolWithConfirmation("Trim trailing spaces") { lines ->
+    fun trimTrailing() = applyTextTool("Trim trailing spaces") { text ->
+        val lines = text.split("\n")
         TextTools.trimTrailingWhitespace(lines).joinToString("\n")
     }
 
-    fun reverseLines() = applyTextToolWithConfirmation("Reverse lines") { lines ->
+    fun reverseLines() = applyTextTool("Reverse lines") { text ->
+        val lines = text.split("\n")
         TextTools.reverseLines(lines).joinToString("\n")
     }
 
-    fun removeBlankLines() = applyTextToolWithConfirmation("Remove blank lines") { lines ->
+    fun removeBlankLines() = applyTextTool("Remove blank lines") { text ->
+        val lines = text.split("\n")
         TextTools.removeBlankLines(lines).joinToString("\n")
     }
 
-    fun tabsToSpaces() = applyTextToolWithConfirmation("Tabs to spaces") { lines ->
+    fun tabsToSpaces() = applyTextTool("Tabs to spaces") { text ->
+        val lines = text.split("\n")
         TextTools.tabsToSpaces(lines).joinToString("\n")
     }
 
-    fun spacesToTabs() = applyTextToolWithConfirmation("Spaces to tabs") { lines ->
+    fun spacesToTabs() = applyTextTool("Spaces to tabs") { text ->
+        val lines = text.split("\n")
         TextTools.spacesToTabs(lines).joinToString("\n")
     }
 
     /** Join all lines into one line, separated by a space. */
-    fun joinLines() = applyTextToolWithConfirmation("Join lines") { lines ->
+    fun joinLines() = applyTextTool("Join lines") { text ->
+        val lines = text.split("\n")
         TextTools.joinLines(lines, " ")
     }
 
@@ -284,10 +290,39 @@ class EditorViewModel @Inject constructor() : ViewModel() {
      * Split lines: each line is split at [delimiter], producing multiple lines.
      * If [delimiter] is empty this is a no-op.
      */
-    fun splitLines(delimiter: String) = applyTextToolWithConfirmation("Split lines") { lines ->
-        if (delimiter.isEmpty()) lines.joinToString("\n")
-        else lines.flatMap { TextTools.splitLine(it, delimiter) }.joinToString("\n")
+    fun splitLines(delimiter: String) = applyTextTool("Split lines") { text ->
+        if (delimiter.isEmpty()) text
+        else {
+            val lines = text.split("\n")
+            lines.flatMap { TextTools.splitLine(it, delimiter) }.joinToString("\n")
+        }
     }
+
+    // ── Case conversion (R-36b, ships in v0.2 per spec §2.3) ─────────────
+
+    fun toUpperCase() = applyTextTool("To uppercase") { text -> text.uppercase() }
+
+    fun toLowerCase() = applyTextTool("To lowercase") { text -> text.lowercase() }
+
+    fun toTitleCase() = applyTextTool("To title case") { text ->
+        text.split("\n").joinToString("\n") { line ->
+            line.split(" ").joinToString(" ") { word ->
+                if (word.isEmpty()) word else word[0].uppercaseChar() + word.substring(1).lowercase()
+            }
+        }
+    }
+
+    // ── Bookmarks (R-36b) ─────────────────────────────────────────────────
+
+    fun toggleBookmark() { editorState?.toggleBookmark() }
+
+    fun nextBookmark() { editorState?.nextBookmark() }
+
+    fun prevBookmark() { editorState?.prevBookmark() }
+
+    // ── Column select (R-36b) ─────────────────────────────────────────────
+
+    fun toggleColumnSelectMode() { editorState?.toggleColumnSelectMode() }
 
     /**
      * Convert line endings in the whole document.
@@ -331,6 +366,68 @@ class EditorViewModel @Inject constructor() : ViewModel() {
     }
 
     // ── Internal helpers ──
+
+    /**
+     * Apply a text transform as a single undo step.
+     *
+     * When a selection is active, the transform is applied to the selected text only
+     * (inline replacement, no confirmation dialog needed — the scope is already limited).
+     * When no selection is active, delegates to [applyTextToolWithConfirmation] which
+     * shows a confirmation dialog for whole-document transforms that change >50% of lines.
+     *
+     * [label] is shown in the confirmation message (whole-doc path only).
+     * [transform] receives the text to transform and returns the replacement.
+     */
+    internal fun applyTextTool(label: String, transform: (String) -> String) {
+        val state = editorState ?: return
+        if (state.hasSelection) {
+            // Selection-scoped: replace selection in one document.edit() call = single undo step
+            val doc = state.document
+            val anchorLine = state.selectionAnchorLine ?: return
+            val anchorCol = state.selectionAnchorColumn ?: return
+
+            val (startLine, startCol, endLine, endCol) = if (
+                anchorLine < state.caretLine ||
+                (anchorLine == state.caretLine && anchorCol < state.caretColumn)
+            ) {
+                listOf(anchorLine, anchorCol.toLong(), state.caretLine, state.caretColumn.toLong())
+            } else {
+                listOf(state.caretLine, state.caretColumn.toLong(), anchorLine, anchorCol.toLong())
+            }
+
+            val selectedText = state.selectedText()
+            val transformed = transform(selectedText)
+            if (transformed == selectedText) return
+
+            // Build replacement: prefix + transformed + suffix (single document edit = one undo step)
+            val prefix = doc.line(startLine).substring(0, startCol.toInt())
+            val endLineText = doc.line(endLine)
+            val suffix = endLineText.substring(endCol.toInt().coerceAtMost(endLineText.length))
+            val replacement = prefix + transformed + suffix
+
+            // If transformed spans multiple lines, the edit range must cover endLine
+            val transformedNewlines = transformed.count { it == '\n' }
+            val editEndLine = if (transformedNewlines > 0 || startLine != endLine) endLine else startLine
+            doc.edit(startLine..editEndLine, replacement)
+
+            // Place caret at end of transformed text
+            val newLines = transformed.count { it == '\n' }
+            if (newLines > 0) {
+                state.caretLine = startLine + newLines
+                state.caretColumn = transformed.length - transformed.lastIndexOf('\n') - 1
+            } else {
+                state.caretLine = startLine
+                state.caretColumn = startCol.toInt() + transformed.length
+            }
+            state.clearSelection()
+            _uiState.value = EditorUiState.Loaded(state)
+        } else {
+            // Whole-document path: use counted confirmation
+            applyTextToolWithConfirmation(label) { lines ->
+                transform(lines.joinToString("\n"))
+            }
+        }
+    }
 
     /**
      * Apply a line-based transform as a single undo step, with a counted confirmation dialog
