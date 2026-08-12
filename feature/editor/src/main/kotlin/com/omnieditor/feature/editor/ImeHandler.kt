@@ -1,7 +1,7 @@
 package com.omnieditor.feature.editor
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,18 +26,40 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
- * Invisible [BasicTextField] overlay that receives IME input and forwards it
- * to [EditorState]. This is the "windowed BasicTextField" fallback from the
- * build plan — it works reliably across all IMEs including CJK composing.
+ * Sentinel character prefixed to the IME window text (R-16, R-47).
  *
- * The BasicTextField is fully transparent and positioned over the entire editor
- * surface. All visible rendering is done by [EditorContent]; this composable
- * only handles text input bridging.
+ * The window exposes only the caret line to the IME. Without a sentinel, a
+ * backspace at column 0 is a no-op inside the field (there is nothing to the
+ * left of offset 0), so `onValueChange` never fires and lines can never be
+ * joined from the soft keyboard. Many IMEs delete via `deleteSurroundingText`
+ * rather than KEYCODE_DEL, so a key-event fallback alone is not sufficient.
+ *
+ * With a zero-width-space sentinel at offset 0, a line-start backspace deletes
+ * the sentinel — an observable change we translate into a join with the
+ * previous line. The sentinel is invisible (the field is invisible anyway) and
+ * is stripped before any text reaches the document.
+ */
+internal const val WINDOW_SENTINEL = "\u200B"
+
+/**
+ * IME bridge for the custom editing surface (R-16).
+ *
+ * A tiny (1dp), transparent [BasicTextField] receives soft-keyboard input and
+ * forwards deltas to [EditorState]. All visible rendering is done by
+ * [EditorContent].
+ *
+ * CRITICAL — sizing: the field must NOT cover the editor. Compose hit-testing
+ * stops at the topmost sibling containing the pointer, so a `fillMaxSize()`
+ * overlay silently swallows every tap and drag before they can reach the
+ * LazyColumn or the editor's gesture handlers (no scrolling, no caret
+ * placement). The field exists purely as an InputConnection anchor; gestures
+ * are owned by [EditorContent], which calls back into `onRequestIme` (wired in
+ * EditorScreen) to focus this field and show the keyboard on tap.
  *
  * Hardware keyboard events are intercepted via [onPreviewKeyEvent] before
  * they reach the BasicTextField.
@@ -54,127 +76,189 @@ fun ImeHandler(
 ) {
     val clipboardManager = LocalClipboardManager.current
 
-    // The "window" text: current line text around the caret, kept in sync.
+    // The IME "window": sentinel + current line text, kept in sync with state.
     var tfv by remember { mutableStateOf(TextFieldValue()) }
-    var syncGeneration by remember { mutableStateOf(0L) }
 
-    // Sync EditorState -> TextFieldValue whenever caret moves or document changes
+    // Sync EditorState -> window whenever the caret moves or the document
+    // changes. Skipped while an IME composition is active: rebuilding the
+    // TextFieldValue drops the composition region (TextFieldValue(text,
+    // selection) has composition = null), which resets predictive IMEs
+    // mid-word and produces dropped/duplicated characters.
     LaunchedEffect(state) {
         snapshotFlow {
             Triple(state.caretLine, state.caretColumn, state.document.editGeneration)
         }
             .distinctUntilChanged()
-            .collectLatest { (line, col, _) ->
-                val lineText = try {
-                    state.document.line(line).toString()
-                } catch (_: Exception) {
-                    ""
-                }
-                val safeCol = col.coerceIn(0, lineText.length)
-                val newTfv = TextFieldValue(
-                    text = lineText,
-                    selection = TextRange(safeCol),
-                )
-                // Only update if content actually differs to avoid feedback loops
+            .collect {
+                if (state.isComposing) return@collect
+                val newTfv = buildWindow(state)
                 if (newTfv.text != tfv.text || newTfv.selection != tfv.selection) {
                     tfv = newTfv
-                    syncGeneration++
                 }
             }
     }
 
     Box(modifier = modifier) {
-        // Custom rendering layer
+        // Custom rendering layer — receives all touch input.
         content()
 
-        // Invisible BasicTextField for IME bridging
+        // Invisible 1dp IME anchor. Small enough never to win hit-testing
+        // over the editor surface; still focusable so the soft keyboard opens.
         BasicTextField(
             value = tfv,
             onValueChange = { newValue ->
-                handleTextFieldValueChange(state, tfv, newValue)
-                tfv = newValue
+                val resync = handleWindowChange(state, tfv, newValue)
+                tfv = if (resync) buildWindow(state) else newValue
             },
             modifier = Modifier
-                .fillMaxSize()
-                .alpha(0f) // Invisible — rendering is done by EditorContent
+                .size(1.dp)
+                .alpha(0f)
                 .focusRequester(focusRequester)
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     handleHardwareKey(state, event, clipboardManager, onSave, onUndo, onRedo)
                 },
-            textStyle = TextStyle(fontSize = 1.sp), // Minimise any layout impact
+            textStyle = TextStyle(fontSize = 1.sp),
             singleLine = false,
         )
     }
 }
 
+/** Build the IME window value from the current editor state. */
+internal fun buildWindow(state: EditorState): TextFieldValue {
+    val lineText = try {
+        state.document.line(state.caretLine).toString()
+    } catch (_: Exception) {
+        ""
+    }
+    val col = state.caretColumn.coerceIn(0, lineText.length)
+    return TextFieldValue(
+        text = WINDOW_SENTINEL + lineText,
+        selection = TextRange(col + WINDOW_SENTINEL.length),
+    )
+}
+
 /**
- * Compare old and new [TextFieldValue] to determine what changed and apply
- * the delta to [EditorState]. This handles IME composing, commits, and
- * regular character input.
+ * Apply a window change from the IME to [EditorState] (R-47).
+ *
+ * Returns `true` when the caller must rebuild the window from state (the edit
+ * crossed a line boundary or replaced a multi-line selection, so the one-line
+ * window no longer reflects the document), and `false` when the incoming
+ * [newValue] can be kept as-is (same-line edits, composition in progress).
  */
-internal fun handleTextFieldValueChange(
+@Suppress("ReturnCount", "CyclomaticComplexMethod", "LongMethod")
+internal fun handleWindowChange(
     state: EditorState,
     oldValue: TextFieldValue,
     newValue: TextFieldValue,
-) {
-    if (state.readOnly) return
+): Boolean {
+    if (state.readOnly) return true
 
     val oldText = oldValue.text
     val newText = newValue.text
 
+    // ── Selection-only change ────────────────────────────────────────────
     if (oldText == newText) {
-        // Selection-only change — update caret position
         val sel = newValue.selection
         if (sel.collapsed) {
-            val col = sel.start.coerceIn(0, newText.length)
+            val lineLen = (newText.length - WINDOW_SENTINEL.length).coerceAtLeast(0)
+            val col = (sel.start - WINDOW_SENTINEL.length).coerceIn(0, lineLen)
             if (col != state.caretColumn) {
                 state.moveCaret(state.caretLine, col)
             }
         }
-        return
+        updateComposing(state, newValue)
+        return false
     }
 
-    // Track composing region from the BasicTextField
-    val composition = newValue.composition
-    if (composition != null) {
-        // IME is composing — we have a composing region
-        state.composingLine = state.caretLine
-        state.composingStart = composition.start
-        state.composingEnd = composition.end
-    } else {
+    // ── Sentinel deleted → backspace at column 0 → join with previous line ─
+    if (!newText.startsWith(WINDOW_SENTINEL)) {
         state.clearComposingRegion()
+        if (state.caretLine > 0) {
+            val prev = state.document.line(state.caretLine - 1).toString()
+            // newText is the surviving current-line content (sentinel removed).
+            state.document.edit(state.caretLine - 1..state.caretLine, prev + newText)
+            state.moveCaret(state.caretLine - 1, prev.length)
+        }
+        return true
     }
 
-    // Replace the entire current line with the new text from the BasicTextField
+    val newLine = newText.substring(WINDOW_SENTINEL.length)
+
+    // ── Active multi-line selection → replace it with the inserted delta ──
+    // The window only mirrors the caret line, so a document-level selection
+    // must be resolved here before applying the window text.
+    if (state.hasSelection) {
+        state.clearComposingRegion()
+        val inserted = insertedDelta(oldText, newText)
+        state.deleteSelection()
+        if (inserted.isNotEmpty()) state.insertAtCaret(inserted)
+        return true
+    }
+
+    // ── Newline(s) entered → split the line ──────────────────────────────
+    if (newLine.contains('\n')) {
+        state.clearComposingRegion()
+        state.document.edit(state.caretLine..state.caretLine, newLine)
+        // Caret position derives from the window selection, mapped into the
+        // multi-line replacement. (The previous implementation compared a
+        // whole-window offset against the last segment's length, landing the
+        // caret at a wrong column after every Enter.)
+        val selInLine = (newValue.selection.start - WINDOW_SENTINEL.length)
+            .coerceIn(0, newLine.length)
+        val before = newLine.substring(0, selInLine)
+        val lineDelta = before.count { it == '\n' }
+        val colInSegment = selInLine - (before.lastIndexOf('\n') + 1)
+        state.moveCaret(state.caretLine + lineDelta, colInSegment)
+        return true
+    }
+
+    // ── Plain same-line change ───────────────────────────────────────────
     val currentLineText = try {
         state.document.line(state.caretLine).toString()
     } catch (_: Exception) {
         ""
     }
-
-    if (newText != currentLineText) {
-        // Handle newlines: if the new text contains newlines, split appropriately
-        if (newText.contains('\n')) {
-            // Multi-line change — rebuild the replacement
-            val lines = newText.split('\n')
-            val replacement = lines.joinToString("\n")
-            state.document.edit(state.caretLine..state.caretLine, replacement)
-            val newLines = lines.size - 1
-            state.caretLine = state.caretLine + newLines
-            state.caretColumn = lines.last().length.coerceAtMost(
-                newValue.selection.start.coerceAtLeast(0),
-            )
-        } else {
-            state.document.edit(state.caretLine..state.caretLine, newText)
-        }
+    if (newLine != currentLineText) {
+        state.document.edit(state.caretLine..state.caretLine, newLine)
     }
-
-    // Update caret from the new selection
     val sel = newValue.selection
     if (sel.collapsed) {
-        state.caretColumn = sel.start.coerceIn(0, newText.length)
+        state.caretColumn = (sel.start - WINDOW_SENTINEL.length).coerceIn(0, newLine.length)
     }
+    updateComposing(state, newValue)
+    return false
+}
+
+/** Mirror the IME composition region into state, shifted past the sentinel. */
+private fun updateComposing(state: EditorState, value: TextFieldValue) {
+    val composition = value.composition
+    if (composition != null) {
+        val lineLen = (value.text.length - WINDOW_SENTINEL.length).coerceAtLeast(0)
+        state.composingLine = state.caretLine
+        state.composingStart = (composition.start - WINDOW_SENTINEL.length).coerceIn(0, lineLen)
+        state.composingEnd = (composition.end - WINDOW_SENTINEL.length).coerceIn(0, lineLen)
+    } else {
+        state.clearComposingRegion()
+    }
+}
+
+/**
+ * Extract the inserted text of a window change via common prefix/suffix.
+ * Used when a document-level selection is being replaced by typed input.
+ */
+internal fun insertedDelta(oldText: String, newText: String): String {
+    var prefix = 0
+    val maxPrefix = minOf(oldText.length, newText.length)
+    while (prefix < maxPrefix && oldText[prefix] == newText[prefix]) prefix++
+    var suffix = 0
+    val maxSuffix = minOf(oldText.length, newText.length) - prefix
+    while (suffix < maxSuffix &&
+        oldText[oldText.length - 1 - suffix] == newText[newText.length - 1 - suffix]
+    ) {
+        suffix++
+    }
+    return newText.substring(prefix, newText.length - suffix)
 }
 
 /**
@@ -233,6 +317,22 @@ internal fun handleHardwareKey(
         // Ctrl+V — paste (let BasicTextField handle it for IME compat)
         ctrl && event.key == Key.V -> false
 
+        // Forward delete at end of line — join with the next line. The IME
+        // window contains no next-line character, so this edit is not
+        // representable inside the field and must be handled here (R-47).
+        event.key == Key.Delete -> {
+            if (state.readOnly) return true
+            val cur = state.document.line(state.caretLine).toString()
+            if (state.caretColumn >= cur.length && state.caretLine < state.lineCount - 1) {
+                val next = state.document.line(state.caretLine + 1).toString()
+                state.document.edit(state.caretLine..state.caretLine + 1, cur + next)
+                state.moveCaret(state.caretLine, cur.length)
+                true
+            } else {
+                false // in-line forward delete flows through the field
+            }
+        }
+
         // Navigation keys with shift for selection
         event.key == Key.DirectionLeft -> {
             if (shift) {
@@ -281,7 +381,6 @@ internal fun handleHardwareKey(
             if (shift) {
                 state.startSelection()
                 if (newCol != null) {
-                    // Stay on same logical line, move to previous visual row
                     state.moveCaretWithSelection(state.caretLine, newCol)
                 } else if (state.caretLine > 0) {
                     state.moveCaretWithSelection(state.caretLine - 1, state.caretColumn)
@@ -305,7 +404,6 @@ internal fun handleHardwareKey(
             if (shift) {
                 state.startSelection()
                 if (newCol != null) {
-                    // Stay on same logical line, move to next visual row
                     state.moveCaretWithSelection(state.caretLine, newCol)
                 } else if (state.caretLine < state.lineCount - 1) {
                     state.moveCaretWithSelection(state.caretLine + 1, state.caretColumn)
@@ -320,29 +418,21 @@ internal fun handleHardwareKey(
             true
         }
         event.key == Key.MoveHome -> {
-            val lineText = state.document.line(state.caretLine)
             val visualRowStart = if (state.wordWrap) {
                 val vRow = state.wrappedRowCache.visualRowOf(state.caretLine, state.caretColumn)
                 state.wrappedRowCache.rowStart(state.caretLine, vRow)
             } else {
                 0
             }
+            val target = if (state.caretColumn == visualRowStart && visualRowStart != 0) {
+                0
+            } else {
+                visualRowStart
+            }
             if (shift) {
                 state.startSelection()
-                // If already at the visual row start, go to column 0 of the logical line.
-                val target = if (state.caretColumn == visualRowStart && visualRowStart != 0) {
-                    0
-                } else {
-                    visualRowStart
-                }
                 state.moveCaretWithSelection(state.caretLine, target)
             } else {
-                // Smart home: first press → visual row start; second press → column 0.
-                val target = if (state.caretColumn == visualRowStart && visualRowStart != 0) {
-                    0
-                } else {
-                    visualRowStart
-                }
                 state.moveCaret(state.caretLine, target)
             }
             true

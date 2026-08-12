@@ -2,7 +2,6 @@ package com.omnieditor.feature.compare
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,27 +10,42 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.omnieditor.core.model.Granularity
+import com.omnieditor.design.HorizontalScrollController
 import com.omnieditor.design.LocalCompareColors
+import com.omnieditor.design.horizontalDocumentScroll
+import com.omnieditor.design.rememberHorizontalScrollController
+
+/** Combined width of the glyph gutter (20dp) and line-number column (48dp). */
+private val UNIFIED_GUTTER_WIDTH = 68.dp
 
 /**
  * Unified diff view — phone default (OE-TXT-1).
@@ -43,6 +57,13 @@ import com.omnieditor.design.LocalCompareColors
  *
  * Renders from the shared List<AlignedRow> produced by CompareState.buildAlignedRows()
  * so that unified and split views are driven by the same alignment model (R-25).
+ *
+ * Horizontal scrolling (R-44) uses one [HorizontalScrollController] for the
+ * whole view: rows translate together as a single document page. Per-row
+ * `horizontalScroll(sharedState)` is expressly avoided — a shared ScrollState
+ * across many rows has its maxValue clobbered by whichever row measured last,
+ * snapping the horizontal position back to the left edge during vertical
+ * scrolling and making long lines unreachable.
  */
 @Composable
 fun UnifiedDiffView(
@@ -66,12 +87,42 @@ fun UnifiedDiffView(
         }
     }
     val listState = rememberLazyListState()
-    // Shared horizontal scroll — all rows scroll together as one document.
-    val sharedHScroll = rememberScrollState()
     val colors = LocalCompareColors.current
     val hunks = state.result.hunks
     val cache = state.intraLineCache
     val granularity = state.granularity
+    val density = LocalDensity.current
+
+    // ── Shared horizontal document scroll (R-44) ─────────────────────────
+    val hScroll = rememberHorizontalScrollController()
+    val textMeasurer = rememberTextMeasurer()
+    val contentStyle = remember { TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp) }
+    val charWidthPx = remember(textMeasurer, contentStyle) {
+        textMeasurer.measure(AnnotatedString("0"), style = contentStyle).size.width.toFloat()
+    }
+    // Widest display line across both sides of the visible row set. Tabs are
+    // approximated at 4 columns; monospace makes the rest exact.
+    val maxDisplayCols = remember(rows, state.leftLines, state.rightLines) {
+        var m = 0
+        for (row in rows) {
+            val text = when {
+                row.left != null -> state.leftLines.getOrElse(row.left.toInt()) { "" }
+                row.right != null -> state.rightLines.getOrElse(row.right.toInt()) { "" }
+                else -> ""
+            }
+            val len = text.length + text.count { it == '\t' } * 3
+            if (len > m) m = len
+        }
+        m
+    }
+    var viewportWidthPx by remember { mutableStateOf(0f) }
+    LaunchedEffect(maxDisplayCols, viewportWidthPx, charWidthPx) {
+        val gutterPx = with(density) { UNIFIED_GUTTER_WIDTH.toPx() }
+        hScroll.updateBounds(
+            contentWidthPx = maxDisplayCols * charWidthPx + charWidthPx,
+            viewportWidthPx = (viewportWidthPx - gutterPx).coerceAtLeast(0f),
+        )
+    }
 
     // The focused find match row index (in the filtered rows list).
     val focusedFindRow = remember(findMatches, findMatchIndex) {
@@ -110,7 +161,12 @@ fun UnifiedDiffView(
     LazyColumn(
         state = listState,
         contentPadding = contentPadding,
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .onGloballyPositioned { viewportWidthPx = it.size.width.toFloat() }
+            // Horizontal panning shares the container with vertical list
+            // scrolling; axis disambiguation routes each gesture (R-44).
+            .horizontalDocumentScroll(hScroll),
     ) {
         itemsIndexed(rows, key = { idx, row -> "${row.left}_${row.right}_${row.type}_$idx" }) { idx, row ->
             UnifiedAlignedRow(
@@ -124,7 +180,7 @@ fun UnifiedDiffView(
                 hunks = hunks,
                 intraLineCache = cache,
                 granularity = granularity,
-                hScrollState = sharedHScroll,
+                hScroll = hScroll,
                 onTap = if (onDiffRowTapped != null && row.type != RowType.CONTEXT && row.hunkIndex != null) {
                     { onDiffRowTapped(row.hunkIndex) }
                 } else {
@@ -147,7 +203,7 @@ private fun UnifiedAlignedRow(
     hunks: List<com.omnieditor.core.model.Hunk>,
     intraLineCache: IntraLineCache,
     granularity: Granularity,
-    hScrollState: androidx.compose.foundation.ScrollState,
+    hScroll: HorizontalScrollController,
     onTap: (() -> Unit)? = null,
 ) {
     val (bgColor, fgColor, glyph) = when (row.type) {
@@ -214,7 +270,7 @@ private fun UnifiedAlignedRow(
             .semantics { contentDescription = a11yDescription },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Gutter: glyph marker (OE-APP-2: colour is never the only signal)
+        // Gutter: glyph marker (OE-APP-2: colour is never the only signal) — pinned.
         Box(
             modifier = Modifier.width(20.dp).padding(start = 4.dp),
             contentAlignment = Alignment.Center,
@@ -227,7 +283,7 @@ private fun UnifiedAlignedRow(
             )
         }
 
-        // Line number
+        // Line number — pinned.
         Text(
             text = (displayLineNum + 1).toString(),
             color = colors.gutter,
@@ -237,22 +293,29 @@ private fun UnifiedAlignedRow(
             maxLines = 1,
         )
 
-        // Content with horizontal scroll — uses AnnotatedString for intra-line spans (R-26).
-        Text(
-            text = displayContent,
-            color = if (row.type == RowType.CONTEXT) {
-                MaterialTheme.colorScheme.onSurface
-            } else {
-                fgColor
-            },
-            fontFamily = FontFamily.Monospace,
-            fontSize = 13.sp,
-            maxLines = 1,
-            softWrap = false,
+        // Content — lays out at full intrinsic width, clipped to the content
+        // area, translated by the single shared document offset (R-44).
+        Box(
             modifier = Modifier
                 .weight(1f)
-                .horizontalScroll(hScrollState),
-        )
+                .clipToBounds(),
+        ) {
+            Text(
+                text = displayContent,
+                color = if (row.type == RowType.CONTEXT) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    fgColor
+                },
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier
+                    .wrapContentWidth(Alignment.Start, unbounded = true)
+                    .graphicsLayer { translationX = -hScroll.offsetPx },
+            )
+        }
     }
 }
 

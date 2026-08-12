@@ -7,9 +7,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,9 +16,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,16 +26,20 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -66,10 +69,16 @@ import com.omnieditor.design.LocalCompareColors
 import com.omnieditor.design.LocalReduceMotion
 import com.omnieditor.design.LocalSyntaxColors
 import com.omnieditor.design.SyntaxColorScheme
+import com.omnieditor.design.horizontalDocumentScroll
+import com.omnieditor.design.rememberHorizontalScrollController
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.yield
 
 /** Byte threshold above which a line is considered "long" and shown truncated. */
 private const val TRUNCATION_CHAR_THRESHOLD = 2_000
+
+/** Lines scanned per cooperative-yield chunk during the initial max-width scan. */
+private const val WIDTH_SCAN_CHUNK = 2_048L
 
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 @Composable
@@ -79,6 +88,12 @@ fun EditorContent(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     fileName: String = "",
     displaySettings: DisplaySettings = DisplaySettings(),
+    /**
+     * Invoked when the user taps the editing surface. EditorScreen wires this
+     * to focus the IME bridge and show the soft keyboard, so the keyboard can
+     * always be re-summoned after the user dismisses it (R-41).
+     */
+    onRequestIme: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     val compareColors = LocalCompareColors.current
@@ -101,7 +116,6 @@ fun EditorContent(
     }
     val onSurface = MaterialTheme.colorScheme.onSurface
     val whitespaceColor = onSurface.copy(alpha = 0.35f)
-    val horizontalScrollState = rememberScrollState()
     val clipboardManager = LocalClipboardManager.current
     val primaryColor = MaterialTheme.colorScheme.primary
     val selectionColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
@@ -114,6 +128,34 @@ fun EditorContent(
     val textMeasurer = rememberTextMeasurer()
     val layoutCache = remember(textMeasurer, textStyle) {
         LineLayoutCache(textMeasurer, textStyle)
+    }
+
+    // ── Horizontal document scroll (R-43) ─────────────────────────────────
+    // One offset for the whole document. Rows translate by -offset inside a
+    // clipped content area; the gutter stays pinned. Bounds derive from the
+    // widest display line (monospace → exact from column count × glyph width).
+    val hScroll = rememberHorizontalScrollController()
+    val charWidthPx = remember(textMeasurer, textStyle) {
+        textMeasurer.measure(AnnotatedString("0"), style = textStyle).size.width.toFloat()
+    }
+    val maxDisplayCols = remember(state.document) { mutableIntStateOf(0) }
+
+    // Initial full scan of the widest line, chunked with cooperative yields to
+    // keep the main thread responsive. Runs once per loaded document; edits
+    // update the running max via the change collector below. Known limitation
+    // (documented in R-43): deleting the longest line does not shrink the max
+    // until reload — harmless, it only leaves extra scroll room.
+    LaunchedEffect(state.document) {
+        var m = 0
+        var i = 0L
+        val n = state.document.lineCount
+        while (i < n) {
+            val len = displayLength(state.document.line(i))
+            if (len > m) m = len
+            i++
+            if (i % WIDTH_SCAN_CHUNK == 0L) yield()
+        }
+        if (m > maxDisplayCols.intValue) maxDisplayCols.intValue = m
     }
 
     // Detect language for syntax highlighting
@@ -142,6 +184,13 @@ fun EditorContent(
             if (state.wordWrap) {
                 state.wrappedRowCache.invalidate(startLine)
             }
+            // Keep the max display width current for the edited line (R-43).
+            val editedLen = try {
+                displayLength(state.document.line(startLine))
+            } catch (_: Exception) {
+                0
+            }
+            if (editedLen > maxDisplayCols.intValue) maxDisplayCols.intValue = editedLen
         }
     }
 
@@ -155,10 +204,48 @@ fun EditorContent(
     // Container size for layout constraints
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     val gutterWidthPx = with(density) { gutterWidth.toPx() }
+    val contentViewportPx = (containerSize.width - gutterWidthPx).coerceAtLeast(0f)
+
+    // Re-clamp horizontal bounds when content width, viewport, or wrap changes
+    // (rotation lands here via containerSize). Word wrap disables the axis.
+    LaunchedEffect(maxDisplayCols.intValue, containerSize, displaySettings.wordWrap, charWidthPx) {
+        val contentWidth = if (displaySettings.wordWrap) {
+            0f
+        } else {
+            maxDisplayCols.intValue * charWidthPx + charWidthPx * 2 // caret slack
+        }
+        hScroll.updateBounds(contentWidth, contentViewportPx)
+    }
+
+    // Follow the caret horizontally while typing/navigating (R-43).
+    LaunchedEffect(state.caretLine, state.caretColumn, state.document.editGeneration) {
+        if (!state.wordWrap && charWidthPx > 0f && contentViewportPx > 0f) {
+            val lineText = try {
+                state.document.line(state.caretLine).toString()
+            } catch (_: Exception) {
+                ""
+            }
+            val col = state.caretColumn.coerceIn(0, lineText.length)
+            val caretX = displayColumn(lineText, col) * charWidthPx
+            hScroll.ensureVisible(caretX, contentViewportPx)
+        }
+    }
+
+    // Keep the caret line vertically visible (typing Enter at the bottom of
+    // the viewport must not leave the caret offscreen).
+    LaunchedEffect(state.caretLine) {
+        val visible = listState.layoutInfo.visibleItemsInfo
+        if (visible.isNotEmpty()) {
+            val line = state.caretLine.toInt().coerceAtLeast(0)
+            val first = visible.first().index
+            val last = visible.last().index
+            if (line < first || line > last) {
+                listState.scrollToItem(line)
+            }
+        }
+    }
 
     // Sync displaySettings.wordWrap into state.wordWrap (R-18b).
-    // Key handlers read state.wordWrap; displaySettings drives the UI setting.
-    // When word wrap is toggled off, clear stale wrapped-row entries.
     SideEffect {
         if (state.wordWrap != displaySettings.wordWrap) {
             state.wordWrap = displaySettings.wordWrap
@@ -208,7 +295,6 @@ fun EditorContent(
     }
 
     // ── Semantics for the editable text area ─────────────────────────────
-    // Provide accessibility information for TalkBack.
     val semanticsText = remember(state.caretLine, state.document.editGeneration) {
         try {
             AnnotatedString(state.document.line(state.caretLine).toString())
@@ -219,6 +305,20 @@ fun EditorContent(
     val semanticsSelectionRange = remember(state.caretColumn, state.selectionAnchorColumn) {
         val anchor = state.selectionAnchorColumn ?: state.caretColumn
         TextRange(anchor, state.caretColumn)
+    }
+
+    /** Map a viewport tap/drag position to a (line, column) document position. */
+    fun documentPositionAt(position: Offset): Pair<Long, Int>? {
+        val lineIndex = resolveLineFromY(position.y, listState, state)
+        if (lineIndex < 0 || lineIndex >= state.lineCount) return null
+        val lineText = state.document.line(lineIndex).toString()
+        // Add the horizontal scroll offset: the tap x is in viewport space but
+        // column resolution needs content space (R-43).
+        val xInContent = (position.x - gutterWidthPx + hScroll.offsetPx).coerceAtLeast(0f)
+        val col = resolveColumnFromX(
+            lineIndex, lineText, xInContent, layoutCache, state.document.editGeneration,
+        )
+        return lineIndex to col
     }
 
     Box(
@@ -239,87 +339,56 @@ fun EditorContent(
             contentPadding = contentPadding,
             modifier = Modifier
                 .fillMaxSize()
+                // Horizontal panning lives on the same container as vertical
+                // list scrolling; Compose's axis disambiguation routes each
+                // gesture to whichever axis crosses touch slop first (R-43).
+                .horizontalDocumentScroll(hScroll, enabled = !displaySettings.wordWrap)
                 .pointerInput(state) {
                     detectTapGestures(
                         onTap = { offset ->
-                            // Convert tap position to line and column
-                            val lineIndex = resolveLineFromY(
-                                offset.y, listState, state,
-                            )
-                            if (lineIndex >= 0 && lineIndex < state.lineCount) {
-                                val lineText = state.document.line(lineIndex).toString()
-                                val xInContent = (offset.x - gutterWidthPx).coerceAtLeast(0f)
-                                val col = resolveColumnFromX(
-                                    lineText, xInContent, layoutCache, containerSize, textStyle,
-                                )
-                                state.moveCaret(lineIndex, col)
+                            documentPositionAt(offset)?.let { (line, col) ->
+                                state.moveCaret(line, col)
                                 showToolbar = false
                             }
+                            // Re-summon the soft keyboard on every tap: focus
+                            // may persist while the IME was dismissed (R-41).
+                            onRequestIme()
                         },
                         onDoubleTap = { offset ->
-                            val lineIndex = resolveLineFromY(
-                                offset.y, listState, state,
-                            )
-                            if (lineIndex >= 0 && lineIndex < state.lineCount) {
-                                val lineText = state.document.line(lineIndex).toString()
-                                val xInContent = (offset.x - gutterWidthPx).coerceAtLeast(0f)
-                                val col = resolveColumnFromX(
-                                    lineText, xInContent, layoutCache, containerSize, textStyle,
-                                )
-                                state.selectWordAt(lineIndex, col)
-                                showToolbar = true
-                                toolbarPosition = Offset(offset.x, offset.y - 48f)
-                            }
-                        },
-                        onLongPress = { offset ->
-                            val lineIndex = resolveLineFromY(
-                                offset.y, listState, state,
-                            )
-                            if (lineIndex >= 0 && lineIndex < state.lineCount) {
-                                val lineText = state.document.line(lineIndex).toString()
-                                val xInContent = (offset.x - gutterWidthPx).coerceAtLeast(0f)
-                                val col = resolveColumnFromX(
-                                    lineText, xInContent, layoutCache, containerSize, textStyle,
-                                )
-                                state.selectWordAt(lineIndex, col)
+                            documentPositionAt(offset)?.let { (line, col) ->
+                                state.selectWordAt(line, col)
                                 showToolbar = true
                                 toolbarPosition = Offset(offset.x, offset.y - 48f)
                             }
                         },
                     )
                 }
+                // Selection follows the mobile convention: long-press selects
+                // the word, then dragging extends. Plain drags are NOT consumed
+                // here, so they remain available to vertical list scrolling and
+                // horizontal document panning (R-42). The previous
+                // detectDragGestures consumed every pan as a selection drag,
+                // which starved the list's own scrollable.
                 .pointerInput(state) {
-                    detectDragGestures(
+                    detectDragGesturesAfterLongPress(
                         onDragStart = { offset ->
-                            val lineIndex = resolveLineFromY(
-                                offset.y, listState, state,
-                            )
-                            if (lineIndex >= 0 && lineIndex < state.lineCount) {
-                                val lineText = state.document.line(lineIndex).toString()
-                                val xInContent = (offset.x - gutterWidthPx).coerceAtLeast(0f)
-                                val col = resolveColumnFromX(
-                                    lineText, xInContent, layoutCache, containerSize, textStyle,
-                                )
-                                state.moveCaret(lineIndex, col)
-                                state.startSelection()
+                            documentPositionAt(offset)?.let { (line, col) ->
+                                state.selectWordAt(line, col)
+                                showToolbar = false
+                                toolbarPosition = Offset(offset.x, offset.y - 48f)
                             }
                         },
                         onDrag = { change, _ ->
                             change.consume()
-                            val pos = change.position
-                            val lineIndex = resolveLineFromY(
-                                pos.y, listState, state,
-                            )
-                            if (lineIndex >= 0 && lineIndex < state.lineCount) {
-                                val lineText = state.document.line(lineIndex).toString()
-                                val xInContent = (pos.x - gutterWidthPx).coerceAtLeast(0f)
-                                val col = resolveColumnFromX(
-                                    lineText, xInContent, layoutCache, containerSize, textStyle,
-                                )
-                                state.moveCaretWithSelection(lineIndex, col)
+                            documentPositionAt(change.position)?.let { (line, col) ->
+                                state.moveCaretWithSelection(line, col)
+                                toolbarPosition = Offset(change.position.x, change.position.y - 48f)
                             }
                         },
                         onDragEnd = {
+                            showToolbar = state.hasSelection
+                        },
+                        onDragCancel = {
                             showToolbar = state.hasSelection
                         },
                     )
@@ -411,28 +480,30 @@ fun EditorContent(
                 val selBounds = state.selectionBounds()
                 val lineIdx = index.toLong()
 
+                // Opportunistic max-width update from rendered rows (R-43).
+                val rowDisplayLen = remember(displayText) { displayLength(displayText) }
+                SideEffect {
+                    if (rowDisplayLen > maxDisplayCols.intValue) {
+                        maxDisplayCols.intValue = rowDisplayLen
+                    }
+                }
+
                 // ── Populate wrappedRowCache during composition (R-18b) ────────
-                // When word wrap is on, measure this line and extract visual-row
-                // start columns from the TextLayoutResult so key handlers can
-                // navigate between visual rows. The measurement hits the
-                // LineLayoutCache and is effectively free on re-composition.
                 if (displaySettings.wordWrap && containerSize.width > 0) {
                     val contentWidth = (containerSize.width - gutterWidthPx)
                         .toInt()
                         .coerceAtLeast(1)
-                    // Capture values for the SideEffect closure.
                     val capturedLineIdx = lineIdx
                     val capturedText = displayText
                     val capturedEditGen = state.document.editGeneration
                     SideEffect {
                         val layout = layoutCache.measure(
                             lineIndex = capturedLineIdx,
-                            lineText = expandTabs(capturedText, 4),
+                            lineText = capturedText,
                             constraints = Constraints(maxWidth = contentWidth),
                             editGeneration = capturedEditGen,
                         )
                         if (layout.lineCount > 1) {
-                            // Build the map from display-char offsets back to logical-char offsets.
                             val displayToChar = buildDisplayToCharMap(capturedText, 4)
                             val starts = IntArray(layout.lineCount) { vRow ->
                                 val displayStart = layout.getLineStart(vRow)
@@ -444,10 +515,20 @@ fun EditorContent(
                             }
                             state.wrappedRowCache.put(capturedLineIdx, starts)
                         } else {
-                            // Single visual row — store a trivial entry so we know it's been measured.
                             state.wrappedRowCache.put(capturedLineIdx, intArrayOf(0))
                         }
                     }
+                }
+
+                // Layout constraints for caret/selection measurement: bounded
+                // when wrapping (visual rows depend on width), unbounded when
+                // not (the line lays out at full intrinsic width and pans).
+                val measureConstraints = if (displaySettings.wordWrap) {
+                    Constraints(
+                        maxWidth = (containerSize.width - gutterWidthPx).toInt().coerceAtLeast(1),
+                    )
+                } else {
+                    Constraints() // unbounded max width
                 }
 
                 Row(
@@ -460,68 +541,81 @@ fun EditorContent(
                         .drawWithContent {
                             drawContent()
 
-                            // Draw selection highlight on this line
-                            if (selBounds != null &&
-                                lineIdx >= selBounds.startLine &&
-                                lineIdx <= selBounds.endLine
-                            ) {
-                                val layout = layoutCache.measure(
-                                    lineIndex = lineIdx,
-                                    lineText = expandTabs(displayText, 4),
-                                    constraints = Constraints(
-                                        maxWidth = (size.width - gutterWidthPx)
-                                            .toInt()
-                                            .coerceAtLeast(1),
-                                    ),
-                                )
-                                val lh = layoutCache.lineHeight(layout)
+                            // Caret and selection overlays live in content
+                            // space: translate by the shared horizontal offset
+                            // and clip to the text area so nothing draws over
+                            // the pinned gutter (R-43).
+                            val hOffset = hScroll.offsetPx
+                            clipRect(left = gutterWidthPx, top = 0f, right = size.width, bottom = size.height) {
+                                // Selection highlight on this line
+                                if (selBounds != null &&
+                                    lineIdx >= selBounds.startLine &&
+                                    lineIdx <= selBounds.endLine
+                                ) {
+                                    val layout = layoutCache.measure(
+                                        lineIndex = lineIdx,
+                                        lineText = displayText,
+                                        constraints = measureConstraints,
+                                        editGeneration = editGen,
+                                    )
+                                    val lh = layoutCache.lineHeight(layout)
 
-                                val selStart = when {
-                                    lineIdx > selBounds.startLine -> 0
-                                    else -> selBounds.startColumn
-                                }
-                                val selEnd = when {
-                                    lineIdx < selBounds.endLine -> displayText.length
-                                    else -> selBounds.endColumn.coerceAtMost(displayText.length)
+                                    val selStartChar = when {
+                                        lineIdx > selBounds.startLine -> 0
+                                        else -> selBounds.startColumn
+                                    }
+                                    val selEndChar = when {
+                                        lineIdx < selBounds.endLine -> displayText.length
+                                        else -> selBounds.endColumn.coerceAtMost(displayText.length)
+                                    }
+
+                                    if (selEndChar > selStartChar) {
+                                        // Cursor rects are indexed by display
+                                        // (tab-expanded) offsets, not char
+                                        // offsets — convert first.
+                                        val startRect = layoutCache.cursorRect(
+                                            layout, displayColumn(displayText, selStartChar),
+                                        )
+                                        val endRect = layoutCache.cursorRect(
+                                            layout, displayColumn(displayText, selEndChar),
+                                        )
+                                        drawSelectionHighlight(
+                                            startX = gutterWidthPx + startRect.left - hOffset,
+                                            endX = gutterWidthPx + endRect.left - hOffset,
+                                            lineTopY = 0f,
+                                            lineHeight = lh,
+                                            color = selectionColor,
+                                        )
+                                    }
                                 }
 
-                                if (selEnd > selStart) {
-                                    val startRect = layoutCache.cursorRect(layout, selStart)
-                                    val endRect = layoutCache.cursorRect(layout, selEnd)
-                                    drawSelectionHighlight(
-                                        startX = gutterWidthPx + startRect.left,
-                                        endX = gutterWidthPx + endRect.left,
-                                        lineTopY = 0f,
-                                        lineHeight = lh,
-                                        color = selectionColor,
+                                // Caret on this line (blink respects reduce-motion, R-37).
+                                if (isCaretLine) {
+                                    val layout = layoutCache.measure(
+                                        lineIndex = lineIdx,
+                                        lineText = displayText,
+                                        constraints = measureConstraints,
+                                        editGeneration = editGen,
+                                    )
+                                    val caretCol = state.caretColumn.coerceAtMost(displayText.length)
+                                    val caretRect = layoutCache.cursorRect(
+                                        layout, displayColumn(displayText, caretCol),
+                                    )
+                                    val caretWidthPx = with(density) { 2.dp.toPx() }
+                                    val lh = layoutCache.lineHeight(layout)
+                                    drawRect(
+                                        color = primaryColor.copy(alpha = caretAlpha),
+                                        topLeft = Offset(
+                                            gutterWidthPx + caretRect.left - hOffset,
+                                            caretRect.top,
+                                        ),
+                                        size = Size(caretWidthPx, lh),
                                     )
                                 }
                             }
-
-                            // Draw caret on this line (blinking respects reduce-motion, R-37).
-                            if (isCaretLine) {
-                                val layout = layoutCache.measure(
-                                    lineIndex = lineIdx,
-                                    lineText = expandTabs(displayText, 4),
-                                    constraints = Constraints(
-                                        maxWidth = (size.width - gutterWidthPx)
-                                            .toInt()
-                                            .coerceAtLeast(1),
-                                    ),
-                                )
-                                val caretCol = state.caretColumn.coerceAtMost(displayText.length)
-                                val caretRect = layoutCache.cursorRect(layout, caretCol)
-                                val caretWidthPx = with(density) { 2.dp.toPx() }
-                                val lh = layoutCache.lineHeight(layout)
-                                drawRect(
-                                    color = primaryColor.copy(alpha = caretAlpha),
-                                    topLeft = Offset(gutterWidthPx + caretRect.left, caretRect.top),
-                                    size = Size(caretWidthPx, lh),
-                                )
-                            }
                         },
                 ) {
-                    // Gutter (with bookmark indicator)
+                    // Gutter (with bookmark indicator) — pinned; never translates.
                     val isBookmarked = lineIdx in state.bookmarks
                     Text(
                         text = if (isBookmarked) "\u25CF${index + 1}" else "${index + 1}",
@@ -547,17 +641,30 @@ fun EditorContent(
                             softWrap = true,
                         )
                     } else {
-                        Text(
-                            text = finalAnnotated,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 14.sp,
-                            color = onSurface,
+                        // Shared-offset horizontal pan (R-43): the text lays
+                        // out at full intrinsic width (unbounded), is clipped
+                        // to the content area, and translates by the single
+                        // document offset at draw time — no per-row
+                        // horizontalScroll, so there is no per-row maxValue to
+                        // clobber and all rows move together as one page.
+                        Box(
                             modifier = Modifier
-                                .horizontalScroll(horizontalScrollState)
-                                .padding(vertical = 2.dp),
-                            softWrap = false,
-                            maxLines = 1,
-                        )
+                                .weight(1f)
+                                .clipToBounds(),
+                        ) {
+                            Text(
+                                text = finalAnnotated,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 14.sp,
+                                color = onSurface,
+                                softWrap = false,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .wrapContentWidth(Alignment.Start, unbounded = true)
+                                    .graphicsLayer { translationX = -hScroll.offsetPx }
+                                    .padding(vertical = 2.dp),
+                            )
+                        }
                     }
 
                     // Long-line expand affordance
@@ -585,7 +692,6 @@ fun EditorContent(
                     isStart = true,
                     position = Offset(gutterWidthPx, 0f), // Simplified position
                     onDrag = { delta ->
-                        // Extend selection start
                         val newCol = (bounds.startColumn + (delta.x / 8f).toInt())
                             .coerceAtLeast(0)
                         state.setSelection(
@@ -651,9 +757,34 @@ fun EditorContent(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Tab-expanded display length of a line (tab width 4). */
+internal fun displayLength(text: CharSequence): Int {
+    var column = 0
+    for (ch in text) {
+        column += if (ch == '\t') 4 - (column % 4) else 1
+    }
+    return column
+}
+
+/**
+ * Convert a character column into a display (tab-expanded) column.
+ *
+ * [LineLayoutCache] measures tab-expanded text, so cursor rects and
+ * position-to-offset queries are indexed by display offsets. The previous
+ * implementation passed character columns straight into cursorRect, which
+ * misplaced the caret and selection edges on any line containing tabs.
+ */
+internal fun displayColumn(text: CharSequence, charColumn: Int): Int {
+    val end = charColumn.coerceIn(0, text.length)
+    var column = 0
+    for (i in 0 until end) {
+        column += if (text[i] == '\t') 4 - (column % 4) else 1
+    }
+    return column
+}
+
 /**
  * Resolve a line index from a Y position within the LazyColumn viewport.
- * Uses the list state's layout info to find which item the Y falls in.
  */
 private fun resolveLineFromY(
     y: Float,
@@ -668,7 +799,6 @@ private fun resolveLineFromY(
             return item.index.toLong()
         }
     }
-    // If beyond visible items, clamp to first or last
     val firstVisible = layoutInfo.visibleItemsInfo.firstOrNull()
     val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()
     return when {
@@ -679,26 +809,30 @@ private fun resolveLineFromY(
 }
 
 /**
- * Resolve a column index from an X position within the text content area.
+ * Resolve a column index from an X position within the (unscrolled) content
+ * area. Callers must add the horizontal scroll offset to viewport x first.
+ *
+ * Measures with unbounded width (no-wrap semantics) and keys the cache by the
+ * real line index and edit generation. The previous implementation keyed every
+ * lookup as `(lineIndex = 0, editGeneration = -1)`, so the LRU cache returned
+ * the layout of whichever line was measured first for ALL subsequent taps —
+ * every tap resolved columns against a stale, unrelated line.
  */
-@Suppress("UnusedParameter")
 private fun resolveColumnFromX(
+    lineIndex: Long,
     lineText: String,
     xInContent: Float,
     layoutCache: LineLayoutCache,
-    containerSize: IntSize,
-    textStyle: TextStyle,
+    editGeneration: Long,
 ): Int {
     if (lineText.isEmpty()) return 0
-    val expandedText = expandTabs(lineText, 4)
     val layout = layoutCache.measure(
-        lineIndex = 0, // Line index doesn't matter for offset calculation
-        lineText = expandedText,
-        constraints = Constraints(maxWidth = containerSize.width.coerceAtLeast(1)),
-        editGeneration = -1, // Use special key so this doesn't pollute the main cache
+        lineIndex = lineIndex,
+        lineText = lineText, // LineLayoutCache expands tabs internally
+        constraints = Constraints(), // unbounded max width
+        editGeneration = editGeneration,
     )
     val displayOffset = layoutCache.offsetForPosition(layout, Offset(xInContent, 0f))
-    // Map display offset back to character offset in original text
     val displayToChar = buildDisplayToCharMap(lineText, 4)
     return if (displayOffset < displayToChar.size) {
         displayToChar[displayOffset]

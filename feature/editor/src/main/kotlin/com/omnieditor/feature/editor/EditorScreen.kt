@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -268,6 +269,7 @@ fun EditorScreen(
                 }
                 is EditorUiState.Loaded -> {
                     val focusRequester = remember { FocusRequester() }
+                    val keyboard = LocalSoftwareKeyboardController.current
                     ImeHandler(
                         state = state.editorState,
                         focusRequester = focusRequester,
@@ -280,6 +282,13 @@ fun EditorScreen(
                             state = state.editorState,
                             modifier = Modifier.fillMaxSize(),
                             fileName = fileName,
+                            // R-41: taps on the editing surface (which owns all
+                            // gestures) re-focus the IME bridge and re-summon
+                            // the keyboard after the user dismisses it.
+                            onRequestIme = {
+                                focusRequester.requestFocus()
+                                keyboard?.show()
+                            },
                         )
                     }
                     // Auto-focus so the soft keyboard can be opened on tap
@@ -308,6 +317,7 @@ fun EditorScreen(
                     val editorContent = viewModel.lastLoadedState
                     if (editorContent != null) {
                         val focusRequester = remember { FocusRequester() }
+                        val keyboard = LocalSoftwareKeyboardController.current
                         ImeHandler(
                             state = editorContent,
                             focusRequester = focusRequester,
@@ -320,6 +330,10 @@ fun EditorScreen(
                                 state = editorContent,
                                 modifier = Modifier.fillMaxSize(),
                                 fileName = fileName,
+                                onRequestIme = {
+                                    focusRequester.requestFocus()
+                                    keyboard?.show()
+                                },
                             )
                         }
                     }

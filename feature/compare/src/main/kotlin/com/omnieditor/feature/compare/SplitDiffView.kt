@@ -3,6 +3,7 @@ package com.omnieditor.feature.compare
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -11,29 +12,44 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.omnieditor.core.model.Granularity
+import com.omnieditor.design.HorizontalScrollController
 import com.omnieditor.design.LocalCompareColors
+import com.omnieditor.design.horizontalDocumentScroll
+import com.omnieditor.design.rememberHorizontalScrollController
+import kotlinx.coroutines.launch
+
+/** Combined width of the pane gutter: glyph column (16dp) + line numbers (36dp). */
+private val SPLIT_GUTTER_WIDTH = 52.dp
 
 /**
  * Split (side-by-side) diff view — default at ≥600dp or landscape (OE-TXT-1).
@@ -44,6 +60,14 @@ import com.omnieditor.design.LocalCompareColors
  * Both panes render from the same List<AlignedRow> (R-25). Sync holds by construction:
  * both lists have identical length; spacer rows (null on one side) keep matched context
  * lines on the same visual row after any insertion or deletion.
+ *
+ * Horizontal scrolling (R-45): each pane shows only a narrow strip of text on
+ * a phone, so lines pan horizontally via one shared
+ * [HorizontalScrollController] — both panes translate together, and content is
+ * never silently truncated (the previous implementation ellipsized at the
+ * pane edge with no way to see the rest). Bounds cover the widest line on
+ * either side. Vertical sync is bidirectional (R-46): whichever pane the user
+ * scrolls drives the other.
  */
 @Composable
 fun SplitDiffView(
@@ -65,13 +89,44 @@ fun SplitDiffView(
     val hunks = state.result.hunks
     val cache = state.intraLineCache
     val granularity = state.granularity
+    val density = LocalDensity.current
+
+    // ── Shared horizontal document scroll (R-45) ─────────────────────────
+    val hScroll = rememberHorizontalScrollController()
+    val textMeasurer = rememberTextMeasurer()
+    val contentStyle = remember { TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp) }
+    val charWidthPx = remember(textMeasurer, contentStyle) {
+        textMeasurer.measure(AnnotatedString("0"), style = contentStyle).size.width.toFloat()
+    }
+    val maxDisplayCols = remember(state.leftLines, state.rightLines) {
+        var m = 0
+        for (line in state.leftLines) {
+            val len = line.length + line.count { it == '\t' } * 3
+            if (len > m) m = len
+        }
+        for (line in state.rightLines) {
+            val len = line.length + line.count { it == '\t' } * 3
+            if (len > m) m = len
+        }
+        m
+    }
+    // Panes are equal-width (weight 1f each), so one pane's measured width
+    // defines the shared viewport for clamping.
+    var paneWidthPx by remember { mutableStateOf(0f) }
+    LaunchedEffect(maxDisplayCols, paneWidthPx, charWidthPx) {
+        val gutterPx = with(density) { SPLIT_GUTTER_WIDTH.toPx() }
+        hScroll.updateBounds(
+            contentWidthPx = maxDisplayCols * charWidthPx + charWidthPx,
+            viewportWidthPx = (paneWidthPx - gutterPx).coerceAtLeast(0f),
+        )
+    }
 
     val focusedFindRow = remember(findMatches, findMatchIndex) {
         if (findMatchIndex >= 0 && findMatchIndex < findMatches.size) findMatches[findMatchIndex] else -1
     }
     val findMatchSet = remember(findMatches) { findMatches.toHashSet() }
 
-    // Synchronise scroll between panes
+    // Synchronise scroll between panes (bidirectional, R-46)
     if (syncScroll) {
         SyncScroll(leftListState, rightListState)
     }
@@ -123,7 +178,10 @@ fun SplitDiffView(
             onDiffRowTapped = onDiffRowTapped,
             findMatchSet = findMatchSet,
             focusedFindRow = focusedFindRow,
-            modifier = Modifier.weight(1f),
+            hScroll = hScroll,
+            modifier = Modifier
+                .weight(1f)
+                .onGloballyPositioned { paneWidthPx = it.size.width.toFloat() },
         )
 
         // Connector column — same row index on both sides, so coordinates are now correct
@@ -150,6 +208,7 @@ fun SplitDiffView(
             onDiffRowTapped = onDiffRowTapped,
             findMatchSet = findMatchSet,
             focusedFindRow = focusedFindRow,
+            hScroll = hScroll,
             modifier = Modifier.weight(1f),
         )
     }
@@ -169,6 +228,7 @@ private fun SplitPane(
     intraLineCache: IntraLineCache,
     granularity: Granularity,
     contentPadding: PaddingValues,
+    hScroll: HorizontalScrollController,
     onDiffRowTapped: ((hunkIndex: Int) -> Unit)? = null,
     findMatchSet: Set<Int> = emptySet(),
     focusedFindRow: Int = -1,
@@ -177,7 +237,10 @@ private fun SplitPane(
     LazyColumn(
         state = listState,
         contentPadding = contentPadding,
-        modifier = modifier,
+        modifier = modifier
+            // Horizontal pans on either pane feed the shared controller, so
+            // both panes translate together (R-45).
+            .horizontalDocumentScroll(hScroll),
     ) {
         itemsIndexed(alignedRows, key = { idx, row -> "${side}_${row.left}_${row.right}_$idx" }) { idx, row ->
             SplitPaneRow(
@@ -193,6 +256,7 @@ private fun SplitPane(
                 hunks = hunks,
                 intraLineCache = intraLineCache,
                 granularity = granularity,
+                hScroll = hScroll,
                 onDiffRowTapped = onDiffRowTapped,
             )
         }
@@ -213,6 +277,7 @@ private fun SplitPaneRow(
     hunks: List<com.omnieditor.core.model.Hunk>,
     intraLineCache: IntraLineCache,
     granularity: Granularity,
+    hScroll: HorizontalScrollController,
     onDiffRowTapped: ((hunkIndex: Int) -> Unit)?,
 ) {
     val lineIdx = if (side == Side.LEFT) row.left else row.right
@@ -271,7 +336,7 @@ private fun SplitPaneRow(
             .semantics { contentDescription = a11y },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Glyph
+        // Glyph — pinned.
         Text(
             text = glyph,
             color = fgColor,
@@ -279,7 +344,7 @@ private fun SplitPaneRow(
             fontSize = 12.sp,
             modifier = Modifier.width(16.dp).padding(start = 2.dp),
         )
-        // Line number
+        // Line number — pinned.
         Text(
             text = if (lineIdx != null) "${lineIdx + 1}" else "",
             color = colors.gutter,
@@ -288,16 +353,26 @@ private fun SplitPaneRow(
             modifier = Modifier.width(36.dp),
             maxLines = 1,
         )
-        // Content — AnnotatedString carries intra-line background spans (R-26).
-        Text(
-            text = displayContent,
-            color = fgColor,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 12.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        // Content — full intrinsic width, clipped, translated by the shared
+        // offset (R-45). No ellipsis: text past the pane edge is reachable by
+        // panning instead of being silently dropped.
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clipToBounds(),
+        ) {
+            Text(
+                text = displayContent,
+                color = fgColor,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier
+                    .wrapContentWidth(Alignment.Start, unbounded = true)
+                    .graphicsLayer { translationX = -hScroll.offsetPx },
+            )
+        }
     }
 }
 
@@ -305,8 +380,9 @@ private fun SplitPaneRow(
  * Relational connector lines between hunk boundaries in split view.
  *
  * Because both panes share the same AlignedRow list (R-25), hunk boundaries fall on
- * identical row indices in both panes. The connector simply draws horizontal markers at
- * the row where each hunk starts and ends — no offset arithmetic required.
+ * identical row indices in both panes. The connector draws at sub-row precision:
+ * both the first visible item index AND the intra-item scroll offset are read,
+ * so markers track partial scrolls instead of jumping in whole-row steps (R-46).
  */
 @Composable
 private fun ConnectorColumn(
@@ -333,13 +409,16 @@ private fun ConnectorColumn(
     }
 
     Canvas(modifier = modifier) {
+        // Both reads happen inside the draw scope, so the canvas invalidates
+        // on every scroll frame, including intra-item offset changes.
         val firstVisible = leftListState.firstVisibleItemIndex
+        val intraItemOffsetPx = leftListState.firstVisibleItemScrollOffset.toFloat()
         val lineHeightPx = lineHeightDp * density
 
         for (bounds in hunkBounds.values) {
             val (startRow, endRow) = bounds
-            val topY = (startRow - firstVisible) * lineHeightPx
-            val bottomY = (endRow - firstVisible + 1) * lineHeightPx
+            val topY = (startRow - firstVisible) * lineHeightPx - intraItemOffsetPx
+            val bottomY = (endRow - firstVisible + 1) * lineHeightPx - intraItemOffsetPx
 
             // Draw a simple vertical bar in the middle of the connector column
             drawLine(
@@ -353,18 +432,56 @@ private fun ConnectorColumn(
 }
 
 /**
- * Synchronise scroll between two LazyListStates.
+ * Bidirectional scroll synchronisation between two panes (R-46).
+ *
+ * The previous implementation mirrored only left → right: scrolling the right
+ * pane moved nothing, and the next touch on the left pane snapped the right
+ * pane back. Here, whichever pane is being scrolled ([LazyListState.isScrollInProgress])
+ * drives the other. Echoes are suppressed twice over: a `syncing` guard covers
+ * the mirroring call itself, and by the time the mirrored pane's own snapshot
+ * emission is processed its scroll has already ended, so its
+ * `isScrollInProgress` check fails and no mirror-back occurs.
  */
 @Composable
 private fun SyncScroll(
     primary: LazyListState,
     secondary: LazyListState,
 ) {
-    LaunchedEffect(Unit) {
-        snapshotFlow { primary.firstVisibleItemIndex to primary.firstVisibleItemScrollOffset }
-            .collect { (index, offset) ->
-                secondary.scrollToItem(index, offset)
-            }
+    LaunchedEffect(primary, secondary) {
+        var syncing = false
+
+        // Align panes once when sync is (re-)enabled.
+        secondary.scrollToItem(
+            primary.firstVisibleItemIndex,
+            primary.firstVisibleItemScrollOffset,
+        )
+
+        launch {
+            snapshotFlow { primary.firstVisibleItemIndex to primary.firstVisibleItemScrollOffset }
+                .collect { (index, offset) ->
+                    if (!syncing && primary.isScrollInProgress) {
+                        syncing = true
+                        try {
+                            secondary.scrollToItem(index, offset)
+                        } finally {
+                            syncing = false
+                        }
+                    }
+                }
+        }
+        launch {
+            snapshotFlow { secondary.firstVisibleItemIndex to secondary.firstVisibleItemScrollOffset }
+                .collect { (index, offset) ->
+                    if (!syncing && secondary.isScrollInProgress) {
+                        syncing = true
+                        try {
+                            primary.scrollToItem(index, offset)
+                        } finally {
+                            syncing = false
+                        }
+                    }
+                }
+        }
     }
 }
 
