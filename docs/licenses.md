@@ -20,6 +20,7 @@ Permitted: Apache-2.0, MIT, BSD. LGPL by justification only. GPL/AGPL forbidden.
 | detekt | 1.23.8 | Apache-2.0 (build only) | build | T-01 |
 
 | AndroidX DataStore Preferences | 1.2.1 | Apache-2.0 | app (settings persistence) | R-35 |
+| Navigation Compose | 2.9.0 | Apache-2.0 | app (nav graph) | T-01 |
 
 No other dependencies were added after T-01 (outside of the above).
 

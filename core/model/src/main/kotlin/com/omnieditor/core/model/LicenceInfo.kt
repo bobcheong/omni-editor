@@ -1,7 +1,7 @@
 package com.omnieditor.core.model
 
 /**
- * In-app licence information for the About/Settings screen (IND-5, T-29).
+ * In-app licence information for the About/Settings screen (IND-5, T-29, R-40).
  *
  * Every third-party dependency is listed with its licence.
  * This data drives the licences screen in the app.
@@ -27,8 +27,16 @@ object LicenceInfo {
             "Hilt Navigation Compose", "1.4.0", "Apache-2.0",
             "https://developer.android.com/jetpack/androidx",
         ),
+        LicenceEntry(
+            "Navigation Compose", "2.9.0", "Apache-2.0",
+            "https://developer.android.com/jetpack/androidx/releases/navigation",
+        ),
+        LicenceEntry(
+            "AndroidX DataStore", "1.2.1", "Apache-2.0",
+            "https://developer.android.com/topic/libraries/architecture/datastore",
+        ),
     )
 
-    const val appVersion = "0.1.0"
+    const val appVersion = "0.2.0"
     const val appVersionCode = 1
 }
