@@ -20,6 +20,17 @@ import java.io.IOException
 import java.nio.channels.Channels
 import javax.inject.Inject
 
+/**
+ * A tool that is pending user confirmation because it would change more than half the lines
+ * (spec §2.3: counted confirmation for destructive tools).
+ */
+data class PendingTool(
+    val label: String,
+    val changedLines: Int,
+    val totalLines: Int,
+    val apply: () -> Unit,
+)
+
 @HiltViewModel
 class EditorViewModel @Inject constructor() : ViewModel() {
 
@@ -42,6 +53,13 @@ class EditorViewModel @Inject constructor() : ViewModel() {
 
     /** File name remembered when the document is loaded, used for the ExternallyChanged banner. */
     private var currentFileName: String = ""
+
+    /**
+     * Tool awaiting confirmation. Non-null when a destructive tool would change >50% of lines.
+     * The UI should present a confirmation dialog and call [confirmPendingTool] or [cancelPendingTool].
+     */
+    private val _pendingTool = MutableStateFlow<PendingTool?>(null)
+    val pendingTool: StateFlow<PendingTool?> = _pendingTool.asStateFlow()
 
     fun setSaveFunction(fn: suspend (ByteArray) -> Unit) {
         saveFn = fn
@@ -226,23 +244,139 @@ class EditorViewModel @Inject constructor() : ViewModel() {
     }
 
     // ── Text Tools ──
+    // Case conversion (toUpperCase / toLowerCase) is excluded from v0.1 per spec §2.3.
+    // It ships in v0.2 with R-36b (selection-scoped).
 
-    fun sortLines() = applyTextTool { TextTools.sortLines(it).joinToString("\n") }
-    fun deduplicateLines() = applyTextTool { TextTools.deduplicateLines(it).joinToString("\n") }
-    fun trimTrailing() = applyTextTool { TextTools.trimTrailingWhitespace(it).joinToString("\n") }
-    fun toUpperCase() = applyTextTool { lines -> lines.map { it.uppercase() }.joinToString("\n") }
-    fun toLowerCase() = applyTextTool { lines -> lines.map { it.lowercase() }.joinToString("\n") }
-    fun reverseLines() = applyTextTool { TextTools.reverseLines(it).joinToString("\n") }
-    fun removeBlankLines() = applyTextTool { TextTools.removeBlankLines(it).joinToString("\n") }
-    fun tabsToSpaces() = applyTextTool { TextTools.tabsToSpaces(it).joinToString("\n") }
-    fun spacesToTabs() = applyTextTool { TextTools.spacesToTabs(it).joinToString("\n") }
+    fun sortLines() = applyTextToolWithConfirmation("Sort lines") { lines ->
+        TextTools.sortLines(lines).joinToString("\n")
+    }
 
-    private fun applyTextTool(transform: (List<String>) -> String) {
+    fun deduplicateLines() = applyTextToolWithConfirmation("Remove duplicates") { lines ->
+        TextTools.deduplicateLines(lines).joinToString("\n")
+    }
+
+    fun trimTrailing() = applyTextToolWithConfirmation("Trim trailing spaces") { lines ->
+        TextTools.trimTrailingWhitespace(lines).joinToString("\n")
+    }
+
+    fun reverseLines() = applyTextToolWithConfirmation("Reverse lines") { lines ->
+        TextTools.reverseLines(lines).joinToString("\n")
+    }
+
+    fun removeBlankLines() = applyTextToolWithConfirmation("Remove blank lines") { lines ->
+        TextTools.removeBlankLines(lines).joinToString("\n")
+    }
+
+    fun tabsToSpaces() = applyTextToolWithConfirmation("Tabs to spaces") { lines ->
+        TextTools.tabsToSpaces(lines).joinToString("\n")
+    }
+
+    fun spacesToTabs() = applyTextToolWithConfirmation("Spaces to tabs") { lines ->
+        TextTools.spacesToTabs(lines).joinToString("\n")
+    }
+
+    /** Join all lines into one line, separated by a space. */
+    fun joinLines() = applyTextToolWithConfirmation("Join lines") { lines ->
+        TextTools.joinLines(lines, " ")
+    }
+
+    /**
+     * Split lines: each line is split at [delimiter], producing multiple lines.
+     * If [delimiter] is empty this is a no-op.
+     */
+    fun splitLines(delimiter: String) = applyTextToolWithConfirmation("Split lines") { lines ->
+        if (delimiter.isEmpty()) lines.joinToString("\n")
+        else lines.flatMap { TextTools.splitLine(it, delimiter) }.joinToString("\n")
+    }
+
+    /**
+     * Convert line endings in the whole document.
+     * [to] is one of "\r\n" (CRLF), "\n" (LF), "\r" (CR).
+     */
+    fun convertLineEnding(to: String) {
+        val doc = editorState?.document ?: return
+        val currentText = doc.text()
+        val newText = TextTools.convertLineEndings(currentText, to)
+        if (newText == currentText) return
+        doc.replaceAll(0, doc.length, newText)
+        _uiState.value = EditorUiState.Loaded(editorState!!)
+    }
+
+    /**
+     * Re-encode the document text from [fromCharset] to [toCharset].
+     * No-ops and emits an error state if conversion fails.
+     */
+    fun convertEncoding(fromCharset: String, toCharset: String) {
+        val doc = editorState?.document ?: return
+        val currentText = doc.text()
+        val converted = TextTools.convertEncoding(currentText, fromCharset, toCharset)
+        if (converted == null) {
+            _uiState.value = EditorUiState.Error("Encoding conversion from $fromCharset to $toCharset failed")
+            return
+        }
+        if (converted == currentText) return
+        doc.replaceAll(0, doc.length, converted)
+        _uiState.value = EditorUiState.Loaded(editorState!!)
+    }
+
+    /** User confirmed the pending destructive tool — apply it now. */
+    fun confirmPendingTool() {
+        _pendingTool.value?.apply?.invoke()
+        _pendingTool.value = null
+    }
+
+    /** User cancelled the pending destructive tool. */
+    fun cancelPendingTool() {
+        _pendingTool.value = null
+    }
+
+    // ── Internal helpers ──
+
+    /**
+     * Apply a line-based transform as a single undo step, with a counted confirmation dialog
+     * when the transform would change more than half the document's lines (spec §2.3).
+     *
+     * [label] is shown in the confirmation message.
+     * [transform] receives all lines and returns the full replacement text.
+     */
+    internal fun applyTextToolWithConfirmation(label: String, transform: (List<String>) -> String) {
         val doc = editorState?.document ?: return
         val lines = (0 until doc.lineCount).map { doc.line(it).toString() }
-        val result = transform(lines)
-        doc.replaceAll(0, doc.length, result)
-        _uiState.value = EditorUiState.Loaded(editorState!!)
+        val newText = transform(lines)
+        val changedLines = countChangedLines(lines.joinToString("\n"), newText)
+        val totalLines = doc.lineCount.toInt()
+
+        if (changedLines > totalLines / 2) {
+            _pendingTool.value = PendingTool(
+                label = label,
+                changedLines = changedLines,
+                totalLines = totalLines,
+                apply = {
+                    doc.replaceAll(0, doc.length, newText)
+                    _uiState.value = EditorUiState.Loaded(editorState!!)
+                },
+            )
+        } else {
+            doc.replaceAll(0, doc.length, newText)
+            _uiState.value = EditorUiState.Loaded(editorState!!)
+        }
+    }
+
+    /**
+     * Count the number of lines that differ between [oldText] and [newText].
+     * Uses line-by-line comparison; lines present in one but not the other are all counted.
+     */
+    internal fun countChangedLines(oldText: String, newText: String): Int {
+        val oldLines = oldText.split("\n")
+        val newLines = newText.split("\n")
+        val maxLen = maxOf(oldLines.size, newLines.size)
+        var changed = 0
+        for (i in 0 until maxLen) {
+            val old = oldLines.getOrNull(i)
+            val new = newLines.getOrNull(i)
+            if (old != new) changed++
+        }
+        return changed
     }
 }
 

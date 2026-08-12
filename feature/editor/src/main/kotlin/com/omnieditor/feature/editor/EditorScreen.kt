@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
@@ -26,6 +27,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -39,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -57,9 +60,11 @@ fun EditorScreen(
     viewModel: EditorViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val pendingTool by viewModel.pendingTool.collectAsState()
     var showFind by remember { mutableStateOf(false) }
     var lastSearchQuery by remember { mutableStateOf("") }
     var showUnsavedDialog by remember { mutableStateOf(false) }
+    var showGoToLineDialog by remember { mutableStateOf(false) }
 
     val isDirty = (uiState as? EditorUiState.Loaded)?.editorState?.document?.dirty == true
 
@@ -68,6 +73,7 @@ fun EditorScreen(
         showUnsavedDialog = true
     }
 
+    // ── Unsaved-changes dialog ──
     if (showUnsavedDialog) {
         AlertDialog(
             onDismissRequest = { showUnsavedDialog = false },
@@ -94,6 +100,34 @@ fun EditorScreen(
         )
     }
 
+    // ── Go-to-line dialog ──
+    if (showGoToLineDialog) {
+        GoToLineDialog(
+            onDismiss = { showGoToLineDialog = false },
+            onConfirm = { line ->
+                viewModel.goToLine(line - 1L)   // UI is 1-based; ViewModel is 0-based
+                showGoToLineDialog = false
+            },
+        )
+    }
+
+    // ── Destructive-tool confirmation dialog (spec §2.3) ──
+    pendingTool?.let { tool ->
+        AlertDialog(
+            onDismissRequest = { viewModel.cancelPendingTool() },
+            title = { Text(tool.label) },
+            text = {
+                Text("This will change ${tool.changedLines} of ${tool.totalLines} lines. Continue?")
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.confirmPendingTool() }) { Text("Apply") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelPendingTool() }) { Text("Cancel") }
+            },
+        )
+    }
+
     Scaffold(
         topBar = {
             EditorTopBar(
@@ -111,15 +145,18 @@ fun EditorScreen(
                 onSave = { viewModel.save() },
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
+                onGoToLine = { showGoToLineDialog = true },
                 onSortLines = { viewModel.sortLines() },
                 onDeduplicate = { viewModel.deduplicateLines() },
                 onTrimTrailing = { viewModel.trimTrailing() },
-                onUpperCase = { viewModel.toUpperCase() },
-                onLowerCase = { viewModel.toLowerCase() },
                 onReverseLines = { viewModel.reverseLines() },
                 onRemoveBlankLines = { viewModel.removeBlankLines() },
                 onTabsToSpaces = { viewModel.tabsToSpaces() },
                 onSpacesToTabs = { viewModel.spacesToTabs() },
+                onJoinLines = { viewModel.joinLines() },
+                onConvertLineEndingCRLF = { viewModel.convertLineEnding("\r\n") },
+                onConvertLineEndingLF = { viewModel.convertLineEnding("\n") },
+                onConvertLineEndingCR = { viewModel.convertLineEnding("\r") },
             )
         },
         bottomBar = {
@@ -227,18 +264,22 @@ private fun EditorTopBar(
     onSave: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
+    onGoToLine: () -> Unit,
     onSortLines: () -> Unit,
     onDeduplicate: () -> Unit,
     onTrimTrailing: () -> Unit,
-    onUpperCase: () -> Unit,
-    onLowerCase: () -> Unit,
     onReverseLines: () -> Unit,
     onRemoveBlankLines: () -> Unit,
     onTabsToSpaces: () -> Unit,
     onSpacesToTabs: () -> Unit,
+    onJoinLines: () -> Unit,
+    onConvertLineEndingCRLF: () -> Unit,
+    onConvertLineEndingLF: () -> Unit,
+    onConvertLineEndingCR: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var textToolsExpanded by remember { mutableStateOf(false) }
+    var lineEndingExpanded by remember { mutableStateOf(false) }
 
     TopAppBar(
         title = { Text(title, maxLines = 1) },
@@ -258,25 +299,68 @@ private fun EditorTopBar(
                 DropdownMenuItem(text = { Text("Save") }, onClick = { menuExpanded = false; onSave() })
                 DropdownMenuItem(text = { Text("Undo") }, onClick = { menuExpanded = false; onUndo() })
                 DropdownMenuItem(text = { Text("Redo") }, onClick = { menuExpanded = false; onRedo() })
+                DropdownMenuItem(text = { Text("Go to line…") }, onClick = { menuExpanded = false; onGoToLine() })
                 HorizontalDivider()
                 DropdownMenuItem(text = { Text("Text tools ▸") }, onClick = {
                     menuExpanded = false; textToolsExpanded = true
                 })
+                DropdownMenuItem(text = { Text("Line ending ▸") }, onClick = {
+                    menuExpanded = false; lineEndingExpanded = true
+                })
                 HorizontalDivider()
                 DropdownMenuItem(text = { Text("Compare with…") }, onClick = { menuExpanded = false; onCompareWith() })
             }
+            // Text tools submenu
             DropdownMenu(expanded = textToolsExpanded, onDismissRequest = { textToolsExpanded = false }) {
                 DropdownMenuItem(text = { Text("Sort lines") }, onClick = { textToolsExpanded = false; onSortLines() })
                 DropdownMenuItem(text = { Text("Remove duplicates") }, onClick = { textToolsExpanded = false; onDeduplicate() })
                 DropdownMenuItem(text = { Text("Trim trailing spaces") }, onClick = { textToolsExpanded = false; onTrimTrailing() })
-                DropdownMenuItem(text = { Text("UPPERCASE") }, onClick = { textToolsExpanded = false; onUpperCase() })
-                DropdownMenuItem(text = { Text("lowercase") }, onClick = { textToolsExpanded = false; onLowerCase() })
                 DropdownMenuItem(text = { Text("Reverse lines") }, onClick = { textToolsExpanded = false; onReverseLines() })
                 DropdownMenuItem(text = { Text("Remove blank lines") }, onClick = { textToolsExpanded = false; onRemoveBlankLines() })
+                DropdownMenuItem(text = { Text("Join lines") }, onClick = { textToolsExpanded = false; onJoinLines() })
                 HorizontalDivider()
                 DropdownMenuItem(text = { Text("Tabs → Spaces") }, onClick = { textToolsExpanded = false; onTabsToSpaces() })
                 DropdownMenuItem(text = { Text("Spaces → Tabs") }, onClick = { textToolsExpanded = false; onSpacesToTabs() })
             }
+            // Line-ending conversion submenu
+            DropdownMenu(expanded = lineEndingExpanded, onDismissRequest = { lineEndingExpanded = false }) {
+                DropdownMenuItem(text = { Text("Convert to CRLF (Windows)") }, onClick = { lineEndingExpanded = false; onConvertLineEndingCRLF() })
+                DropdownMenuItem(text = { Text("Convert to LF (Unix)") }, onClick = { lineEndingExpanded = false; onConvertLineEndingLF() })
+                DropdownMenuItem(text = { Text("Convert to CR (Classic Mac)") }, onClick = { lineEndingExpanded = false; onConvertLineEndingCR() })
+            }
+        },
+    )
+}
+
+/** Simple dialog that accepts a 1-based line number and calls [onConfirm]. */
+@Composable
+private fun GoToLineDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (Long) -> Unit,
+) {
+    var text by remember { mutableStateOf("") }
+    val lineNumber = text.toLongOrNull()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Go to line") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.filter { c -> c.isDigit() } },
+                label = { Text("Line number") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (lineNumber != null && lineNumber > 0) onConfirm(lineNumber) },
+                enabled = lineNumber != null && lineNumber > 0,
+            ) { Text("Go") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         },
     )
 }
