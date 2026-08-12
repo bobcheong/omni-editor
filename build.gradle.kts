@@ -99,6 +99,96 @@ tasks.register("checkIoBoundary") {
     }
 }
 
+/**
+ * R-39: Dead-code honesty sweep.
+ *
+ * Checks each Kotlin source file in core/model, core/diff and core/io whose name
+ * matches a public top-level type (the "primary type" convention: one primary type
+ * per file, file named after it). For each such file, verifies that some non-test,
+ * non-self source file references the type name.
+ *
+ * This targets whole-module objects that have no consumer anywhere in the codebase,
+ * without false-positives from helper types that live alongside primary types in
+ * the same file.
+ *
+ * Types with no consumer are reported as errors unless they appear in the allowlist
+ * documented in docs/adr/010-deferred-modules.md.
+ */
+tasks.register("checkUnusedPublicTypes") {
+    group = "verification"
+    description = "Fails when a core primary type has no non-test consumer and is not in the ADR-010 allowlist"
+
+    // Types documented in ADR-010 as intentionally deferred to P2.
+    val allowlist = setOf(
+        "BlockDiff",           // ADR-010: large-file path, needs device benchmark (P2)
+        "Diff3",               // ADR-010: three-pane merge UI deferred to P2
+        "FileIndexer",         // ADR-010: streaming large-file load, wires with BlockDiff (P2)
+        "AccessibilityConfig", // ADR-010: settings screen deferred to P2
+        "DocumentMeta",        // ADR-010: tab-state persistence, settings screen deferred to P2
+    )
+
+    val coreModules = listOf("core/model", "core/diff", "core/io")
+    val root = rootProject.projectDir
+
+    doLast {
+        val publicTypePattern = Regex(
+            """^\s*(?:public\s+)?(?:(?:data|sealed|abstract|open|enum)\s+)?(?:class|object|interface)\s+(\w+)"""
+        )
+
+        // Collect primary types: file BaseName → file, only when the file declares
+        // a top-level type whose name matches the file's base name (without .kt).
+        val primaryTypes = mutableMapOf<String, File>() // typeName → declaring file
+        coreModules.forEach { mod ->
+            val mainSrc = root.resolve("$mod/src/main")
+            if (!mainSrc.exists()) return@forEach
+            mainSrc.walkTopDown().filter { it.extension == "kt" }.forEach { f ->
+                val baseName = f.nameWithoutExtension
+                val firstMatch = f.readLines().firstNotNullOfOrNull { line ->
+                    publicTypePattern.find(line)?.groupValues?.get(1)
+                        ?.takeIf { it == baseName }
+                }
+                if (firstMatch != null) primaryTypes[baseName] = f
+            }
+        }
+
+        // All non-test production Kotlin sources.
+        val allSources = root.walkTopDown()
+            .filter { it.extension == "kt" }
+            .filter { f ->
+                val rel = f.relativeTo(root).path.replace('\\', '/')
+                !rel.contains("/test/") && !rel.contains("Test.kt")
+            }
+            .toList()
+
+        val unlisted = mutableListOf<String>()
+        val deferred = mutableListOf<String>()
+
+        primaryTypes.forEach { (name, selfFile) ->
+            val hasConsumer = allSources.any { f -> f != selfFile && f.readText().contains(name) }
+            if (!hasConsumer) {
+                if (name in allowlist) deferred += name
+                else unlisted += "$name  (declared in ${selfFile.relativeTo(root)})"
+            }
+        }
+
+        if (deferred.isNotEmpty()) {
+            logger.warn(
+                "[checkUnusedPublicTypes] Deferred (see docs/adr/010-deferred-modules.md):\n" +
+                    deferred.joinToString("\n") { "  $it" }
+            )
+        }
+        if (unlisted.isNotEmpty()) {
+            throw GradleException(
+                "[checkUnusedPublicTypes] Core primary types with no non-test consumer\n" +
+                    "and no ADR-010 allowlist entry:\n" +
+                    unlisted.joinToString("\n") { "  $it" } + "\n\n" +
+                    "Either wire the type into production code, or add it to the allowlist\n" +
+                    "in build.gradle.kts and document the reason in docs/adr/010-deferred-modules.md."
+            )
+        }
+    }
+}
+
 val detektConfigFile = rootProject.file("config/detekt/detekt.yml")
 val corePurityTask = tasks.named("checkCorePurity")
 val ioBoundaryTask = tasks.named("checkIoBoundary")

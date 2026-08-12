@@ -488,8 +488,10 @@ private fun CompareTopBar(
             // Conflict count chip — only shown when conflicts are present (R-32)
             if (conflictCount > 0) {
                 val compareColors = com.omnieditor.design.LocalCompareColors.current
+                // AssistChip is display-only here; no tap action is defined for the
+                // conflict count badge. onClick is intentionally a no-op.
                 AssistChip(
-                    onClick = {},
+                    onClick = { /* display-only badge — no tap action */ },
                     label = {
                         Text(
                             "$conflictCount conflict${if (conflictCount == 1) "" else "s"}",

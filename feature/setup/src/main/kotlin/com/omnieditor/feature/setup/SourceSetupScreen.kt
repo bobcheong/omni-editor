@@ -114,7 +114,8 @@ fun SourceSetupScreen(
             }
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(true, onClick = {}, label = { Text("Mode: ${inferredMode.name}") })
+                // Mode chip is display-only; onClick is intentionally a no-op.
+                FilterChip(true, onClick = { /* display-only */ }, label = { Text("Mode: ${inferredMode.name}") })
                 FilterChip(rulesCount > 0, onClick = onEditRules, label = { Text("Rules: $rulesCount") })
             }
         }

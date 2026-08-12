@@ -198,9 +198,10 @@ fun ActiveLineSheet(
                             Text("Take right (theirs)")
                         }
                     }
-                    // Edit manually — deferred, shown disabled (R-32)
+                    // Edit manually — deferred to P2, shown disabled (R-32).
+                    // onClick is a no-op; enabled=false prevents the user from tapping it.
                     OutlinedButton(
-                        onClick = {},
+                        onClick = { /* deferred — button is disabled */ },
                         enabled = false,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
