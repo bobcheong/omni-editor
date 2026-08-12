@@ -42,3 +42,33 @@ the constant is lowered — the budget is not raised.
 R-38 results. If the ceiling can be raised after measuring, raise it.
 If it must be lowered, lower it and open a P2 task for the offset cache
 and LineIndex read path.
+
+## R-38 Budget Status (T-28)
+
+JVM budget reference tests were written in
+`core/io/src/test/kotlin/com/omnieditor/core/io/PerformanceBudgetTest.kt`.
+
+These tests print measured values but make no hard assertions, because JVM
+measurements are not authoritative for device performance.
+
+What the JVM tests cover:
+
+| Budget | Test name | Authority |
+|--------|-----------|-----------|
+| 16 MiB piece table creation time | `budget reference - 16MiB piece table creation time` | JVM reference only |
+| 16 MiB heap delta and ratio | `budget reference - 16MiB document heap estimate` | JVM reference only |
+| Typing latency: 1000 inserts in 15 MB doc | `budget reference - typing latency 1000 inserts in 15MB document` | JVM reference only |
+| line(500000) vs line(10) access ratio | `budget reference - line access at line 500000 vs line 10` | JVM reference only |
+| 5 MB compare line-access throughput | `budget reference - 5MB compare line access throughput` | JVM reference only |
+| Intra-line 4 KB line median < 1 ms | `budget reference - intra-line range under 1ms for 4KB line` | JVM reference only |
+
+Device benchmarks (NFR-P1..P5) remain open Tier 4 release blockers.
+`DocumentLimits` values are NOT changed based on JVM data alone.
+
+### Monospace fast path (R-14)
+
+R-14 specified: "No monospace fast path yet — add only if R-38 shows
+measurement is the bottleneck." Since no device profiling has been run,
+the decision is deferred: JVM measurements do not indicate that
+`TextMeasurer` is a bottleneck at the current ceiling. Revisit if device
+profiling shows it is.

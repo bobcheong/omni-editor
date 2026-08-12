@@ -1,9 +1,12 @@
 package com.omnieditor.core.diff
 
+import com.omnieditor.core.model.Granularity
+import com.omnieditor.core.model.LinePair
 import com.omnieditor.core.model.RuleSet
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import kotlin.system.measureNanoTime
 
 /**
  * JVM-level performance tests for the diff engine (T-28).
@@ -106,8 +109,8 @@ class PerformanceTest {
         val start = System.nanoTime()
         repeat(1000) {
             IntraLineDiff.compute(
-                com.omnieditor.core.model.LinePair(0, 0, left, right),
-                com.omnieditor.core.model.Granularity.WORD,
+                LinePair(0, 0, left, right),
+                Granularity.WORD,
             )
         }
         val elapsedUs = (System.nanoTime() - start) / 1000
@@ -116,5 +119,42 @@ class PerformanceTest {
         println("Intra-line diff: ${perCallUs}µs per call (1000 iterations)")
         // Should be well under 1ms per call (spec says <1ms for 4KB lines)
         (perCallUs < 1_000) shouldBe true
+    }
+
+    /**
+     * Budget reference: intra-line range computation for a 4 KB line (R-38, T-28).
+     *
+     * R-26 deferred this criterion pending R-38 measurement. This test provides
+     * the JVM reference number. The spec budget is <1 ms per visible row; the
+     * Compose render pipeline adds overhead not captured here.
+     *
+     * JVM-only, NOT authoritative — device benchmarks are Tier 4.
+     */
+    @Test
+    fun `budget reference - intra-line range under 1ms for 4KB line`() {
+        val oldLine = "a".repeat(4096)
+        // One change in the middle — worst-case common-prefix/suffix scan after large shared prefix
+        val newLine = "a".repeat(2048) + "B" + "a".repeat(2047)
+
+        val pair = LinePair(0L, 0L, oldLine, newLine)
+
+        // Warm up JIT
+        repeat(20) {
+            IntraLineDiff.compute(pair, Granularity.CHARACTER)
+        }
+
+        val times = LongArray(100) {
+            measureNanoTime {
+                IntraLineDiff.compute(pair, Granularity.CHARACTER)
+            }
+        }
+
+        val sortedNs = times.sorted()
+        val medianMs = sortedNs[50] / 1_000_000.0
+        val p99Ms = sortedNs[99] / 1_000_000.0
+
+        println("R-38 budget: intra-line 4 KB median = %.3f ms, p99 = %.3f ms".format(medianMs, p99Ms))
+        // The JVM result is typically well under 1 ms. The spec budget is a device budget.
+        // No assertion here — device measurements (Tier 4) are the authority.
     }
 }
