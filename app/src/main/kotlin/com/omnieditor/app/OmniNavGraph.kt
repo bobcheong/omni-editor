@@ -163,6 +163,14 @@ fun OmniNavGraph(
     var fileBrowserLeftRef by remember { mutableStateOf<SourceRef?>(null) }
     var fileBrowserRightRef by remember { mutableStateOf<SourceRef?>(null) }
 
+    // Setup screen state hoisted here so it survives navigation to the file browser.
+    // Bug fix: `remember` inside SetupDestination was lost when navigating to filebrowser
+    // and back, because Navigation Compose removes composables from composition on navigate.
+    var setupLeftSource by remember { mutableStateOf<SourceRef?>(null) }
+    var setupRightSource by remember { mutableStateOf<SourceRef?>(null) }
+    var setupLeftKey by remember { mutableStateOf<String?>(null) }
+    var setupRightKey by remember { mutableStateOf<String?>(null) }
+
     // R-33: consume initialAction once the nav graph is ready.
     LaunchedEffect(initialAction) {
         when (val action = initialAction) {
@@ -285,8 +293,28 @@ fun OmniNavGraph(
             ),
         ) { backStackEntry ->
             val prefilledLeftKey = backStackEntry.arguments?.getString("leftKey")
+            // Initialize hoisted state from prefilled key on first entry
+            LaunchedEffect(prefilledLeftKey) {
+                if (prefilledLeftKey != null && setupLeftKey == null) {
+                    setupLeftKey = prefilledLeftKey
+                    val doc = DocumentRegistry.get(prefilledLeftKey)
+                    if (doc != null) {
+                        setupLeftSource = SourceRef(
+                            id = prefilledLeftKey,
+                            kind = SourceKind.LOCAL,
+                            uriGrant = doc.uri,
+                            label = doc.label,
+                        )
+                    }
+                }
+            }
             SetupDestination(
-                prefilledLeftKey = prefilledLeftKey,
+                leftSource = setupLeftSource,
+                rightSource = setupRightSource,
+                leftKey = setupLeftKey,
+                rightKey = setupRightKey,
+                onLeftChanged = { key, ref -> setupLeftKey = key; setupLeftSource = ref },
+                onRightChanged = { key, ref -> setupRightKey = key; setupRightSource = ref },
                 recentsStore = recentsStore,
                 sessionStore = sessionStore,
                 navController = navController,
@@ -596,7 +624,12 @@ private fun EditorDestination(
 /** Setup route body extracted to keep OmniNavGraph within complexity budget. */
 @Composable
 private fun SetupDestination(
-    prefilledLeftKey: String?,
+    leftSource: SourceRef?,
+    rightSource: SourceRef?,
+    leftKey: String?,
+    rightKey: String?,
+    onLeftChanged: (String?, SourceRef?) -> Unit,
+    onRightChanged: (String?, SourceRef?) -> Unit,
     recentsStore: RecentsStore,
     sessionStore: SessionStore,
     navController: NavHostController,
@@ -605,16 +638,6 @@ private fun SetupDestination(
     onConsumeLeftRef: () -> Unit,
     onConsumeRightRef: () -> Unit,
 ) {
-    val prefilledLeft = prefilledLeftKey?.let { DocumentRegistry.get(it) }
-
-    var leftSource by remember {
-        mutableStateOf(prefilledLeft?.let {
-            SourceRef(id = prefilledLeftKey, kind = SourceKind.LOCAL, uriGrant = it.uri, label = it.label)
-        })
-    }
-    var rightSource by remember { mutableStateOf<SourceRef?>(null) }
-    var leftKey by remember { mutableStateOf(prefilledLeftKey) }
-    var rightKey by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -629,13 +652,12 @@ private fun SetupDestination(
                 val doc = withContext(Dispatchers.IO) {
                     readUriIntoRegistry(context, uri, id = sourceId)
                 }
-                leftKey = sourceId
-                leftSource = SourceRef(
+                onLeftChanged(sourceId, SourceRef(
                     id = sourceId,
                     kind = SourceKind.LOCAL,
                     uriGrant = uri.toString(),
                     label = doc?.label ?: "left",
-                )
+                ))
             }
         }
     }
@@ -651,13 +673,12 @@ private fun SetupDestination(
                 val doc = withContext(Dispatchers.IO) {
                     readUriIntoRegistry(context, uri, id = sourceId)
                 }
-                rightKey = sourceId
-                rightSource = SourceRef(
+                onRightChanged(sourceId, SourceRef(
                     id = sourceId,
                     kind = SourceKind.LOCAL,
                     uriGrant = uri.toString(),
                     label = doc?.label ?: "right",
-                )
+                ))
             }
         }
     }
@@ -669,16 +690,14 @@ private fun SetupDestination(
         onConsumeLeftRef()
         val path = ref.path ?: return@LaunchedEffect
         withContext(Dispatchers.IO) { readFileIntoRegistry(path, id = ref.id) }
-        leftKey = ref.id
-        leftSource = ref
+        onLeftChanged(ref.id, ref)
     }
     LaunchedEffect(fileBrowserRightRef) {
         val ref = fileBrowserRightRef ?: return@LaunchedEffect
         onConsumeRightRef()
         val path = ref.path ?: return@LaunchedEffect
         withContext(Dispatchers.IO) { readFileIntoRegistry(path, id = ref.id) }
-        rightKey = ref.id
-        rightSource = ref
+        onRightChanged(ref.id, ref)
     }
 
     SourceSetupScreen(
@@ -699,8 +718,9 @@ private fun SetupDestination(
             }
         },
         onSwapSides = {
-            val tmpSrc = leftSource; leftSource = rightSource; rightSource = tmpSrc
-            val tmpKey = leftKey; leftKey = rightKey; rightKey = tmpKey
+            val tmpSrc = leftSource; val tmpKey = leftKey
+            onLeftChanged(rightKey, rightSource)
+            onRightChanged(tmpKey, tmpSrc)
         },
         onCompare = {
             val lk = leftKey
