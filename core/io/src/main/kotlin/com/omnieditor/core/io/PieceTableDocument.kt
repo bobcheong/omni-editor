@@ -36,7 +36,7 @@ class PieceTableDocument private constructor(
     // ── Typing coalescing state (R-17b) ──
     private var lastTypingTime = 0L
     private var lastTypingLine = -1L
-    private val COALESCE_WINDOW_MS = 2000L
+    private val coalesceWindowMs = 2000L
 
     private var _editGeneration = 0L
     override val editGeneration: Long get() = _editGeneration
@@ -120,7 +120,7 @@ class PieceTableDocument private constructor(
      * Coalescing breaks when:
      *  - [isTyping] is false
      *  - The line changes (caret jumped to a different line)
-     *  - More than [COALESCE_WINDOW_MS] ms have elapsed since the last typing edit
+     *  - More than [coalesceWindowMs] ms have elapsed since the last typing edit
      *  - [breakCoalescing] is called explicitly (e.g., on save or non-typing op)
      */
     fun editCoalesced(range: LongRange, replacement: CharSequence, isTyping: Boolean = false): Long {
@@ -128,7 +128,7 @@ class PieceTableDocument private constructor(
         val canCoalesce = isTyping &&
             undoStack.isNotEmpty() &&
             lastTypingLine == range.first &&
-            (now - lastTypingTime) < COALESCE_WINDOW_MS
+            (now - lastTypingTime) < coalesceWindowMs
 
         return if (canCoalesce) {
             // Pop the last entry and reverse it so the piece table is back to the

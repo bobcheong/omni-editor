@@ -1,6 +1,5 @@
 package com.omnieditor.feature.editor
 
-import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -20,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,7 +35,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.editableText
 import androidx.compose.ui.semantics.semantics
@@ -66,6 +65,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 /** Byte threshold above which a line is considered "long" and shown truncated. */
 private const val TRUNCATION_CHAR_THRESHOLD = 2_000
 
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 @Composable
 fun EditorContent(
     state: EditorState,
@@ -83,21 +83,6 @@ fun EditorContent(
     val primaryColor = MaterialTheme.colorScheme.primary
     val selectionColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
     val density = LocalDensity.current
-
-    // Detect reduced motion for caret blink
-    val context = LocalContext.current
-    val reduceMotion = remember {
-        try {
-            val scale = Settings.Global.getFloat(
-                context.contentResolver,
-                Settings.Global.ANIMATOR_DURATION_SCALE,
-                1f,
-            )
-            scale == 0f
-        } catch (_: Exception) {
-            false
-        }
-    }
 
     // Text measurer and layout cache for caret/selection positioning
     val textStyle = remember {
@@ -129,6 +114,11 @@ fun EditorContent(
             }
             highlighter?.invalidateFrom(startLine.toInt())
             highlighter?.notifyLineCountChanged(state.lineCount.toInt())
+            // Invalidate wrapped-row info for edited lines so stale boundaries
+            // are not used by key handlers before the next composition pass.
+            if (state.wordWrap) {
+                state.wrappedRowCache.invalidate(startLine)
+            }
         }
     }
 
@@ -142,6 +132,18 @@ fun EditorContent(
     // Container size for layout constraints
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     val gutterWidthPx = with(density) { gutterWidth.toPx() }
+
+    // Sync displaySettings.wordWrap into state.wordWrap (R-18b).
+    // Key handlers read state.wordWrap; displaySettings drives the UI setting.
+    // When word wrap is toggled off, clear stale wrapped-row entries.
+    SideEffect {
+        if (state.wordWrap != displaySettings.wordWrap) {
+            state.wordWrap = displaySettings.wordWrap
+            if (!displaySettings.wordWrap) {
+                state.wrappedRowCache.clear()
+            }
+        }
+    }
 
     // Floating toolbar state
     var showToolbar by remember { mutableStateOf(false) }
@@ -386,6 +388,45 @@ fun EditorContent(
                 val selBounds = state.selectionBounds()
                 val lineIdx = index.toLong()
 
+                // ── Populate wrappedRowCache during composition (R-18b) ────────
+                // When word wrap is on, measure this line and extract visual-row
+                // start columns from the TextLayoutResult so key handlers can
+                // navigate between visual rows. The measurement hits the
+                // LineLayoutCache and is effectively free on re-composition.
+                if (displaySettings.wordWrap && containerSize.width > 0) {
+                    val contentWidth = (containerSize.width - gutterWidthPx)
+                        .toInt()
+                        .coerceAtLeast(1)
+                    // Capture values for the SideEffect closure.
+                    val capturedLineIdx = lineIdx
+                    val capturedText = displayText
+                    val capturedEditGen = state.document.editGeneration
+                    SideEffect {
+                        val layout = layoutCache.measure(
+                            lineIndex = capturedLineIdx,
+                            lineText = expandTabs(capturedText, 4),
+                            constraints = Constraints(maxWidth = contentWidth),
+                            editGeneration = capturedEditGen,
+                        )
+                        if (layout.lineCount > 1) {
+                            // Build the map from display-char offsets back to logical-char offsets.
+                            val displayToChar = buildDisplayToCharMap(capturedText, 4)
+                            val starts = IntArray(layout.lineCount) { vRow ->
+                                val displayStart = layout.getLineStart(vRow)
+                                if (displayStart < displayToChar.size) {
+                                    displayToChar[displayStart]
+                                } else {
+                                    capturedText.length
+                                }
+                            }
+                            state.wrappedRowCache.put(capturedLineIdx, starts)
+                        } else {
+                            // Single visual row — store a trivial entry so we know it's been measured.
+                            state.wrappedRowCache.put(capturedLineIdx, intArrayOf(0))
+                        }
+                    }
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -619,6 +660,7 @@ private fun resolveLineFromY(
 /**
  * Resolve a column index from an X position within the text content area.
  */
+@Suppress("UnusedParameter")
 private fun resolveColumnFromX(
     lineText: String,
     xInContent: Float,

@@ -180,6 +180,7 @@ internal fun handleTextFieldValueChange(
 /**
  * Handle hardware keyboard events. Returns true if the event was consumed.
  */
+@Suppress("CyclomaticComplexMethod", "LongMethod")
 internal fun handleHardwareKey(
     state: EditorState,
     event: androidx.compose.ui.input.key.KeyEvent,
@@ -271,45 +272,94 @@ internal fun handleHardwareKey(
             true
         }
         event.key == Key.DirectionUp -> {
+            val lineText = state.document.line(state.caretLine)
+            val newCol = if (state.wordWrap) {
+                state.wrappedRowCache.moveUpVisualRow(
+                    state.caretLine, state.caretColumn, lineText.length,
+                )
+            } else null
             if (shift) {
                 state.startSelection()
-                if (state.caretLine > 0) {
+                if (newCol != null) {
+                    // Stay on same logical line, move to previous visual row
+                    state.moveCaretWithSelection(state.caretLine, newCol)
+                } else if (state.caretLine > 0) {
                     state.moveCaretWithSelection(state.caretLine - 1, state.caretColumn)
                 }
             } else {
-                if (state.caretLine > 0) state.moveCaret(state.caretLine - 1, state.caretColumn)
+                if (newCol != null) {
+                    state.moveCaret(state.caretLine, newCol)
+                } else if (state.caretLine > 0) {
+                    state.moveCaret(state.caretLine - 1, state.caretColumn)
+                }
             }
             true
         }
         event.key == Key.DirectionDown -> {
+            val lineText = state.document.line(state.caretLine)
+            val newCol = if (state.wordWrap) {
+                state.wrappedRowCache.moveDownVisualRow(
+                    state.caretLine, state.caretColumn, lineText.length,
+                )
+            } else null
             if (shift) {
                 state.startSelection()
-                if (state.caretLine < state.lineCount - 1) {
+                if (newCol != null) {
+                    // Stay on same logical line, move to next visual row
+                    state.moveCaretWithSelection(state.caretLine, newCol)
+                } else if (state.caretLine < state.lineCount - 1) {
                     state.moveCaretWithSelection(state.caretLine + 1, state.caretColumn)
                 }
             } else {
-                if (state.caretLine < state.lineCount - 1) {
+                if (newCol != null) {
+                    state.moveCaret(state.caretLine, newCol)
+                } else if (state.caretLine < state.lineCount - 1) {
                     state.moveCaret(state.caretLine + 1, state.caretColumn)
                 }
             }
             true
         }
         event.key == Key.MoveHome -> {
+            val lineText = state.document.line(state.caretLine)
+            val visualRowStart = if (state.wordWrap) {
+                val vRow = state.wrappedRowCache.visualRowOf(state.caretLine, state.caretColumn)
+                state.wrappedRowCache.rowStart(state.caretLine, vRow)
+            } else {
+                0
+            }
             if (shift) {
                 state.startSelection()
-                state.moveCaretWithSelection(state.caretLine, 0)
+                // If already at the visual row start, go to column 0 of the logical line.
+                val target = if (state.caretColumn == visualRowStart && visualRowStart != 0) {
+                    0
+                } else {
+                    visualRowStart
+                }
+                state.moveCaretWithSelection(state.caretLine, target)
             } else {
-                state.moveCaret(state.caretLine, 0)
+                // Smart home: first press → visual row start; second press → column 0.
+                val target = if (state.caretColumn == visualRowStart && visualRowStart != 0) {
+                    0
+                } else {
+                    visualRowStart
+                }
+                state.moveCaret(state.caretLine, target)
             }
             true
         }
         event.key == Key.MoveEnd -> {
             val lineText = state.document.line(state.caretLine)
+            val visualRowEnd = if (state.wordWrap) {
+                val vRow = state.wrappedRowCache.visualRowOf(state.caretLine, state.caretColumn)
+                state.wrappedRowCache.rowEnd(state.caretLine, vRow, lineText.length)
+            } else {
+                lineText.length
+            }
             if (shift) {
                 state.startSelection()
-                state.moveCaretWithSelection(state.caretLine, lineText.length)
+                state.moveCaretWithSelection(state.caretLine, visualRowEnd)
             } else {
-                state.moveCaret(state.caretLine, lineText.length)
+                state.moveCaret(state.caretLine, visualRowEnd)
             }
             true
         }

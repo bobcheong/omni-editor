@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
+@Suppress("LongMethod")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(
@@ -476,9 +477,48 @@ private fun handleNavKey(state: EditorState, key: String) {
             if (state.caretColumn < cur.length) state.moveCaret(state.caretLine, state.caretColumn + 1)
             else if (state.caretLine < state.lineCount - 1) state.moveCaret(state.caretLine + 1, 0)
         }
-        "UP" -> if (state.caretLine > 0) state.moveCaret(state.caretLine - 1, state.caretColumn)
-        "DOWN" -> if (state.caretLine < state.lineCount - 1) state.moveCaret(state.caretLine + 1, state.caretColumn)
-        "HOME" -> state.moveCaret(state.caretLine, 0)
-        "END" -> state.moveCaret(state.caretLine, state.document.line(state.caretLine).length)
+        "UP" -> {
+            val lineText = state.document.line(state.caretLine)
+            val newCol = if (state.wordWrap) {
+                state.wrappedRowCache.moveUpVisualRow(
+                    state.caretLine, state.caretColumn, lineText.length,
+                )
+            } else null
+            if (newCol != null) {
+                state.moveCaret(state.caretLine, newCol)
+            } else if (state.caretLine > 0) {
+                state.moveCaret(state.caretLine - 1, state.caretColumn)
+            }
+        }
+        "DOWN" -> {
+            val lineText = state.document.line(state.caretLine)
+            val newCol = if (state.wordWrap) {
+                state.wrappedRowCache.moveDownVisualRow(
+                    state.caretLine, state.caretColumn, lineText.length,
+                )
+            } else null
+            if (newCol != null) {
+                state.moveCaret(state.caretLine, newCol)
+            } else if (state.caretLine < state.lineCount - 1) {
+                state.moveCaret(state.caretLine + 1, state.caretColumn)
+            }
+        }
+        "HOME" -> {
+            val visualRowStart = if (state.wordWrap) {
+                val vRow = state.wrappedRowCache.visualRowOf(state.caretLine, state.caretColumn)
+                state.wrappedRowCache.rowStart(state.caretLine, vRow)
+            } else 0
+            // Smart home: first press → visual row start; second press → column 0.
+            val target = if (state.caretColumn == visualRowStart && visualRowStart != 0) 0 else visualRowStart
+            state.moveCaret(state.caretLine, target)
+        }
+        "END" -> {
+            val lineText = state.document.line(state.caretLine)
+            val visualRowEnd = if (state.wordWrap) {
+                val vRow = state.wrappedRowCache.visualRowOf(state.caretLine, state.caretColumn)
+                state.wrappedRowCache.rowEnd(state.caretLine, vRow, lineText.length)
+            } else lineText.length
+            state.moveCaret(state.caretLine, visualRowEnd)
+        }
     }
 }

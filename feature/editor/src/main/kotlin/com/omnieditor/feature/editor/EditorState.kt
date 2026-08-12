@@ -51,6 +51,29 @@ class EditorState(
     /** Whether the document is in read-only mode. */
     var readOnly by mutableStateOf(false)
 
+    /**
+     * Whether word wrap is currently enabled for this editor session.
+     *
+     * Toggling this preserves the logical caret position (line, column).
+     * The scroll position is adjusted by [EditorContent] to keep the caret
+     * visible after the toggle.
+     */
+    var wordWrap by mutableStateOf(false)
+
+    /**
+     * Cache of visual-row start columns for wrapped lines.
+     *
+     * Populated by [EditorContent] from [LineLayoutCache] results during
+     * composition. Key-event handlers query this to navigate between visual
+     * rows when [wordWrap] is true. Entries are automatically stale when the
+     * document is edited; [EditorContent] clears and repopulates them during
+     * the next composition pass.
+     *
+     * When [wordWrap] is false this cache is not consulted and need not be
+     * populated.
+     */
+    val wrappedRowCache: WrappedRowCache = WrappedRowCache()
+
     // ── IME composing region (R-16) ──────────────────────────────────────
 
     /** Start of the composing region within the composing line, or -1 when inactive. */
