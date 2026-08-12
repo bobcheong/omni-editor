@@ -66,6 +66,9 @@ fun UnifiedDiffView(
         }
     }
     val listState = rememberLazyListState()
+    // One shared horizontal scroll state for all rows — the whole document
+    // scrolls horizontally as one unit, not per-line.
+    val sharedHorizontalScroll = rememberScrollState()
     val colors = LocalCompareColors.current
     val hunks = state.result.hunks
     val cache = state.intraLineCache
@@ -122,6 +125,7 @@ fun UnifiedDiffView(
                 hunks = hunks,
                 intraLineCache = cache,
                 granularity = granularity,
+                horizontalScrollState = sharedHorizontalScroll,
                 onTap = if (onDiffRowTapped != null && row.type != RowType.CONTEXT && row.hunkIndex != null) {
                     { onDiffRowTapped(row.hunkIndex) }
                 } else {
@@ -144,6 +148,7 @@ private fun UnifiedAlignedRow(
     hunks: List<com.omnieditor.core.model.Hunk>,
     intraLineCache: IntraLineCache,
     granularity: Granularity,
+    horizontalScrollState: androidx.compose.foundation.ScrollState,
     onTap: (() -> Unit)? = null,
 ) {
     val (bgColor, fgColor, glyph) = when (row.type) {
@@ -247,7 +252,7 @@ private fun UnifiedAlignedRow(
             softWrap = false,
             modifier = Modifier
                 .weight(1f)
-                .horizontalScroll(rememberScrollState()),
+                .horizontalScroll(horizontalScrollState),
         )
     }
 }
