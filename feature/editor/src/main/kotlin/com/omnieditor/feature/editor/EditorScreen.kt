@@ -103,7 +103,7 @@ fun EditorScreen(
     var showGoToLineDialog by remember { mutableStateOf(false) }
     var showShortcutsSheet by remember { mutableStateOf(false) }
 
-    val isDirty = (uiState as? EditorUiState.Loaded)?.editorState?.document?.dirty == true
+    val isDirty = viewModel.isDirty
 
     // Intercept the system back gesture/button when there are unsaved changes.
     BackHandler(enabled = isDirty) {

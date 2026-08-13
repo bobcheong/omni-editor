@@ -558,20 +558,39 @@ private fun EditorDestination(
             // keeping feature:editor free of Android framework dependencies.
             viewModel.setSaveFunction { bytes ->
                 withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(uri, "wt")?.use { out ->
-                        out.write(bytes)
-                        out.flush()
-                    } ?: throw java.io.IOException("Cannot open $sourceUri for writing")
+                    if (uri.scheme == "file") {
+                        // Direct flavour: write to filesystem path directly.
+                        // ContentResolver.openOutputStream does not support file:// URIs
+                        // on modern Android (API 31+).
+                        val file = java.io.File(uri.path!!)
+                        file.writeBytes(bytes)
+                    } else {
+                        // Store flavour: write through ContentResolver (content:// URIs).
+                        context.contentResolver.openOutputStream(uri, "wt")?.use { out ->
+                            out.write(bytes)
+                            out.flush()
+                        } ?: throw java.io.IOException("Cannot open $sourceUri for writing")
+                    }
                     // Update fingerprint snapshot after a successful save so the next
                     // resume check doesn't false-positive on our own write.
-                    context.contentResolver.query(
-                        uri,
-                        arrayOf(OpenableColumns.SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED),
-                        null, null, null
-                    )?.use { cursor ->
-                        if (cursor.moveToFirst()) {
-                            initialSize = cursor.getLong(0)
-                            initialModified = cursor.getLong(1)
+                    try {
+                        context.contentResolver.query(
+                            uri,
+                            arrayOf(OpenableColumns.SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED),
+                            null, null, null
+                        )?.use { cursor ->
+                            if (cursor.moveToFirst()) {
+                                initialSize = cursor.getLong(0)
+                                initialModified = cursor.getLong(1)
+                            }
+                        }
+                    } catch (_: Exception) {
+                        // file:// URIs may not support ContentResolver queries — that's OK,
+                        // the file is already written.
+                        if (uri.scheme == "file") {
+                            val file = java.io.File(uri.path!!)
+                            initialSize = file.length()
+                            initialModified = file.lastModified()
                         }
                     }
                 }

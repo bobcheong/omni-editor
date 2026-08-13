@@ -113,6 +113,10 @@ class EditorViewModel @Inject constructor() : ViewModel() {
         }
     }
 
+    /** Observable dirty flag — updated by collecting the document's change flow. */
+    var isDirty by mutableStateOf(false)
+        private set
+
     // Find/replace state
     var findMatches by mutableStateOf<List<FindReplace.Match>>(emptyList())
         private set
@@ -138,7 +142,14 @@ class EditorViewModel @Inject constructor() : ViewModel() {
         val state = EditorState(doc)
         state.readOnly = readOnly
         editorState = state
+        isDirty = false
         _uiState.value = EditorUiState.Loaded(state)
+        // Collect document changes to keep isDirty observable by Compose.
+        viewModelScope.launch {
+            doc.changes.collect {
+                isDirty = doc.dirty
+            }
+        }
     }
 
     fun getContent(): String = editorState?.document?.text() ?: ""
@@ -164,6 +175,7 @@ class EditorViewModel @Inject constructor() : ViewModel() {
                 state.document.materialise(Channels.newChannel(baos))
                 fn(baos.toByteArray())
                 state.document.markSaved()
+                isDirty = false
                 _uiState.value = EditorUiState.Loaded(state)
             } catch (e: IOException) {
                 _uiState.value = EditorUiState.Error("Save failed: ${e.message}")
