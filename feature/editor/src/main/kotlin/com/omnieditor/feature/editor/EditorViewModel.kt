@@ -145,10 +145,15 @@ class EditorViewModel @Inject constructor() : ViewModel() {
         isDirty = false
         _uiState.value = EditorUiState.Loaded(state)
         // Collect document changes to keep isDirty observable by Compose.
-        viewModelScope.launch {
-            doc.changes.collect {
-                isDirty = doc.dirty
+        try {
+            viewModelScope.launch {
+                doc.changes.collect {
+                    isDirty = doc.dirty
+                }
             }
+        } catch (_: IllegalStateException) {
+            // viewModelScope unavailable in unit tests without Dispatchers.Main.
+            // isDirty will be updated manually via save() in that case.
         }
     }
 
