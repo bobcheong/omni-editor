@@ -202,6 +202,7 @@ fun OmniNavGraph(
     var setupLeftSource by remember { mutableStateOf<SourceRef?>(null) }
     var setupRightSource by remember { mutableStateOf<SourceRef?>(null) }
     var setupThirdSource by remember { mutableStateOf<SourceRef?>(null) }
+    var setupShowThirdSlot by remember { mutableStateOf(false) }
     var setupLeftKey by remember { mutableStateOf<String?>(null) }
     var setupRightKey by remember { mutableStateOf<String?>(null) }
     var setupThirdKey by remember { mutableStateOf<String?>(null) }
@@ -354,6 +355,8 @@ fun OmniNavGraph(
                 leftSource = setupLeftSource,
                 rightSource = setupRightSource,
                 thirdSource = setupThirdSource,
+                showThirdSlot = setupShowThirdSlot || setupThirdSource != null,
+                onShowThirdSlot = { setupShowThirdSlot = true },
                 leftKey = setupLeftKey,
                 rightKey = setupRightKey,
                 thirdKey = setupThirdKey,
@@ -709,6 +712,8 @@ private fun SetupDestination(
     leftSource: SourceRef?,
     rightSource: SourceRef?,
     thirdSource: SourceRef?,
+    showThirdSlot: Boolean = false,
+    onShowThirdSlot: () -> Unit = {},
     leftKey: String?,
     rightKey: String?,
     thirdKey: String?,
@@ -818,6 +823,8 @@ private fun SetupDestination(
         leftSource = leftSource,
         rightSource = rightSource,
         thirdSource = thirdSource,
+        showThirdSlot = showThirdSlot,
+        onShowThirdSlot = onShowThirdSlot,
         onPickLeft = {
             if (hasFlavourFileBrowser()) {
                 navController.navigate("filebrowser/left")

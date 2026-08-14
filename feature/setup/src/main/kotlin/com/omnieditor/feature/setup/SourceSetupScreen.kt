@@ -26,10 +26,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,6 +39,10 @@ fun SourceSetupScreen(
     leftSource: SourceRef? = null,
     rightSource: SourceRef? = null,
     thirdSource: SourceRef? = null,
+    /** Whether the third-file slot is visible (hoisted to survive navigation). */
+    showThirdSlot: Boolean = false,
+    /** Called when the user taps "Add third file" to make the slot visible. */
+    onShowThirdSlot: () -> Unit = {},
     inferredMode: CompareMode = CompareMode.TEXT,
     rulesCount: Int = 0,
     onPickLeft: () -> Unit = {},
@@ -54,7 +54,6 @@ fun SourceSetupScreen(
     onCompare: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
 ) {
-    var showThirdSlot by remember { mutableStateOf(thirdSource != null) }
 
     Scaffold(
         topBar = {
@@ -108,7 +107,7 @@ fun SourceSetupScreen(
             if (showThirdSlot) {
                 SourceSlot("BASE", thirdSource, onPickThird)
             } else {
-                OutlinedButton(onClick = { showThirdSlot = true }) {
+                OutlinedButton(onClick = onShowThirdSlot) {
                     Text("+ Add third file (3-way)")
                 }
             }
