@@ -245,6 +245,7 @@ fun CompareScreen(
                 findMatches = findMatches,
                 findMatchIndex = findMatchIndex,
                 showActiveLineSheet = showActiveLineSheet,
+                settingsState = settingsState,
                 tappedHunkIndex = tappedHunkIndex,
                 onFindQueryChanged = { findQuery = it; findMatchIndex = 0 },
                 onFindPrevious = {
@@ -337,6 +338,7 @@ private fun CompareContent(
     findMatches: List<Int>,
     findMatchIndex: Int,
     showActiveLineSheet: Boolean,
+    settingsState: CompareSettingsState = CompareSettingsState(),
     tappedHunkIndex: Int?,
     onFindQueryChanged: (String) -> Unit,
     onFindPrevious: () -> Unit,
@@ -384,6 +386,7 @@ private fun CompareContent(
                         onDiffRowTapped = onDiffRowTapped,
                         findMatches = findMatches,
                         findMatchIndex = if (showFindBar && findMatches.isNotEmpty()) findMatchIndex else -1,
+                        layoutMode = settingsState.layoutMode,
                     )
                     DiffMinimap(
                         hunks = state.result.hunks,

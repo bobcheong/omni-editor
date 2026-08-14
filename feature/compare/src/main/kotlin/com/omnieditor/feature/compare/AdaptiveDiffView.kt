@@ -3,10 +3,6 @@ package com.omnieditor.feature.compare
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
@@ -30,12 +26,15 @@ fun AdaptiveDiffView(
     findMatches: List<Int> = emptyList(),
     /** Index within [findMatches] that is currently focused; -1 to highlight nothing. */
     findMatchIndex: Int = -1,
+    /** Layout override from settings: "unified", "split", or "auto" (width-driven). */
+    layoutMode: String = "auto",
 ) {
-    // Manual override: null = auto, true = split, false = unified
-    var layoutOverride by rememberSaveable { mutableStateOf<Boolean?>(null) }
-
     BoxWithConstraints(modifier = modifier) {
-        val usesSplit = layoutOverride ?: (maxWidth >= 600.dp)
+        val usesSplit = when (layoutMode) {
+            "split" -> true
+            "unified" -> false
+            else -> maxWidth >= 600.dp  // auto
+        }
 
         if (usesSplit) {
             SplitDiffView(

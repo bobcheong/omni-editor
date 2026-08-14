@@ -34,6 +34,7 @@ import com.omnieditor.core.io.RecentsStore
 import com.omnieditor.core.io.ResultStore
 import com.omnieditor.core.io.SessionStore
 import com.omnieditor.core.model.CompareMode
+import com.omnieditor.core.model.Granularity
 import com.omnieditor.core.model.DocumentLimits
 import com.omnieditor.core.model.Session
 import com.omnieditor.core.model.RuleSet
@@ -904,6 +905,20 @@ private fun CompareDestination(
     var currentRuleSet by remember { mutableStateOf(RuleSet.DEFAULT) }
     var compareProgress by remember { mutableStateOf<Float?>(null) }
     var compareJob by remember { mutableStateOf<Job?>(null) }
+
+    // Sync settings granularity into the current rule set so menu toggles
+    // trigger a re-compare. The LaunchedEffect fires when the DataStore
+    // value changes (propagated via settingsState.granularity).
+    val settingsGranularity = when (settingsState.granularity) {
+        "line" -> Granularity.LINE
+        "char" -> Granularity.CHARACTER
+        else -> Granularity.WORD
+    }
+    LaunchedEffect(settingsGranularity) {
+        if (currentRuleSet.granularity != settingsGranularity) {
+            currentRuleSet = currentRuleSet.copy(granularity = settingsGranularity)
+        }
+    }
 
     // R-27: create PieceTableDocuments for merge write-back.
     // Key on effective keys so documents are recreated when sides are flipped.
