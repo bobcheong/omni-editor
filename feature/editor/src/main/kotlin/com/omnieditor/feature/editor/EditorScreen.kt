@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -51,6 +52,17 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.omnieditor.design.KeyboardShortcutsSheet
 
 /**
+ * Current state of editor view-toggle settings, passed down from the NavGraph
+ * so the menu can show checkmarks for active settings.
+ */
+data class EditorSettingsState(
+    val wordWrapEnabled: Boolean = false,
+    val showLineNumbers: Boolean = true,
+    val showWhitespace: Boolean = false,
+    val fontSize: Int = 14,
+)
+
+/**
  * Grouped callbacks for the editor top-bar menu, keeping [EditorTopBar]'s parameter count
  * within the detekt LongParameterList threshold.
  */
@@ -79,6 +91,14 @@ data class EditorMenuCallbacks(
     val onConvertLineEndingCR: () -> Unit = {},
     /** Open the keyboard shortcuts reference sheet (R-37). */
     val onKeyboardShortcuts: () -> Unit = {},
+    // View-toggle callbacks
+    val onToggleWordWrap: () -> Unit = {},
+    val onToggleLineNumbers: () -> Unit = {},
+    val onToggleWhitespace: () -> Unit = {},
+    val onIncreaseFontSize: () -> Unit = {},
+    val onDecreaseFontSize: () -> Unit = {},
+    /** Navigate to the Settings screen. */
+    val onOpenSettings: () -> Unit = {},
 )
 
 @Suppress("LongMethod")
@@ -93,6 +113,13 @@ fun EditorScreen(
     onNewTab: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
     onCompareWith: () -> Unit = {},
+    settingsState: EditorSettingsState = EditorSettingsState(),
+    onToggleWordWrap: () -> Unit = {},
+    onToggleLineNumbers: () -> Unit = {},
+    onToggleWhitespace: () -> Unit = {},
+    onIncreaseFontSize: () -> Unit = {},
+    onDecreaseFontSize: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     viewModel: EditorViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -184,6 +211,7 @@ fun EditorScreen(
                 onNavigateBack = onNavigateBack,
                 onFind = { showFind = !showFind },
                 onCompareWith = onCompareWith,
+                settingsState = settingsState,
                 callbacks = EditorMenuCallbacks(
                     onSave = { viewModel.save() },
                     onUndo = { viewModel.undo() },
@@ -208,6 +236,12 @@ fun EditorScreen(
                     onConvertLineEndingLF = { viewModel.convertLineEnding("\n") },
                     onConvertLineEndingCR = { viewModel.convertLineEnding("\r") },
                     onKeyboardShortcuts = { showShortcutsSheet = true },
+                    onToggleWordWrap = onToggleWordWrap,
+                    onToggleLineNumbers = onToggleLineNumbers,
+                    onToggleWhitespace = onToggleWhitespace,
+                    onIncreaseFontSize = onIncreaseFontSize,
+                    onDecreaseFontSize = onDecreaseFontSize,
+                    onOpenSettings = onOpenSettings,
                 ),
             )
         },
@@ -350,6 +384,7 @@ private fun EditorTopBar(
     onNavigateBack: () -> Unit,
     onFind: () -> Unit,
     onCompareWith: () -> Unit,
+    settingsState: EditorSettingsState,
     callbacks: EditorMenuCallbacks,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -357,6 +392,10 @@ private fun EditorTopBar(
     var caseExpanded by remember { mutableStateOf(false) }
     var bookmarkExpanded by remember { mutableStateOf(false) }
     var lineEndingExpanded by remember { mutableStateOf(false) }
+
+    val checkIcon: @Composable () -> Unit = {
+        Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+    }
 
     TopAppBar(
         title = { Text(title, maxLines = 1) },
@@ -373,17 +412,51 @@ private fun EditorTopBar(
                 Icon(Icons.Default.MoreVert, "More")
             }
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                DropdownMenuItem(text = { Text("Save") }, onClick = { menuExpanded = false; callbacks.onSave() })
-                DropdownMenuItem(text = { Text("Undo") }, onClick = { menuExpanded = false; callbacks.onUndo() })
-                DropdownMenuItem(text = { Text("Redo") }, onClick = { menuExpanded = false; callbacks.onRedo() })
-                DropdownMenuItem(text = { Text("Go to line…") }, onClick = { menuExpanded = false; callbacks.onGoToLine() })
+                // ── View section (quick toggles) ──
+                DropdownMenuItem(
+                    text = { Text("Word wrap") },
+                    onClick = { menuExpanded = false; callbacks.onToggleWordWrap() },
+                    leadingIcon = if (settingsState.wordWrapEnabled) { checkIcon } else null,
+                )
+                DropdownMenuItem(
+                    text = { Text("Line numbers") },
+                    onClick = { menuExpanded = false; callbacks.onToggleLineNumbers() },
+                    leadingIcon = if (settingsState.showLineNumbers) { checkIcon } else null,
+                )
+                DropdownMenuItem(
+                    text = { Text("Show whitespace") },
+                    onClick = { menuExpanded = false; callbacks.onToggleWhitespace() },
+                    leadingIcon = if (settingsState.showWhitespace) { checkIcon } else null,
+                )
+                DropdownMenuItem(
+                    text = { Text("Increase font") },
+                    onClick = { menuExpanded = false; callbacks.onIncreaseFontSize() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Decrease font") },
+                    onClick = { menuExpanded = false; callbacks.onDecreaseFontSize() },
+                )
                 HorizontalDivider()
+                // ── Edit section ──
+                DropdownMenuItem(
+                    text = { Text("Find and replace") },
+                    onClick = { menuExpanded = false; onFind() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Go to line…") },
+                    onClick = { menuExpanded = false; callbacks.onGoToLine() },
+                )
                 DropdownMenuItem(text = { Text("Text tools ▸") }, onClick = {
                     menuExpanded = false; textToolsExpanded = true
                 })
                 DropdownMenuItem(text = { Text("Case conversion ▸") }, onClick = {
                     menuExpanded = false; caseExpanded = true
                 })
+                HorizontalDivider()
+                // ── Document section ──
+                DropdownMenuItem(text = { Text("Save") }, onClick = { menuExpanded = false; callbacks.onSave() })
+                DropdownMenuItem(text = { Text("Undo") }, onClick = { menuExpanded = false; callbacks.onUndo() })
+                DropdownMenuItem(text = { Text("Redo") }, onClick = { menuExpanded = false; callbacks.onRedo() })
                 DropdownMenuItem(text = { Text("Bookmarks ▸") }, onClick = {
                     menuExpanded = false; bookmarkExpanded = true
                 })
@@ -393,12 +466,15 @@ private fun EditorTopBar(
                 DropdownMenuItem(text = { Text("Line ending ▸") }, onClick = {
                     menuExpanded = false; lineEndingExpanded = true
                 })
+                DropdownMenuItem(text = { Text("Compare with…") }, onClick = { menuExpanded = false; onCompareWith() })
                 HorizontalDivider()
+                // ── Footer ──
                 DropdownMenuItem(text = { Text("Keyboard shortcuts") }, onClick = {
                     menuExpanded = false; callbacks.onKeyboardShortcuts()
                 })
-                HorizontalDivider()
-                DropdownMenuItem(text = { Text("Compare with…") }, onClick = { menuExpanded = false; onCompareWith() })
+                DropdownMenuItem(text = { Text("Settings") }, onClick = {
+                    menuExpanded = false; callbacks.onOpenSettings()
+                })
             }
             // Text tools submenu
             DropdownMenu(expanded = textToolsExpanded, onDismissRequest = { textToolsExpanded = false }) {

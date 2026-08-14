@@ -17,12 +17,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -55,6 +57,26 @@ import com.omnieditor.core.model.WhitespaceRule
 import com.omnieditor.design.KeyboardShortcutsSheet
 import kotlinx.coroutines.launch
 
+/**
+ * Current state of compare view-toggle settings, passed from the NavGraph
+ * so the menu can show checkmarks for active settings.
+ */
+data class CompareSettingsState(
+    val layoutMode: String = "unified",
+    val syncScroll: Boolean = true,
+    val granularity: String = "word",
+)
+
+/**
+ * Grouped callbacks for compare view-toggle settings.
+ */
+data class CompareSettingsCallbacks(
+    val onSetLayout: (String) -> Unit = {},
+    val onToggleSyncScroll: () -> Unit = {},
+    val onSetGranularity: (String) -> Unit = {},
+    val onOpenSettings: () -> Unit = {},
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CompareScreen(
@@ -81,6 +103,8 @@ fun CompareScreen(
     onCancelCompare: (() -> Unit)? = null,
     /** Optional tab strip rendered above the compare content (R-34b). */
     tabStripContent: (@Composable () -> Unit)? = null,
+    settingsState: CompareSettingsState = CompareSettingsState(),
+    settingsCallbacks: CompareSettingsCallbacks = CompareSettingsCallbacks(),
     modifier: Modifier = Modifier,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -163,6 +187,8 @@ fun CompareScreen(
                 onRerunCompare = onRerunCompare,
                 onExportReport = onExportReport,
                 onKeyboardShortcuts = { showShortcutsSheet = true },
+                settingsState = settingsState,
+                settingsCallbacks = settingsCallbacks,
             )
         },
         bottomBar = {
@@ -457,8 +483,15 @@ private fun CompareTopBar(
     onRerunCompare: (() -> Unit)?,
     onExportReport: (() -> Unit)?,
     onKeyboardShortcuts: () -> Unit = {},
+    settingsState: CompareSettingsState = CompareSettingsState(),
+    settingsCallbacks: CompareSettingsCallbacks = CompareSettingsCallbacks(),
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    var granularityExpanded by remember { mutableStateOf(false) }
+
+    val checkIcon: @Composable () -> Unit = {
+        Icon(Icons.Default.Check, null, modifier = Modifier.padding(0.dp))
+    }
 
     val dirtyIndicator = buildString {
         if (leftDirty || rightDirty) {
@@ -488,8 +521,6 @@ private fun CompareTopBar(
             // Conflict count chip — only shown when conflicts are present (R-32)
             if (conflictCount > 0) {
                 val compareColors = com.omnieditor.design.LocalCompareColors.current
-                // AssistChip is display-only here; no tap action is defined for the
-                // conflict count badge. onClick is intentionally a no-op.
                 AssistChip(
                     onClick = { /* display-only badge — no tap action */ },
                     label = {
@@ -507,76 +538,102 @@ private fun CompareTopBar(
                 Icon(Icons.Default.MoreVert, "More")
             }
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                if (onSave != null && (leftDirty || rightDirty)) {
-                    DropdownMenuItem(
-                        text = { Text("Save merged") },
-                        onClick = {
-                            menuExpanded = false
-                            onSave()
-                        },
-                    )
-                }
-                if (canUndo) {
-                    DropdownMenuItem(
-                        text = { Text("Restore originals") },
-                        onClick = {
-                            menuExpanded = false
-                            onRestoreOriginals()
-                        },
-                    )
-                }
+                // ── View section (quick toggles) ──
+                DropdownMenuItem(
+                    text = { Text("Layout: Unified") },
+                    onClick = { menuExpanded = false; settingsCallbacks.onSetLayout("unified") },
+                    leadingIcon = if (settingsState.layoutMode == "unified") { checkIcon } else null,
+                )
+                DropdownMenuItem(
+                    text = { Text("Layout: Split") },
+                    onClick = { menuExpanded = false; settingsCallbacks.onSetLayout("split") },
+                    leadingIcon = if (settingsState.layoutMode == "split") { checkIcon } else null,
+                )
+                DropdownMenuItem(
+                    text = { Text("Sync scroll") },
+                    onClick = { menuExpanded = false; settingsCallbacks.onToggleSyncScroll() },
+                    leadingIcon = if (settingsState.syncScroll) { checkIcon } else null,
+                )
+                DropdownMenuItem(text = { Text("Granularity ▸") }, onClick = {
+                    menuExpanded = false; granularityExpanded = true
+                })
+                HorizontalDivider()
+                // ── Actions section ──
                 if (onOpenLeft != null) {
                     DropdownMenuItem(
                         text = { Text("Open left in viewer") },
-                        onClick = {
-                            menuExpanded = false
-                            onOpenLeft()
-                        },
+                        onClick = { menuExpanded = false; onOpenLeft() },
                     )
                 }
                 if (onOpenRight != null) {
                     DropdownMenuItem(
                         text = { Text("Open right in viewer") },
-                        onClick = {
-                            menuExpanded = false
-                            onOpenRight()
-                        },
+                        onClick = { menuExpanded = false; onOpenRight() },
                     )
                 }
                 if (onFlipSides != null) {
                     DropdownMenuItem(
                         text = { Text("Flip sides") },
-                        onClick = {
-                            menuExpanded = false
-                            onFlipSides()
-                        },
+                        onClick = { menuExpanded = false; onFlipSides() },
                     )
                 }
                 if (onRerunCompare != null) {
                     DropdownMenuItem(
                         text = { Text("Re-run compare") },
-                        onClick = {
-                            menuExpanded = false
-                            onRerunCompare()
-                        },
+                        onClick = { menuExpanded = false; onRerunCompare() },
                     )
                 }
                 if (onExportReport != null) {
                     DropdownMenuItem(
                         text = { Text("Export report") },
-                        onClick = {
-                            menuExpanded = false
-                            onExportReport()
-                        },
+                        onClick = { menuExpanded = false; onExportReport() },
                     )
                 }
-                androidx.compose.material3.HorizontalDivider()
+                if (onSave != null && (leftDirty || rightDirty)) {
+                    DropdownMenuItem(
+                        text = { Text("Save merged") },
+                        onClick = { menuExpanded = false; onSave() },
+                    )
+                }
+                if (canUndo) {
+                    DropdownMenuItem(
+                        text = { Text("Restore originals") },
+                        onClick = { menuExpanded = false; onRestoreOriginals() },
+                    )
+                }
+                HorizontalDivider()
+                // ── Navigation section ──
+                DropdownMenuItem(
+                    text = { Text("Rules") },
+                    onClick = { menuExpanded = false; onRulesClick() },
+                )
+                HorizontalDivider()
+                // ── Footer ──
                 DropdownMenuItem(
                     text = { Text("Keyboard shortcuts") },
-                    onClick = {
-                        menuExpanded = false
-                        onKeyboardShortcuts()
-                    },
+                    onClick = { menuExpanded = false; onKeyboardShortcuts() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Settings") },
+                    onClick = { menuExpanded = false; settingsCallbacks.onOpenSettings() },
+                )
+            }
+            // Granularity submenu
+            DropdownMenu(expanded = granularityExpanded, onDismissRequest = { granularityExpanded = false }) {
+                DropdownMenuItem(
+                    text = { Text("Line") },
+                    onClick = { granularityExpanded = false; settingsCallbacks.onSetGranularity("line") },
+                    leadingIcon = if (settingsState.granularity == "line") { checkIcon } else null,
+                )
+                DropdownMenuItem(
+                    text = { Text("Word") },
+                    onClick = { granularityExpanded = false; settingsCallbacks.onSetGranularity("word") },
+                    leadingIcon = if (settingsState.granularity == "word") { checkIcon } else null,
+                )
+                DropdownMenuItem(
+                    text = { Text("Character") },
+                    onClick = { granularityExpanded = false; settingsCallbacks.onSetGranularity("char") },
+                    leadingIcon = if (settingsState.granularity == "char") { checkIcon } else null,
                 )
             }
         },

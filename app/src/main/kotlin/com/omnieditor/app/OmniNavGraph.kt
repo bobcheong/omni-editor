@@ -41,8 +41,11 @@ import com.omnieditor.core.model.SourceKind
 import com.omnieditor.core.model.SourceRef
 import com.omnieditor.core.io.PieceTableDocument
 import com.omnieditor.feature.compare.CompareScreen
+import com.omnieditor.feature.compare.CompareSettingsCallbacks
+import com.omnieditor.feature.compare.CompareSettingsState
 import com.omnieditor.feature.compare.CompareState
 import com.omnieditor.feature.editor.EditorScreen
+import com.omnieditor.feature.editor.EditorSettingsState
 import com.omnieditor.feature.editor.EditorUiState
 import com.omnieditor.feature.editor.EditorViewModel
 import com.omnieditor.feature.setup.SourceSetupScreen
@@ -153,6 +156,34 @@ fun OmniNavGraph(
     val resultStore = remember {
         ResultStore(File(context.cacheDir, "results"))
     }
+
+    // Settings ViewModel — shared across screens for live toggle state.
+    val settingsVm: SettingsViewModel = hiltViewModel()
+    val wordWrap by settingsVm.wordWrap.collectAsState()
+    val showLineNumbers by settingsVm.showLineNumbers.collectAsState()
+    val showWhitespace by settingsVm.showWhitespace.collectAsState()
+    val fontSize by settingsVm.fontSize.collectAsState()
+    val defaultLayout by settingsVm.defaultLayout.collectAsState()
+    val syncScroll by settingsVm.syncScroll.collectAsState()
+    val granularity by settingsVm.granularity.collectAsState()
+
+    val editorSettingsState = EditorSettingsState(
+        wordWrapEnabled = wordWrap,
+        showLineNumbers = showLineNumbers,
+        showWhitespace = showWhitespace,
+        fontSize = fontSize,
+    )
+    val compareSettingsState = CompareSettingsState(
+        layoutMode = defaultLayout,
+        syncScroll = syncScroll,
+        granularity = granularity,
+    )
+    val compareSettingsCallbacks = CompareSettingsCallbacks(
+        onSetLayout = { settingsVm.setDefaultLayout(it) },
+        onToggleSyncScroll = { settingsVm.setSyncScroll(!syncScroll) },
+        onSetGranularity = { settingsVm.setGranularity(it) },
+        onOpenSettings = { navController.navigate("settings") },
+    )
 
     // R-34b: shared tab strip state — one list, one active ID, across all screens.
     val tabs = remember { mutableStateListOf<TabInfo>() }
@@ -266,7 +297,6 @@ fun OmniNavGraph(
                     activeTabId = id
                     val selectedTab = tabs.find { it.id == id }
                     if (selectedTab?.isCompare == true && id.length == 73) {
-                        // Compare tab ID is "$leftUUID-$rightUUID" — UUIDs are always 36 chars.
                         val lk = id.substring(0, 36)
                         val rk = id.substring(37)
                         navController.navigate("compare/$lk/$rk")
@@ -282,6 +312,13 @@ fun OmniNavGraph(
                 onNewTab = { navController.navigate("home") },
                 onNavigateBack = { navController.popBackStack() },
                 onCompareWith = { navController.navigate("setup?leftKey=$contentKey") },
+                settingsState = editorSettingsState,
+                onToggleWordWrap = { settingsVm.setWordWrap(!wordWrap) },
+                onToggleLineNumbers = { settingsVm.setShowLineNumbers(!showLineNumbers) },
+                onToggleWhitespace = { settingsVm.setShowWhitespace(!showWhitespace) },
+                onIncreaseFontSize = { settingsVm.setFontSize((fontSize + 2).coerceAtMost(32)) },
+                onDecreaseFontSize = { settingsVm.setFontSize((fontSize - 2).coerceAtLeast(8)) },
+                onOpenSettings = { navController.navigate("settings") },
             )
         }
 
@@ -359,7 +396,6 @@ fun OmniNavGraph(
                     activeTabId = id
                     val selectedTab = tabs.find { it.id == id }
                     if (selectedTab?.isCompare == true && id.length == 73) {
-                        // Compare tab ID is "$leftUUID-$rightUUID" — UUIDs are always 36 chars.
                         val lk = id.substring(0, 36)
                         val rk = id.substring(37)
                         navController.navigate("compare/$lk/$rk")
@@ -374,6 +410,8 @@ fun OmniNavGraph(
                 onNewTab = { navController.navigate("home") },
                 onNavigateBack = { navController.popBackStack() },
                 navController = navController,
+                settingsState = compareSettingsState,
+                settingsCallbacks = compareSettingsCallbacks,
             )
         }
 
@@ -482,6 +520,7 @@ private fun HomeDestination(
 }
 
 /** Editor route body extracted to keep OmniNavGraph within complexity budget. */
+@Suppress("LongParameterList")
 @Composable
 private fun EditorDestination(
     contentKey: String,
@@ -492,6 +531,13 @@ private fun EditorDestination(
     onNewTab: () -> Unit = {},
     onNavigateBack: () -> Unit,
     onCompareWith: () -> Unit,
+    settingsState: EditorSettingsState = EditorSettingsState(),
+    onToggleWordWrap: () -> Unit = {},
+    onToggleLineNumbers: () -> Unit = {},
+    onToggleWhitespace: () -> Unit = {},
+    onIncreaseFontSize: () -> Unit = {},
+    onDecreaseFontSize: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val cached = DocumentRegistry.get(contentKey)
     val context = LocalContext.current
@@ -645,6 +691,13 @@ private fun EditorDestination(
         onNewTab = onNewTab,
         onNavigateBack = onNavigateBack,
         onCompareWith = onCompareWith,
+        settingsState = settingsState,
+        onToggleWordWrap = onToggleWordWrap,
+        onToggleLineNumbers = onToggleLineNumbers,
+        onToggleWhitespace = onToggleWhitespace,
+        onIncreaseFontSize = onIncreaseFontSize,
+        onDecreaseFontSize = onDecreaseFontSize,
+        onOpenSettings = onOpenSettings,
         viewModel = viewModel,
     )
 }
@@ -830,6 +883,8 @@ private fun CompareDestination(
     onNewTab: () -> Unit = {},
     onNavigateBack: () -> Unit,
     navController: NavHostController,
+    settingsState: CompareSettingsState = CompareSettingsState(),
+    settingsCallbacks: CompareSettingsCallbacks = CompareSettingsCallbacks(),
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1063,6 +1118,8 @@ private fun CompareDestination(
                 )
             }
         } else null,
+        settingsState = settingsState,
+        settingsCallbacks = settingsCallbacks,
     )
 }
 
