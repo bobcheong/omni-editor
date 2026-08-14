@@ -162,14 +162,17 @@ fun OmniNavGraph(
     // Updated by flavourDestinations() callback, read by the setup screen.
     var fileBrowserLeftRef by remember { mutableStateOf<SourceRef?>(null) }
     var fileBrowserRightRef by remember { mutableStateOf<SourceRef?>(null) }
+    var fileBrowserThirdRef by remember { mutableStateOf<SourceRef?>(null) }
 
     // Setup screen state hoisted here so it survives navigation to the file browser.
     // Bug fix: `remember` inside SetupDestination was lost when navigating to filebrowser
     // and back, because Navigation Compose removes composables from composition on navigate.
     var setupLeftSource by remember { mutableStateOf<SourceRef?>(null) }
     var setupRightSource by remember { mutableStateOf<SourceRef?>(null) }
+    var setupThirdSource by remember { mutableStateOf<SourceRef?>(null) }
     var setupLeftKey by remember { mutableStateOf<String?>(null) }
     var setupRightKey by remember { mutableStateOf<String?>(null) }
+    var setupThirdKey by remember { mutableStateOf<String?>(null) }
 
     // R-33: consume initialAction once the nav graph is ready.
     LaunchedEffect(initialAction) {
@@ -231,6 +234,7 @@ fun OmniNavGraph(
             when (slot) {
                 "left" -> fileBrowserLeftRef = ref
                 "right" -> fileBrowserRightRef = ref
+                "third" -> fileBrowserThirdRef = ref
             }
         }
 
@@ -311,17 +315,22 @@ fun OmniNavGraph(
             SetupDestination(
                 leftSource = setupLeftSource,
                 rightSource = setupRightSource,
+                thirdSource = setupThirdSource,
                 leftKey = setupLeftKey,
                 rightKey = setupRightKey,
+                thirdKey = setupThirdKey,
                 onLeftChanged = { key, ref -> setupLeftKey = key; setupLeftSource = ref },
                 onRightChanged = { key, ref -> setupRightKey = key; setupRightSource = ref },
+                onThirdChanged = { key, ref -> setupThirdKey = key; setupThirdSource = ref },
                 recentsStore = recentsStore,
                 sessionStore = sessionStore,
                 navController = navController,
                 fileBrowserLeftRef = fileBrowserLeftRef,
                 fileBrowserRightRef = fileBrowserRightRef,
+                fileBrowserThirdRef = fileBrowserThirdRef,
                 onConsumeLeftRef = { fileBrowserLeftRef = null },
                 onConsumeRightRef = { fileBrowserRightRef = null },
+                onConsumeThirdRef = { fileBrowserThirdRef = null },
             )
         }
 
@@ -645,17 +654,22 @@ private fun EditorDestination(
 private fun SetupDestination(
     leftSource: SourceRef?,
     rightSource: SourceRef?,
+    thirdSource: SourceRef?,
     leftKey: String?,
     rightKey: String?,
+    thirdKey: String?,
     onLeftChanged: (String?, SourceRef?) -> Unit,
     onRightChanged: (String?, SourceRef?) -> Unit,
+    onThirdChanged: (String?, SourceRef?) -> Unit,
     recentsStore: RecentsStore,
     sessionStore: SessionStore,
     navController: NavHostController,
     fileBrowserLeftRef: SourceRef?,
     fileBrowserRightRef: SourceRef?,
+    fileBrowserThirdRef: SourceRef?,
     onConsumeLeftRef: () -> Unit,
     onConsumeRightRef: () -> Unit,
+    onConsumeThirdRef: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -702,26 +716,54 @@ private fun SetupDestination(
         }
     }
 
+    val thirdPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            takePersistablePermission(context.contentResolver, uri)
+            val sourceId = UUID.randomUUID().toString()
+            scope.launch {
+                val doc = withContext(Dispatchers.IO) {
+                    readUriIntoRegistry(context, uri, id = sourceId)
+                }
+                onThirdChanged(sourceId, SourceRef(
+                    id = sourceId,
+                    kind = SourceKind.LOCAL,
+                    uriGrant = uri.toString(),
+                    label = doc?.label ?: "base",
+                ))
+            }
+        }
+    }
+
     // R-23a: consume file browser picks (direct flavour).
     // R-34a: use ref.id as the registry key so SourceRef.id is authoritative.
     LaunchedEffect(fileBrowserLeftRef) {
         val ref = fileBrowserLeftRef ?: return@LaunchedEffect
-        onConsumeLeftRef()
-        val path = ref.path ?: return@LaunchedEffect
+        val path = ref.path ?: run { onConsumeLeftRef(); return@LaunchedEffect }
         withContext(Dispatchers.IO) { readFileIntoRegistry(path, id = ref.id) }
         onLeftChanged(ref.id, ref)
+        onConsumeLeftRef()  // consume AFTER state is updated to avoid race
     }
     LaunchedEffect(fileBrowserRightRef) {
         val ref = fileBrowserRightRef ?: return@LaunchedEffect
-        onConsumeRightRef()
-        val path = ref.path ?: return@LaunchedEffect
+        val path = ref.path ?: run { onConsumeRightRef(); return@LaunchedEffect }
         withContext(Dispatchers.IO) { readFileIntoRegistry(path, id = ref.id) }
         onRightChanged(ref.id, ref)
+        onConsumeRightRef()
+    }
+    LaunchedEffect(fileBrowserThirdRef) {
+        val ref = fileBrowserThirdRef ?: return@LaunchedEffect
+        val path = ref.path ?: run { onConsumeThirdRef(); return@LaunchedEffect }
+        withContext(Dispatchers.IO) { readFileIntoRegistry(path, id = ref.id) }
+        onThirdChanged(ref.id, ref)
+        onConsumeThirdRef()
     }
 
     SourceSetupScreen(
         leftSource = leftSource,
         rightSource = rightSource,
+        thirdSource = thirdSource,
         onPickLeft = {
             if (hasFlavourFileBrowser()) {
                 navController.navigate("filebrowser/left")
@@ -734,6 +776,13 @@ private fun SetupDestination(
                 navController.navigate("filebrowser/right")
             } else {
                 rightPicker.launch(arrayOf("*/*"))
+            }
+        },
+        onPickThird = {
+            if (hasFlavourFileBrowser()) {
+                navController.navigate("filebrowser/third")
+            } else {
+                thirdPicker.launch(arrayOf("*/*"))
             }
         },
         onSwapSides = {
