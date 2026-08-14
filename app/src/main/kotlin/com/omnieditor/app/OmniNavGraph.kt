@@ -376,9 +376,19 @@ fun OmniNavGraph(
         }
 
         // ── Compare ──
-        composable("compare/{leftKey}/{rightKey}") { backStackEntry ->
+        composable(
+            route = "compare/{leftKey}/{rightKey}?baseKey={baseKey}",
+            arguments = listOf(
+                navArgument("baseKey") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            ),
+        ) { backStackEntry ->
             val leftKey = backStackEntry.arguments?.getString("leftKey") ?: ""
             val rightKey = backStackEntry.arguments?.getString("rightKey") ?: ""
+            val baseKey = backStackEntry.arguments?.getString("baseKey")
             val compareTabId = "$leftKey-$rightKey"
             // R-34b: register this compare as the active tab.
             LaunchedEffect(compareTabId) {
@@ -393,6 +403,7 @@ fun OmniNavGraph(
             CompareDestination(
                 leftKey = leftKey,
                 rightKey = rightKey,
+                baseKey = baseKey,
                 resultStore = resultStore,
                 tabs = tabs,
                 activeTabId = activeTabId,
@@ -854,14 +865,17 @@ private fun SetupDestination(
         onCompare = {
             val lk = leftKey
             val rk = rightKey
+            val tk = thirdKey
             val ls = leftSource
             val rs = rightSource
+            val ts = thirdSource
             if (lk != null && rk != null) {
-                // Track both in recents and persist as a compare session (R-34a)
+                // Track in recents and persist as a compare session (R-34a)
                 scope.launch {
                     ls?.let { recentsStore.addRecent(it) }
                     rs?.let { recentsStore.addRecent(it) }
-                    val sources = listOfNotNull(ls, rs)
+                    ts?.let { recentsStore.addRecent(it) }
+                    val sources = listOfNotNull(ls, rs, ts)
                     val sessionId = "$lk-$rk"
                     sessionStore.save(Session(
                         id = sessionId,
@@ -871,7 +885,12 @@ private fun SetupDestination(
                         sources = sources,
                     ))
                 }
-                navController.navigate("compare/$lk/$rk")
+                val route = if (tk != null) {
+                    "compare/$lk/$rk?baseKey=$tk"
+                } else {
+                    "compare/$lk/$rk"
+                }
+                navController.navigate(route)
             }
         },
         onNavigateBack = { navController.popBackStack() },
@@ -883,6 +902,7 @@ private fun SetupDestination(
 private fun CompareDestination(
     leftKey: String,
     rightKey: String,
+    baseKey: String? = null,
     resultStore: ResultStore,
     tabs: List<TabInfo> = emptyList(),
     activeTabId: String? = null,
@@ -1022,18 +1042,36 @@ private fun CompareDestination(
 
             val leftLines = leftText.lines()
             val rightLines = rightText.lines()
+            val baseCached = baseKey?.let { DocumentRegistry.get(it) }
             val job = scope.launch(Dispatchers.Default) {
-                val result = com.omnieditor.core.diff.DiffEngine.compare(
-                    leftLineCount = leftLines.size.toLong(),
-                    rightLineCount = rightLines.size.toLong(),
-                    leftLine = { leftLines[it.toInt()] },
-                    rightLine = { rightLines[it.toInt()] },
-                    rules = currentRuleSet,
-                    progress = { p ->
-                        val total = p.total ?: 1L
-                        compareProgress = if (total > 0) p.done.toFloat() / total.toFloat() else 0f
-                    },
-                )
+                val result = if (baseCached != null) {
+                    // 3-way compare: base → left, base → right, classify conflicts
+                    val baseLines = baseCached.text.lines()
+                    val diff3Result = com.omnieditor.core.diff.Diff3.diff3(
+                        baseLines = baseLines,
+                        leftLines = leftLines,
+                        rightLines = rightLines,
+                        rules = currentRuleSet,
+                    )
+                    com.omnieditor.core.diff.Diff3.toCompareResult(
+                        diff3Result,
+                        leftLines.size.toLong(),
+                        rightLines.size.toLong(),
+                    )
+                } else {
+                    // 2-way compare
+                    com.omnieditor.core.diff.DiffEngine.compare(
+                        leftLineCount = leftLines.size.toLong(),
+                        rightLineCount = rightLines.size.toLong(),
+                        leftLine = { leftLines[it.toInt()] },
+                        rightLine = { rightLines[it.toInt()] },
+                        rules = currentRuleSet,
+                        progress = { p ->
+                            val total = p.total ?: 1L
+                            compareProgress = if (total > 0) p.done.toFloat() / total.toFloat() else 0f
+                        },
+                    )
+                }
                 compareState = CompareState(
                     result, leftLines, rightLines,
                     ruleSet = currentRuleSet,

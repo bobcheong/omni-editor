@@ -258,4 +258,47 @@ object Diff3 {
         }
         return true
     }
+
+    /**
+     * Convert a [Diff3Result] into a [CompareResult] suitable for the UI.
+     *
+     * UNCHANGED regions become no hunk (context). LEFT_ONLY → CHANGED,
+     * RIGHT_ONLY → CHANGED, BOTH_SAME → CHANGED, CONFLICT → CONFLICT.
+     * The hunks reference left/right line positions (not base).
+     */
+    fun toCompareResult(
+        diff3Result: Diff3Result,
+        leftLineCount: Long,
+        rightLineCount: Long,
+    ): com.omnieditor.core.model.CompareResult {
+        val hunks = mutableListOf<Hunk>()
+        for (region in diff3Result.regions) {
+            val type = when (region.type) {
+                RegionType.UNCHANGED -> continue
+                RegionType.LEFT_ONLY -> HunkType.CHANGED
+                RegionType.RIGHT_ONLY -> HunkType.CHANGED
+                RegionType.BOTH_SAME -> HunkType.CHANGED
+                RegionType.CONFLICT -> HunkType.CONFLICT
+            }
+            hunks.add(Hunk(
+                type = type,
+                leftStart = region.leftStart,
+                leftEnd = region.leftEnd,
+                rightStart = region.rightStart,
+                rightEnd = region.rightEnd,
+            ))
+        }
+        val stats = com.omnieditor.core.model.CompareStats(
+            linesAdded = hunks.sumOf { it.rightEnd - it.rightStart },
+            linesRemoved = hunks.sumOf { it.leftEnd - it.leftStart },
+            linesChanged = 0L,
+            hunkCount = hunks.size,
+        )
+        return com.omnieditor.core.model.CompareResult(
+            hunks = hunks,
+            stats = stats,
+            engineMode = com.omnieditor.core.model.EngineMode.FULL_INDEX,
+            generatedAt = System.currentTimeMillis(),
+        )
+    }
 }
