@@ -1029,6 +1029,7 @@ private fun CompareDestination(
                 )
                 compareState = CompareState(
                     result, leftLines, rightLines,
+                    ruleSet = currentRuleSet,
                     leftDocument = leftDocument,
                     rightDocument = rightDocument,
                 )
