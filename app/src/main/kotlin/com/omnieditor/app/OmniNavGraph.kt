@@ -1134,7 +1134,20 @@ private fun CompareDestination(
             }
         } else null,
         settingsState = settingsState,
-        settingsCallbacks = settingsCallbacks,
+        // Override granularity callback to also update currentRuleSet directly,
+        // so the re-compare triggers immediately without waiting for the DataStore
+        // round-trip through LaunchedEffect.
+        settingsCallbacks = settingsCallbacks.copy(
+            onSetGranularity = { g ->
+                settingsCallbacks.onSetGranularity(g)  // persist to DataStore
+                val newGranularity = when (g) {
+                    "line" -> Granularity.LINE
+                    "char" -> Granularity.CHARACTER
+                    else -> Granularity.WORD
+                }
+                currentRuleSet = currentRuleSet.copy(granularity = newGranularity)
+            },
+        ),
     )
 }
 

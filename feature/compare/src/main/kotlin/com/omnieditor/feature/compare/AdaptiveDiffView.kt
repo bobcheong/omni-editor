@@ -28,6 +28,8 @@ fun AdaptiveDiffView(
     findMatchIndex: Int = -1,
     /** Layout override from settings: "unified", "split", or "auto" (width-driven). */
     layoutMode: String = "auto",
+    /** Whether split view panes scroll together. */
+    syncScroll: Boolean = true,
 ) {
     BoxWithConstraints(modifier = modifier) {
         val usesSplit = when (layoutMode) {
@@ -43,6 +45,7 @@ fun AdaptiveDiffView(
                 onDiffRowTapped = onDiffRowTapped,
                 findMatches = findMatches,
                 findMatchIndex = findMatchIndex,
+                syncScroll = syncScroll,
             )
         } else {
             UnifiedDiffView(

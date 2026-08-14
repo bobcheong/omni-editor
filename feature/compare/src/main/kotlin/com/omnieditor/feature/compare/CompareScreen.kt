@@ -387,6 +387,7 @@ private fun CompareContent(
                         findMatches = findMatches,
                         findMatchIndex = if (showFindBar && findMatches.isNotEmpty()) findMatchIndex else -1,
                         layoutMode = settingsState.layoutMode,
+                        syncScroll = settingsState.syncScroll,
                     )
                     DiffMinimap(
                         hunks = state.result.hunks,
