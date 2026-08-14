@@ -1,6 +1,7 @@
 package com.omnieditor.feature.editor
 
 import androidx.activity.compose.BackHandler
+import com.omnieditor.core.model.DisplaySettings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -316,6 +317,12 @@ fun EditorScreen(
                             state = state.editorState,
                             modifier = Modifier.fillMaxSize(),
                             fileName = fileName,
+                            displaySettings = DisplaySettings(
+                                wordWrap = settingsState.wordWrapEnabled,
+                                showLineNumbers = settingsState.showLineNumbers,
+                                showWhitespace = settingsState.showWhitespace,
+                                fontSize = settingsState.fontSize,
+                            ),
                             // R-41: taps on the editing surface (which owns all
                             // gestures) re-focus the IME bridge and re-summon
                             // the keyboard after the user dismisses it.
@@ -364,6 +371,11 @@ fun EditorScreen(
                                 state = editorContent,
                                 modifier = Modifier.fillMaxSize(),
                                 fileName = fileName,
+                                displaySettings = DisplaySettings(
+                                    wordWrap = settingsState.wordWrapEnabled,
+                                    showLineNumbers = settingsState.showLineNumbers,
+                                    showWhitespace = settingsState.showWhitespace,
+                                ),
                                 onRequestIme = {
                                     focusRequester.requestFocus()
                                     keyboard?.show()

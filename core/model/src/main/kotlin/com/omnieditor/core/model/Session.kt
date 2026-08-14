@@ -48,6 +48,7 @@ data class DisplaySettings(
     val showLineNumbers: Boolean = true,
     val showWhitespace: Boolean = false,
     val tabWidth: Int = 4,
+    val fontSize: Int = 14,
     val syncScroll: Boolean = true,
     val granularity: Granularity = Granularity.WORD,
     /**

@@ -150,10 +150,10 @@ fun EditorContent(
     // math assumed and the caret drifted further right of the finger with
     // every column. Rendering with `style = textStyle` (no merge) makes the
     // measured layout pixel-identical to what is drawn.
-    val textStyle = remember {
+    val textStyle = remember(displaySettings.fontSize) {
         TextStyle(
             fontFamily = FontFamily.Monospace,
-            fontSize = 14.sp,
+            fontSize = displaySettings.fontSize.sp,
             letterSpacing = 0.sp,
         )
     }
