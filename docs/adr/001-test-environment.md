@@ -62,6 +62,11 @@ It verifies the home screen renders without crashing (`onNodeWithText("Omni Edit
 
 **Unverified pending CI execution.**
 
+**v0.2.0 coverage note:** GMD coverage at this release is smoke-only
+(`SmokeTest.kt` — verifies home screen renders). No instrumented tests
+for editor, compare, or settings screens exist yet. Instrumented UI
+coverage expansion is planned for a future release.
+
 ---
 
 ## Tier 3 — Robolectric

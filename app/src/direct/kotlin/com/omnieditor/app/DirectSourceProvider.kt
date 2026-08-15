@@ -65,11 +65,14 @@ class DirectSourceProvider @Inject constructor() : SourceProvider {
                         out.write(buf)
                         buf.clear()
                     }
+                    out.force(true) // R-57: fsync before rename
                 }
                 if (!tmp.renameTo(file)) {
+                    tmp.delete() // R-57: clean up on rename failure
                     throw OmniException(OmniError.WriteFailed(ref, partial = false))
                 }
             } catch (e: OmniException) {
+                tmp.delete() // ensure cleanup on all failure paths
                 throw e
             } catch (e: Exception) {
                 tmp.delete()

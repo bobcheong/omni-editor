@@ -14,6 +14,9 @@ other editor or compare tool. See `CLAUDE.md` and OE-SPEC-001 §16.
 | `core/diff` | Diff engine, normalisation | no |
 | `core/io` | Sources, readers, line index | yes |
 | `design` | Theme, compare colours, components | yes |
+| `feature/editor` | Editor UI, caret, selection, IME | yes |
+| `feature/compare` | Compare and merge UI | yes |
+| `feature/setup` | Source setup screen | yes |
 | `app` | Entry points, navigation, DI | yes |
 
 `core/model` and `core/diff` must never import `android.*` or `androidx.*`.
