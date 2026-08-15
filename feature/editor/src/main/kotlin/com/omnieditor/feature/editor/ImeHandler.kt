@@ -17,6 +17,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -275,6 +276,7 @@ internal fun handleHardwareKey(
 ): Boolean {
     val ctrl = event.isCtrlPressed
     val shift = event.isShiftPressed
+    val alt = event.isAltPressed
 
     return when {
         // Ctrl+S — save
@@ -316,6 +318,37 @@ internal fun handleHardwareKey(
         }
         // Ctrl+V — paste (let BasicTextField handle it for IME compat)
         ctrl && event.key == Key.V -> false
+
+        // ── Line editing shortcuts (#12) ──────────────────────────────────
+
+        // Ctrl+Shift+K — delete line
+        ctrl && shift && event.key == Key.K -> {
+            state.deleteLine(); true
+        }
+        // Ctrl+Shift+D — duplicate line
+        ctrl && shift && event.key == Key.D -> {
+            state.duplicateLine(); true
+        }
+        // Ctrl+Shift+Enter — insert line above
+        ctrl && shift && event.key == Key.Enter -> {
+            state.insertLineAbove(); true
+        }
+        // Ctrl+Enter — insert line below
+        ctrl && !shift && event.key == Key.Enter -> {
+            state.insertLineBelow(); true
+        }
+        // Alt+Up — move line up
+        alt && event.key == Key.DirectionUp -> {
+            state.moveLineUp(); true
+        }
+        // Alt+Down — move line down
+        alt && event.key == Key.DirectionDown -> {
+            state.moveLineDown(); true
+        }
+        // Ctrl+/ — toggle comment
+        ctrl && event.key == Key.Slash -> {
+            state.toggleComment(); true
+        }
 
         // Forward delete at end of line — join with the next line. The IME
         // window contains no next-line character, so this edit is not
@@ -454,10 +487,18 @@ internal fun handleHardwareKey(
             true
         }
 
-        // Tab key — insert spaces (code editor convention)
+        // Shift+Tab — outdent
+        event.key == Key.Tab && shift -> {
+            state.outdent(); true
+        }
+        // Tab — indent (when at line start or with selection), otherwise insert spaces
         event.key == Key.Tab -> {
             if (!state.readOnly) {
-                state.insertAtCaret("    ") // 4 spaces
+                if (state.hasSelection || state.caretColumn == 0) {
+                    state.indent()
+                } else {
+                    state.insertAtCaret("    ")
+                }
             }
             true
         }

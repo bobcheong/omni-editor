@@ -90,6 +90,16 @@ data class EditorMenuCallbacks(
     val onConvertLineEndingCRLF: () -> Unit = {},
     val onConvertLineEndingLF: () -> Unit = {},
     val onConvertLineEndingCR: () -> Unit = {},
+    // Edit operations (#12)
+    val onDeleteLine: () -> Unit = {},
+    val onDuplicateLine: () -> Unit = {},
+    val onInsertLineAbove: () -> Unit = {},
+    val onInsertLineBelow: () -> Unit = {},
+    val onMoveLineUp: () -> Unit = {},
+    val onMoveLineDown: () -> Unit = {},
+    val onIndent: () -> Unit = {},
+    val onOutdent: () -> Unit = {},
+    val onToggleComment: () -> Unit = {},
     /** Open the keyboard shortcuts reference sheet (R-37). */
     val onKeyboardShortcuts: () -> Unit = {},
     // View-toggle callbacks
@@ -236,6 +246,18 @@ fun EditorScreen(
                     onConvertLineEndingCRLF = { viewModel.convertLineEnding("\r\n") },
                     onConvertLineEndingLF = { viewModel.convertLineEnding("\n") },
                     onConvertLineEndingCR = { viewModel.convertLineEnding("\r") },
+                    onDeleteLine = { viewModel.lastLoadedState?.deleteLine() },
+                    onDuplicateLine = { viewModel.lastLoadedState?.duplicateLine() },
+                    onInsertLineAbove = { viewModel.lastLoadedState?.insertLineAbove() },
+                    onInsertLineBelow = { viewModel.lastLoadedState?.insertLineBelow() },
+                    onMoveLineUp = { viewModel.lastLoadedState?.moveLineUp() },
+                    onMoveLineDown = { viewModel.lastLoadedState?.moveLineDown() },
+                    onIndent = { viewModel.lastLoadedState?.indent() },
+                    onOutdent = { viewModel.lastLoadedState?.outdent() },
+                    onToggleComment = {
+                        val ext = fileName.substringAfterLast('.', "")
+                        viewModel.lastLoadedState?.toggleComment(commentPrefixForExtension(ext))
+                    },
                     onKeyboardShortcuts = { showShortcutsSheet = true },
                     onToggleWordWrap = onToggleWordWrap,
                     onToggleLineNumbers = onToggleLineNumbers,
@@ -250,6 +272,39 @@ fun EditorScreen(
             val state = uiState
             if (state is EditorUiState.Loaded) {
                 Column(modifier = Modifier.navigationBarsPadding().imePadding()) {
+                    EditorTouchBar(
+                        canUndo = state.editorState.document.undoCount > 0,
+                        canRedo = state.editorState.document.redoCount > 0,
+                        hasSelection = state.editorState.hasSelection,
+                        onCut = {
+                            // Cut handled via clipboard in EditorContent; trigger via state
+                            if (state.editorState.hasSelection) {
+                                state.editorState.deleteSelection()
+                            }
+                        },
+                        onCopy = { /* copy requires ClipboardManager — handled via ImeHandler */ },
+                        onPaste = { /* paste requires ClipboardManager — handled via ImeHandler */ },
+                        onSelectAll = {
+                            val lastLine = state.editorState.lineCount - 1
+                            val lastLineText = state.editorState.document.line(lastLine).toString()
+                            state.editorState.setSelection(0L, 0, lastLine, lastLineText.length)
+                        },
+                        onUndo = { viewModel.undo() },
+                        onRedo = { viewModel.redo() },
+                        onDeleteLine = { state.editorState.deleteLine() },
+                        onDuplicateLine = { state.editorState.duplicateLine() },
+                        onInsertLineAbove = { state.editorState.insertLineAbove() },
+                        onInsertLineBelow = { state.editorState.insertLineBelow() },
+                        onMoveLineUp = { state.editorState.moveLineUp() },
+                        onMoveLineDown = { state.editorState.moveLineDown() },
+                        onIndent = { state.editorState.indent() },
+                        onOutdent = { state.editorState.outdent() },
+                        onToggleComment = {
+                            val ext = fileName.substringAfterLast('.', "")
+                            state.editorState.toggleComment(commentPrefixForExtension(ext))
+                        },
+                        onFind = { showFind = !showFind },
+                    )
                     StatusStrip(
                         state = state.editorState,
                         encoding = "UTF-8",
@@ -400,6 +455,7 @@ private fun EditorTopBar(
     callbacks: EditorMenuCallbacks,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    var editOpsExpanded by remember { mutableStateOf(false) }
     var textToolsExpanded by remember { mutableStateOf(false) }
     var caseExpanded by remember { mutableStateOf(false) }
     var bookmarkExpanded by remember { mutableStateOf(false) }
@@ -461,6 +517,9 @@ private fun EditorTopBar(
                 DropdownMenuItem(text = { Text("Text tools ▸") }, onClick = {
                     menuExpanded = false; textToolsExpanded = true
                 })
+                DropdownMenuItem(text = { Text("Edit operations ▸") }, onClick = {
+                    menuExpanded = false; editOpsExpanded = true
+                })
                 DropdownMenuItem(text = { Text("Case conversion ▸") }, onClick = {
                     menuExpanded = false; caseExpanded = true
                 })
@@ -511,6 +570,20 @@ private fun EditorTopBar(
                 DropdownMenuItem(text = { Text("Toggle bookmark") }, onClick = { bookmarkExpanded = false; callbacks.onToggleBookmark() })
                 DropdownMenuItem(text = { Text("Next bookmark") }, onClick = { bookmarkExpanded = false; callbacks.onNextBookmark() })
                 DropdownMenuItem(text = { Text("Previous bookmark") }, onClick = { bookmarkExpanded = false; callbacks.onPrevBookmark() })
+            }
+            // Edit operations submenu (#12)
+            DropdownMenu(expanded = editOpsExpanded, onDismissRequest = { editOpsExpanded = false }) {
+                DropdownMenuItem(text = { Text("Delete Line          Ctrl+Shift+K") }, onClick = { editOpsExpanded = false; callbacks.onDeleteLine() })
+                DropdownMenuItem(text = { Text("Duplicate Line       Ctrl+Shift+D") }, onClick = { editOpsExpanded = false; callbacks.onDuplicateLine() })
+                DropdownMenuItem(text = { Text("Insert Line Above    Ctrl+Shift+Enter") }, onClick = { editOpsExpanded = false; callbacks.onInsertLineAbove() })
+                DropdownMenuItem(text = { Text("Insert Line Below    Ctrl+Enter") }, onClick = { editOpsExpanded = false; callbacks.onInsertLineBelow() })
+                HorizontalDivider()
+                DropdownMenuItem(text = { Text("Move Line Up         Alt+\u2191") }, onClick = { editOpsExpanded = false; callbacks.onMoveLineUp() })
+                DropdownMenuItem(text = { Text("Move Line Down       Alt+\u2193") }, onClick = { editOpsExpanded = false; callbacks.onMoveLineDown() })
+                HorizontalDivider()
+                DropdownMenuItem(text = { Text("Indent               Tab") }, onClick = { editOpsExpanded = false; callbacks.onIndent() })
+                DropdownMenuItem(text = { Text("Outdent              Shift+Tab") }, onClick = { editOpsExpanded = false; callbacks.onOutdent() })
+                DropdownMenuItem(text = { Text("Comment/Uncomment    Ctrl+/") }, onClick = { editOpsExpanded = false; callbacks.onToggleComment() })
             }
             // Line-ending conversion submenu
             DropdownMenu(expanded = lineEndingExpanded, onDismissRequest = { lineEndingExpanded = false }) {

@@ -95,6 +95,14 @@ fun KeyboardShortcutsSheet(
                     ShortcutAction.COPY,
                     ShortcutAction.PASTE,
                     ShortcutAction.DUPLICATE_LINE,
+                    ShortcutAction.DELETE_LINE,
+                    ShortcutAction.INSERT_LINE_ABOVE,
+                    ShortcutAction.INSERT_LINE_BELOW,
+                    ShortcutAction.MOVE_LINE_UP,
+                    ShortcutAction.MOVE_LINE_DOWN,
+                    ShortcutAction.INDENT,
+                    ShortcutAction.OUTDENT,
+                    ShortcutAction.TOGGLE_COMMENT,
                 ),
                 shortcuts = shortcuts,
             )
@@ -171,4 +179,12 @@ internal fun shortcutActionLabel(action: ShortcutAction): String = when (action)
     ShortcutAction.COPY -> "Copy"
     ShortcutAction.PASTE -> "Paste"
     ShortcutAction.DUPLICATE_LINE -> "Duplicate line"
+    ShortcutAction.DELETE_LINE -> "Delete line"
+    ShortcutAction.INSERT_LINE_ABOVE -> "Insert line above"
+    ShortcutAction.INSERT_LINE_BELOW -> "Insert line below"
+    ShortcutAction.MOVE_LINE_UP -> "Move line up"
+    ShortcutAction.MOVE_LINE_DOWN -> "Move line down"
+    ShortcutAction.INDENT -> "Indent"
+    ShortcutAction.OUTDENT -> "Outdent"
+    ShortcutAction.TOGGLE_COMMENT -> "Comment/Uncomment"
 }

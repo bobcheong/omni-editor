@@ -53,6 +53,14 @@ data class KeyboardShortcuts(
             ShortcutAction.COPY to KeyBinding(67, ctrl = true),           // Ctrl+C
             ShortcutAction.PASTE to KeyBinding(86, ctrl = true),          // Ctrl+V
             ShortcutAction.DUPLICATE_LINE to KeyBinding(68, ctrl = true, shift = true), // Ctrl+Shift+D
+            ShortcutAction.DELETE_LINE to KeyBinding(75, ctrl = true, shift = true), // Ctrl+Shift+K
+            ShortcutAction.INSERT_LINE_ABOVE to KeyBinding(10, ctrl = true, shift = true), // Ctrl+Shift+Enter
+            ShortcutAction.INSERT_LINE_BELOW to KeyBinding(10, ctrl = true), // Ctrl+Enter
+            ShortcutAction.MOVE_LINE_UP to KeyBinding(38, alt = true), // Alt+Up
+            ShortcutAction.MOVE_LINE_DOWN to KeyBinding(40, alt = true), // Alt+Down
+            ShortcutAction.INDENT to KeyBinding(9), // Tab
+            ShortcutAction.OUTDENT to KeyBinding(9, shift = true), // Shift+Tab
+            ShortcutAction.TOGGLE_COMMENT to KeyBinding(47, ctrl = true), // Ctrl+/
         )
 
         val DEFAULT = KeyboardShortcuts()
@@ -64,6 +72,9 @@ enum class ShortcutAction {
     NEXT_DIFF, PREV_DIFF, GO_TO_LINE,
     MERGE_LEFT, MERGE_RIGHT, TOGGLE_LAYOUT,
     SELECT_ALL, CUT, COPY, PASTE, DUPLICATE_LINE,
+    DELETE_LINE, INSERT_LINE_ABOVE, INSERT_LINE_BELOW,
+    MOVE_LINE_UP, MOVE_LINE_DOWN,
+    INDENT, OUTDENT, TOGGLE_COMMENT,
 }
 
 @Serializable
@@ -86,10 +97,13 @@ data class KeyBinding(
         return when (code) {
             in 65..90 -> ('A' + (code - 65)).toString()
             in 48..57 -> ('0' + (code - 48)).toString()
+            9 -> "Tab"
+            10 -> "Enter"
             37 -> "←"
             38 -> "↑"
             39 -> "→"
             40 -> "↓"
+            47 -> "/"
             else -> "Key$code"
         }
     }

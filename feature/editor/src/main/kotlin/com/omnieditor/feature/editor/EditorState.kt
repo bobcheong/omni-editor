@@ -440,6 +440,180 @@ class EditorState(
         }
     }
 
+    // ── Line editing operations (#12) ──────────────────────────────────
+
+    /**
+     * Delete the caret line (or all selected lines when a selection is active).
+     * Each call is one undo step.
+     */
+    fun deleteLine() {
+        if (readOnly) return
+        val (startLine, endLine) = selectedLineRange()
+        clearSelection()
+        if (lineCount == 1L) {
+            // Single-line document: clear content rather than deleting
+            document.edit(0L..0L, "")
+            moveCaret(0L, 0)
+            return
+        }
+        if (endLine >= lineCount - 1 && startLine > 0) {
+            // Deleting lines that include the last line: merge with previous
+            // to remove the trailing newline left behind.
+            val prevText = document.line(startLine - 1).toString()
+            document.edit((startLine - 1)..endLine, prevText)
+            moveCaret(startLine - 1, 0)
+        } else if (endLine < lineCount - 1) {
+            // Not the last lines: replace [start..end+1] with just [end+1],
+            // effectively removing start..end and their terminators.
+            val nextText = document.line(endLine + 1).toString()
+            document.edit(startLine..(endLine + 1), nextText)
+            moveCaret(startLine.coerceAtMost(lineCount - 1), 0)
+        } else {
+            // startLine == 0 and endLine == last: replacing entire document
+            document.edit(0L..endLine, "")
+            moveCaret(0L, 0)
+        }
+    }
+
+    /**
+     * Duplicate the caret line (or all selected lines) below the current position.
+     * Each call is one undo step.
+     */
+    fun duplicateLine() {
+        if (readOnly) return
+        val (startLine, endLine) = selectedLineRange()
+        val block = buildString {
+            for (l in startLine..endLine) {
+                append(document.line(l))
+                if (l < endLine) append('\n')
+            }
+        }
+        // Append the duplicated block after the last line
+        val lastLineText = document.line(endLine).toString()
+        document.edit(endLine..endLine, lastLineText + "\n" + block)
+        // Move caret to the duplicated block
+        val offset = endLine - startLine + 1
+        moveCaret(caretLine + offset, caretColumn)
+    }
+
+    /** Insert an empty line above the caret and move the caret there. */
+    fun insertLineAbove() {
+        if (readOnly) return
+        val lineText = document.line(caretLine).toString()
+        document.edit(caretLine..caretLine, "\n" + lineText)
+        moveCaret(caretLine, 0)
+    }
+
+    /** Insert an empty line below the caret and move the caret there. */
+    fun insertLineBelow() {
+        if (readOnly) return
+        val lineText = document.line(caretLine).toString()
+        document.edit(caretLine..caretLine, lineText + "\n")
+        moveCaret(caretLine + 1, 0)
+    }
+
+    /** Swap the caret line with the line above. */
+    fun moveLineUp() {
+        if (readOnly || caretLine <= 0) return
+        val curText = document.line(caretLine).toString()
+        val prevText = document.line(caretLine - 1).toString()
+        document.edit((caretLine - 1)..caretLine, curText + "\n" + prevText)
+        moveCaret(caretLine - 1, caretColumn)
+    }
+
+    /** Swap the caret line with the line below. */
+    fun moveLineDown() {
+        if (readOnly || caretLine >= lineCount - 1) return
+        val curText = document.line(caretLine).toString()
+        val nextText = document.line(caretLine + 1).toString()
+        document.edit(caretLine..(caretLine + 1), nextText + "\n" + curText)
+        moveCaret(caretLine + 1, caretColumn)
+    }
+
+    /**
+     * Indent: insert [tabWidth] spaces at the start of the caret line,
+     * or each line in the selection when a multi-line selection is active.
+     */
+    fun indent(tabWidth: Int = 4) {
+        if (readOnly) return
+        val spaces = " ".repeat(tabWidth)
+        val (startLine, endLine) = selectedLineRange()
+        for (l in startLine..endLine) {
+            val text = document.line(l).toString()
+            document.edit(l..l, spaces + text)
+        }
+        if (!hasSelection) {
+            caretColumn += tabWidth
+        }
+    }
+
+    /**
+     * Outdent: remove up to [tabWidth] leading spaces from the caret line,
+     * or each line in the selection when a multi-line selection is active.
+     */
+    fun outdent(tabWidth: Int = 4) {
+        if (readOnly) return
+        val (startLine, endLine) = selectedLineRange()
+        for (l in startLine..endLine) {
+            val text = document.line(l).toString()
+            val leading = text.length - text.trimStart(' ').length
+            val remove = minOf(leading, tabWidth)
+            if (remove > 0) {
+                document.edit(l..l, text.substring(remove))
+                if (l == caretLine) {
+                    caretColumn = maxOf(0, caretColumn - remove)
+                }
+            }
+        }
+    }
+
+    /**
+     * Toggle line comment on the caret line or each selected line.
+     * [prefix] is the line-comment string (e.g. "//" or "#").
+     */
+    fun toggleComment(prefix: String = "//") {
+        if (readOnly) return
+        val (startLine, endLine) = selectedLineRange()
+        // Determine whether to add or remove: if ALL lines have the prefix, remove it
+        val allCommented = (startLine..endLine).all { l ->
+            document.line(l).toString().trimStart().startsWith(prefix)
+        }
+        for (l in startLine..endLine) {
+            val text = document.line(l).toString()
+            if (allCommented) {
+                // Remove the first occurrence of prefix (with optional trailing space)
+                val idx = text.indexOf(prefix)
+                if (idx >= 0) {
+                    val afterPrefix = idx + prefix.length
+                    val end = if (afterPrefix < text.length && text[afterPrefix] == ' ') {
+                        afterPrefix + 1
+                    } else {
+                        afterPrefix
+                    }
+                    document.edit(l..l, text.removeRange(idx, end))
+                }
+            } else {
+                // Add prefix + space at line start (after leading whitespace)
+                val leadingSpaces = text.length - text.trimStart().length
+                val newLine = text.substring(0, leadingSpaces) + prefix + " " + text.substring(leadingSpaces)
+                document.edit(l..l, newLine)
+            }
+        }
+    }
+
+    /**
+     * Return the line range affected by the current operation:
+     * the selection range (if active) or just the caret line.
+     */
+    private fun selectedLineRange(): Pair<Long, Long> {
+        val bounds = selectionBounds()
+        return if (bounds != null) {
+            bounds.startLine to bounds.endLine
+        } else {
+            caretLine to caretLine
+        }
+    }
+
     private fun buildReplacementForInsert(text: String): String {
         val currentLine = document.line(caretLine).toString()
         val before = currentLine.substring(0, caretColumn.coerceAtMost(currentLine.length))
