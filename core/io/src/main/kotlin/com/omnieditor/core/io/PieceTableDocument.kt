@@ -38,6 +38,10 @@ class PieceTableDocument private constructor(
     private var lastTypingLine = -1L
     private val coalesceWindowMs = 2000L
 
+    // ── Batch undo state (R-54 prerequisite) ──
+    /** Undo stack depth when beginBatch() was called, or -1 if no batch is active. */
+    private var batchStartDepth = -1
+
     private var _editGeneration = 0L
     override val editGeneration: Long get() = _editGeneration
 
@@ -248,6 +252,53 @@ class PieceTableDocument private constructor(
         _editGeneration++
         _changes.tryEmit(DocumentChange(entry.editId, 0, lineCount, lineCount))
         return entry.editId
+    }
+
+    override fun beginBatch() {
+        if (batchStartDepth >= 0) return // already in a batch — flat nesting
+        breakCoalescing()
+        batchStartDepth = undoStack.size
+    }
+
+    override fun commitBatch() {
+        val startDepth = batchStartDepth
+        if (startDepth < 0) return // no active batch
+        batchStartDepth = -1
+        val batchSize = undoStack.size - startDepth
+        if (batchSize <= 1) return // 0 or 1 edit — nothing to merge
+
+        // Collect the batch entries (in order they were applied)
+        val batchEntries = undoStack.subList(startDepth, undoStack.size).toList()
+
+        // Remove them from the undo stack
+        repeat(batchSize) { undoStack.removeAt(undoStack.lastIndex) }
+
+        // Reverse all batch edits to restore the pre-batch state
+        for (entry in batchEntries.reversed()) {
+            applyReverse(entry.record)
+        }
+
+        // Capture pre-batch text, replay all edits, capture post-batch text
+        val preText = table.text()
+        for (entry in batchEntries) {
+            applyForward(entry.record)
+        }
+        val postText = table.text()
+
+        // Reverse back to pre-batch state so we can issue one atomic replace
+        for (entry in batchEntries.reversed()) {
+            applyReverse(entry.record)
+        }
+
+        // Apply as a single compound replaceAll entry
+        val editId = ++editIdCounter
+        val record = table.replace(0, preText.length, postText)
+        val compoundEntry = JournalEntry(editId, record)
+        undoStack.add(compoundEntry)
+        redoStack.clear()
+        journal?.append(compoundEntry)
+        _editGeneration++
+        _changes.tryEmit(DocumentChange(editId, 0, lineCount, lineCount))
     }
 
     override suspend fun materialise(into: WritableByteChannel) {

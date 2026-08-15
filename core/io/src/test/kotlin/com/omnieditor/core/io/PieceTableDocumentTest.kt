@@ -505,4 +505,68 @@ class PieceTableDocumentTest {
         // There should be 3 separate undo steps: typing-A, replaceAll, typing-X
         doc.undoCount shouldBe 3
     }
+
+    // ── Batch undo (R-54 prerequisite) ──
+
+    @Test
+    fun `batch groups multiple edits into single undo step`() {
+        val doc = PieceTableDocument.create("line0\nline1\nline2")
+        doc.beginBatch()
+        doc.edit(0L..0L, "  line0")
+        doc.edit(1L..1L, "  line1")
+        doc.edit(2L..2L, "  line2")
+        doc.commitBatch()
+
+        doc.line(0).toString() shouldBe "  line0"
+        doc.line(1).toString() shouldBe "  line1"
+        doc.line(2).toString() shouldBe "  line2"
+
+        // Single undo should revert ALL three edits
+        doc.undo()
+        doc.line(0).toString() shouldBe "line0"
+        doc.line(1).toString() shouldBe "line1"
+        doc.line(2).toString() shouldBe "line2"
+
+        // Single redo should reapply all three
+        doc.redo()
+        doc.line(0).toString() shouldBe "  line0"
+        doc.line(1).toString() shouldBe "  line1"
+        doc.line(2).toString() shouldBe "  line2"
+    }
+
+    @Test
+    fun `batch with single edit behaves like normal edit`() {
+        val doc = PieceTableDocument.create("hello")
+        doc.beginBatch()
+        doc.edit(0L..0L, "world")
+        doc.commitBatch()
+
+        doc.line(0).toString() shouldBe "world"
+        doc.undo()
+        doc.line(0).toString() shouldBe "hello"
+    }
+
+    @Test
+    fun `nested batch is flat - inner commit is ignored`() {
+        val doc = PieceTableDocument.create("a\nb")
+        doc.beginBatch()
+        doc.edit(0L..0L, "A")
+        doc.beginBatch() // nested — should be ignored
+        doc.edit(1L..1L, "B")
+        doc.commitBatch() // ends the outer batch
+        // No second commitBatch needed
+
+        doc.undo()
+        doc.line(0).toString() shouldBe "a"
+        doc.line(1).toString() shouldBe "b"
+    }
+
+    @Test
+    fun `empty batch is no-op`() {
+        val doc = PieceTableDocument.create("hello")
+        val genBefore = doc.editGeneration
+        doc.beginBatch()
+        doc.commitBatch()
+        doc.editGeneration shouldBe genBefore
+    }
 }

@@ -50,6 +50,19 @@ interface TextDocument {
     fun redo(): Long?
 
     /**
+     * Begin a batch of edits that will be undone/redone as a single step.
+     * Calls to [edit] between [beginBatch] and [commitBatch] are grouped.
+     * Nested calls are ignored (flat batching).
+     */
+    fun beginBatch()
+
+    /**
+     * Commit the current batch. All edits since the matching [beginBatch]
+     * are merged into a single undo step. No-op if no batch is active.
+     */
+    fun commitBatch()
+
+    /**
      * Materialise the current document state to a byte channel (save).
      * The piece table is flattened; this is the only time the full document
      * is written sequentially.
