@@ -499,11 +499,18 @@ private fun HomeDestination(
             if (session != null && session.mode == CompareMode.TEXT) {
                 val leftRef = session.sources.getOrNull(0)
                 val rightRef = session.sources.getOrNull(1)
+                val baseRef = session.sources.getOrNull(2)  // 3-way: third source is the base
                 if (leftRef != null && rightRef != null) {
                     scope.launch {
                         reloadIfAbsent(context, leftRef.id, leftRef.uriGrant)
                         reloadIfAbsent(context, rightRef.id, rightRef.uriGrant)
-                        navController.navigate("compare/${leftRef.id}/${rightRef.id}")
+                        baseRef?.let { reloadIfAbsent(context, it.id, it.uriGrant) }
+                        val route = if (baseRef != null) {
+                            "compare/${leftRef.id}/${rightRef.id}?baseKey=${baseRef.id}"
+                        } else {
+                            "compare/${leftRef.id}/${rightRef.id}"
+                        }
+                        navController.navigate(route)
                     }
                 }
             } else {
@@ -876,10 +883,15 @@ private fun SetupDestination(
                     rs?.let { recentsStore.addRecent(it) }
                     ts?.let { recentsStore.addRecent(it) }
                     val sources = listOfNotNull(ls, rs, ts)
-                    val sessionId = "$lk-$rk"
+                    val sessionId = if (tk != null) "$lk-$rk-$tk" else "$lk-$rk"
+                    val sessionName = if (ts != null) {
+                        "${ls?.label ?: "left"} ↔ ${rs?.label ?: "right"} (base: ${ts.label})"
+                    } else {
+                        "${ls?.label ?: "left"} ↔ ${rs?.label ?: "right"}"
+                    }
                     sessionStore.save(Session(
                         id = sessionId,
-                        name = "${ls?.label ?: "left"} ↔ ${rs?.label ?: "right"}",
+                        name = sessionName,
                         mode = CompareMode.TEXT,
                         createdAt = System.currentTimeMillis(),
                         sources = sources,
