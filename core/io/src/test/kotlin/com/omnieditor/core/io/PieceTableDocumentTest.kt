@@ -569,4 +569,33 @@ class PieceTableDocumentTest {
         doc.commitBatch()
         doc.editGeneration shouldBe genBefore
     }
+
+    @Test
+    fun `batch does not write individual edits to journal - recover yields one undo step`() {
+        // Finding 1 regression: during a batch, individual edit() calls must NOT
+        // append to the journal. commitBatch() appends a single compound entry.
+        // Crash recovery must therefore produce exactly 1 undo step, not N+1.
+        val original = "line0\nline1\nline2"
+        val doc = PieceTableDocument.create(original, journalDir = journalDir, documentId = "batch-journal")
+        doc.beginBatch()
+        try {
+            doc.edit(0L..0L, "  line0")
+            doc.edit(1L..1L, "  line1")
+            doc.edit(2L..2L, "  line2")
+        } finally {
+            doc.commitBatch()
+        }
+
+        val textAfterBatch = doc.text()
+        doc.close()
+
+        // Recover from journal
+        val recovered = PieceTableDocument.recover(original, journalDir, "batch-journal")
+        recovered shouldNotBe null
+        recovered!!.text() shouldBe textAfterBatch
+        // The compound entry is the only entry: exactly 1 undo step
+        recovered.undoCount shouldBe 1
+        recovered.undo()
+        recovered.text() shouldBe original
+    }
 }

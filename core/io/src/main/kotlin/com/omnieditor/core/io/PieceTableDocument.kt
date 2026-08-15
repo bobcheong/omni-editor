@@ -104,7 +104,10 @@ class PieceTableDocument private constructor(
         undoStack.add(entry)
         redoStack.clear()
 
-        journal?.append(entry)
+        // Only write to the journal when NOT in a batch. During a batch, individual
+        // edit entries are suppressed; commitBatch() appends a single compound entry
+        // that is the only entry crash recovery needs to replay.
+        if (batchStartDepth < 0) journal?.append(entry)
         _editGeneration++
 
         _changes.tryEmit(
@@ -254,6 +257,25 @@ class PieceTableDocument private constructor(
         return entry.editId
     }
 
+    /**
+     * Begin a batch of edits that will be committed as a single undo step by [commitBatch].
+     *
+     * **Callers must call [commitBatch] in a `finally` block.** If an exception propagates
+     * between [beginBatch] and [commitBatch], the batch flag stays set permanently, blocking
+     * all future journal writes. Example:
+     * ```
+     * doc.beginBatch()
+     * try {
+     *     doc.edit(...)
+     *     doc.edit(...)
+     * } finally {
+     *     doc.commitBatch()
+     * }
+     * ```
+     *
+     * Nested calls to [beginBatch] are ignored (flat nesting). The outermost
+     * [commitBatch] closes the batch.
+     */
     override fun beginBatch() {
         if (batchStartDepth >= 0) return // already in a batch — flat nesting
         breakCoalescing()
