@@ -54,8 +54,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.nio.channels.Channels
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -1309,27 +1311,40 @@ private suspend fun executeMergeSave(
     if (externalChangeDetected) return
 
     // Pre-write backup for each dirty document that has a local path (direct flavour).
-    withContext(Dispatchers.IO) {
+    // R-51: Abort if backup fails — never write without a valid backup.
+    val backupFailed = withContext(Dispatchers.IO) {
+        var failed = false
         leftCachedUri?.let { uriToFileOrNull(it) }?.let { path ->
-            if (leftDocument?.dirty == true) MergeSafety.createBackup(path, backupDir, sessionId)
+            if (leftDocument?.dirty == true) {
+                val backup = MergeSafety.createBackup(path, backupDir, sessionId)
+                if (backup == null) failed = true
+            }
         }
         rightCachedUri?.let { uriToFileOrNull(it) }?.let { path ->
-            if (rightDocument?.dirty == true) MergeSafety.createBackup(path, backupDir, sessionId)
+            if (rightDocument?.dirty == true) {
+                val backup = MergeSafety.createBackup(path, backupDir, sessionId)
+                if (backup == null) failed = true
+            }
         }
+        failed
     }
+    if (backupFailed) return // Abort save — backup failure is a data-safety concern
 
     // Write dirty documents and refresh fingerprints.
+    // R-52: Use materialise() to encode with the document's tracked charset, not toByteArray() (UTF-8 only).
     withContext(Dispatchers.IO) {
         if (leftDocument?.dirty == true && leftUri != null) {
-            val leftBytes = leftDocument.text().toByteArray()
-            context.contentResolver.openOutputStream(leftUri, "wt")?.use { it.write(leftBytes) }
+            val baos = ByteArrayOutputStream()
+            leftDocument.materialise(Channels.newChannel(baos))
+            context.contentResolver.openOutputStream(leftUri, "wt")?.use { it.write(baos.toByteArray()) }
             leftDocument.markSaved()
             context.contentResolver.query(leftUri, fingerprintCols, null, null, null)
                 ?.use { c -> if (c.moveToFirst()) onLeftFingerprintUpdated(c.getLong(0), c.getLong(1)) }
         }
         if (rightDocument?.dirty == true && rightUri != null) {
-            val rightBytes = rightDocument.text().toByteArray()
-            context.contentResolver.openOutputStream(rightUri, "wt")?.use { it.write(rightBytes) }
+            val baos = ByteArrayOutputStream()
+            rightDocument.materialise(Channels.newChannel(baos))
+            context.contentResolver.openOutputStream(rightUri, "wt")?.use { it.write(baos.toByteArray()) }
             rightDocument.markSaved()
             context.contentResolver.query(rightUri, fingerprintCols, null, null, null)
                 ?.use { c -> if (c.moveToFirst()) onRightFingerprintUpdated(c.getLong(0), c.getLong(1)) }
