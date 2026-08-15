@@ -201,3 +201,23 @@ Tab/Shift+Tab (indent/outdent), Ctrl+/ (comment toggle).
 Comment prefix detected from file extension (// for Kotlin/Java/JS, # for Python/Shell, etc.).
 
 - `3ab276b` — Fix: touch bar cut/copy/paste wired via ClipboardManager (were empty placeholders).
+
+### Review-3 (R-51 through R-57) — Issue #13
+
+Save safety, correctness, and undo batching fixes from Review-3 (OE-REV-003).
+
+- **R-51** — Merge save aborts on backup failure instead of silently proceeding.
+- **R-52** — Merge save uses `materialise()` for correct charset encoding instead of
+  `text().toByteArray()` (was silently transcoding non-UTF-8 files to UTF-8).
+- **R-53** — `materialise()` re-emits BOM when the source file had one. UTF-8-BOM,
+  UTF-16 files no longer lose their BOM on save. `bomLength` parameter added to
+  `PieceTableDocument.create()`.
+- **R-54** — `beginBatch()`/`commitBatch()` added to `TextDocument` interface.
+  `indent()`, `outdent()`, `toggleComment()` batch all line edits into a single undo
+  step. `moveLineUp()`/`moveLineDown()` are now selection-aware (move the entire
+  selected block). Journal writes suppressed during batch to preserve single-step
+  semantics on crash recovery.
+- **R-57** — `DirectSourceProvider.write()`: `channel.force(true)` before rename;
+  temp file deleted on `renameTo` failure. `docs/licenses.md` contradictory line
+  removed; JUnit 4 EPL-1.0 carve-out added. `README.md` module table completed.
+  ADR-001 notes GMD coverage is smoke-only at v0.2.0.
