@@ -137,6 +137,7 @@ fun EditorScreen(
     val pendingTool by viewModel.pendingTool.collectAsState()
     var showFind by remember { mutableStateOf(false) }
     var lastSearchQuery by remember { mutableStateOf("") }
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     var showUnsavedDialog by remember { mutableStateOf(false) }
     var showGoToLineDialog by remember { mutableStateOf(false) }
     var showShortcutsSheet by remember { mutableStateOf(false) }
@@ -277,13 +278,26 @@ fun EditorScreen(
                         canRedo = state.editorState.document.redoCount > 0,
                         hasSelection = state.editorState.hasSelection,
                         onCut = {
-                            // Cut handled via clipboard in EditorContent; trigger via state
                             if (state.editorState.hasSelection) {
+                                clipboardManager.setText(
+                                    androidx.compose.ui.text.AnnotatedString(state.editorState.selectedText())
+                                )
                                 state.editorState.deleteSelection()
                             }
                         },
-                        onCopy = { /* copy requires ClipboardManager — handled via ImeHandler */ },
-                        onPaste = { /* paste requires ClipboardManager — handled via ImeHandler */ },
+                        onCopy = {
+                            if (state.editorState.hasSelection) {
+                                clipboardManager.setText(
+                                    androidx.compose.ui.text.AnnotatedString(state.editorState.selectedText())
+                                )
+                            }
+                        },
+                        onPaste = {
+                            val clip = clipboardManager.getText()?.text
+                            if (!clip.isNullOrEmpty()) {
+                                state.editorState.insertAtCaret(clip)
+                            }
+                        },
                         onSelectAll = {
                             val lastLine = state.editorState.lineCount - 1
                             val lastLineText = state.editorState.document.line(lastLine).toString()
