@@ -183,3 +183,21 @@ Editor and compare overflow menus reorganized with contextual settings:
   Diff3.toCompareResult() bridges to UI.
 - `f301c8d` — 3-way compare shown in sessions with base file label.
 - `d7c7dac` — Compare tab shows base file name; incremental build number in About.
+
+### Issue #12 — Touch bar and standard editing operations — `a2536dc`
+
+Persistent bottom touch bar with scrollable icon buttons (44dp targets, grouped with
+dividers): clipboard (cut/copy/paste/select all), undo/redo (disabled state), line ops
+(delete/duplicate/insert above+below/move up+down), indent/outdent, comment toggle, find.
+
+9 new EditorState methods: `deleteLine`, `duplicateLine`, `insertLineAbove`,
+`insertLineBelow`, `moveLineUp`, `moveLineDown`, `indent`, `outdent`, `toggleComment`.
+All selection-aware, all single undo steps.
+
+8 new keyboard shortcuts: Ctrl+Shift+K (delete line), Ctrl+Shift+D (duplicate),
+Ctrl+Enter / Ctrl+Shift+Enter (insert below/above), Alt+Up/Down (move line),
+Tab/Shift+Tab (indent/outdent), Ctrl+/ (comment toggle).
+
+Comment prefix detected from file extension (// for Kotlin/Java/JS, # for Python/Shell, etc.).
+
+- `3ab276b` — Fix: touch bar cut/copy/paste wired via ClipboardManager (were empty placeholders).
