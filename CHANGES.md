@@ -141,3 +141,45 @@ was built and what P1 requires.
 - **R-41** `ca63dd0` — On-device diagnostics: `CrashLogger` (ring buffer of 10 crash logs),
   `AnrWatchdog` (5s main-thread watchdog), "Share diagnostic report" in settings (user-
   initiated, redacted, no file paths/content, no network).
+
+## Post-P1 Reviews and Bug Fixes
+
+### Review-1 (R-42 through R-49) — `227a9c6`
+
+Complete rewrite of horizontal scrolling, IME bridge, and touch input.
+- **R-42** HorizontalScrollController in design module (ADR-011). Single offset per view,
+  graphicsLayer translation, scrollable(Horizontal) gesture input.
+- **R-43/R-44** Unified and split diff views adopt HorizontalScrollController.
+- **R-45** Split diff bidirectional vertical sync with sub-row connector precision.
+- **R-46** IME bridge shrinks to 1dp anchor; editor owns all gestures.
+- **R-47** Selection via detectDragGesturesAfterLongPress; plain drags scroll.
+- **R-48** IME sentinel for col-0 backspace, composition-safe sync, forward-delete.
+- **R-49** DisplaySettings plumbing.
+
+### Review-2 (R-50) — `f0c9c61`
+
+Selection handles with real geometry, popup-clamped floating toolbar, tap precision
+fix (fully specified textStyle matching measurement).
+
+### Issue #11 — Menu redesign — `b113e8e`
+
+Editor and compare overflow menus reorganized with contextual settings:
+- Editor: view toggles (word wrap, line numbers, whitespace, font size) with checkmarks
+- Compare: layout toggle (unified/split), sync scroll, granularity submenu
+- Settings link in both menus
+
+### Bug fixes
+
+- `e03d693` — Save works for file:// URIs (direct flavour); dirty state observable via
+  viewModel.isDirty collecting document changes flow.
+- `17f9bca` — Setup screen state hoisted to NavGraph (file picks survive navigation).
+- `49b9db5` — DisplaySettings wired through to EditorContent (settings take effect).
+- `3bd5280` — Compare layout/granularity/sync scroll settings wired to views.
+- `59911a6` — Granularity: pass currentRuleSet to CompareState on creation.
+- `616efd5` — Sync scroll passed through AdaptiveDiffView to SplitDiffView.
+- `fcb76c2` — Third file slot visibility survives file browser navigation.
+- `ac95d21` — Third file picker fully wired (file browser slot, SAF, race condition fix).
+- `42a507b` — 3-way compare wired: Diff3.diff3() runs when base file provided,
+  Diff3.toCompareResult() bridges to UI.
+- `f301c8d` — 3-way compare shown in sessions with base file label.
+- `d7c7dac` — Compare tab shows base file name; incremental build number in About.

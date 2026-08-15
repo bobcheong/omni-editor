@@ -1,7 +1,8 @@
 # Omni Editor — working rules
 
 Read this before every task. The specification is `docs/OE-SPEC-001.html`; the completion
-plan is `docs/P1-COMPLETION-PLAN.md` (v3, authoritative). Change log: `CHANGES.md`.
+plan is `docs/P1-COMPLETION-PLAN.md` (v3, authoritative). Supplement:
+`docs/Review-1/P1-INPUT-SCROLL-REWORK.md` (R-42..R-50). Change log: `CHANGES.md`.
 
 ## Independence (non-negotiable)
 
