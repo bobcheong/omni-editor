@@ -27,6 +27,7 @@ class PieceTableDocument private constructor(
     private val journal: Journal?,
     private val encoding: String,
     private val lineEnding: LineEnding,
+    private val bomLength: Int = 0,
 ) : TextDocument, java.io.Closeable {
 
     private var editIdCounter = 0L
@@ -325,9 +326,26 @@ class PieceTableDocument private constructor(
 
     override suspend fun materialise(into: WritableByteChannel) {
         withContext(Dispatchers.IO) {
+            val stream = Channels.newOutputStream(into)
+            // Re-emit BOM if the source had one
+            if (bomLength > 0) {
+                val bomBytes = when {
+                    encoding.equals("UTF-8", ignoreCase = true) && bomLength == 3 ->
+                        byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
+                    encoding.equals("UTF-16LE", ignoreCase = true) && bomLength == 2 ->
+                        byteArrayOf(0xFF.toByte(), 0xFE.toByte())
+                    encoding.equals("UTF-16BE", ignoreCase = true) && bomLength == 2 ->
+                        byteArrayOf(0xFE.toByte(), 0xFF.toByte())
+                    encoding.equals("UTF-32LE", ignoreCase = true) && bomLength == 4 ->
+                        byteArrayOf(0xFF.toByte(), 0xFE.toByte(), 0x00, 0x00)
+                    encoding.equals("UTF-32BE", ignoreCase = true) && bomLength == 4 ->
+                        byteArrayOf(0x00, 0x00, 0xFE.toByte(), 0xFF.toByte())
+                    else -> null
+                }
+                if (bomBytes != null) stream.write(bomBytes)
+            }
             val text = table.text()
             val bytes = text.toByteArray(charset(encoding))
-            val stream = Channels.newOutputStream(into)
             stream.write(bytes)
             stream.flush()
         }
@@ -399,6 +417,7 @@ class PieceTableDocument private constructor(
             lineEnding: LineEnding = LineEnding.LF,
             journalDir: File? = null,
             documentId: String? = null,
+            bomLength: Int = 0,
         ): PieceTableDocument {
             val journal = if (journalDir != null && documentId != null) {
                 Journal(File(journalDir, "$documentId.journal"))
@@ -408,6 +427,7 @@ class PieceTableDocument private constructor(
                 journal,
                 encoding,
                 lineEnding,
+                bomLength,
             )
         }
 

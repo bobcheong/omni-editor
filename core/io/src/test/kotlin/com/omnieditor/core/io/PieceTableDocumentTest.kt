@@ -158,6 +158,42 @@ class PieceTableDocumentTest {
         baos.toString("UTF-8") shouldBe "hello world"
     }
 
+    @Test
+    fun `materialise re-emits UTF-8 BOM when source had one`() = runTest {
+        val doc = PieceTableDocument.create("hello", encoding = "UTF-8", bomLength = 3)
+        val baos = ByteArrayOutputStream()
+        doc.materialise(Channels.newChannel(baos))
+        val bytes = baos.toByteArray()
+        // UTF-8 BOM: EF BB BF
+        bytes[0] shouldBe 0xEF.toByte()
+        bytes[1] shouldBe 0xBB.toByte()
+        bytes[2] shouldBe 0xBF.toByte()
+        // Content follows
+        String(bytes, 3, bytes.size - 3, Charsets.UTF_8) shouldBe "hello"
+    }
+
+    @Test
+    fun `materialise emits no BOM when source had none`() = runTest {
+        val doc = PieceTableDocument.create("hello", encoding = "UTF-8", bomLength = 0)
+        val baos = ByteArrayOutputStream()
+        doc.materialise(Channels.newChannel(baos))
+        val bytes = baos.toByteArray()
+        String(bytes, Charsets.UTF_8) shouldBe "hello"
+        // First byte should NOT be BOM
+        bytes[0] shouldBe 'h'.code.toByte()
+    }
+
+    @Test
+    fun `materialise re-emits UTF-16LE BOM`() = runTest {
+        val doc = PieceTableDocument.create("hi", encoding = "UTF-16LE", bomLength = 2)
+        val baos = ByteArrayOutputStream()
+        doc.materialise(Channels.newChannel(baos))
+        val bytes = baos.toByteArray()
+        // UTF-16 LE BOM: FF FE
+        bytes[0] shouldBe 0xFF.toByte()
+        bytes[1] shouldBe 0xFE.toByte()
+    }
+
     // ── Journalling and crash recovery ──
 
     @Test
