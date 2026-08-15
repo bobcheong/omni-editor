@@ -503,6 +503,13 @@ class EditorStateTest {
         state.document.line(1).toString() shouldBe "ccc"
         state.document.line(2).toString() shouldBe "aaa"
         state.document.line(3).toString() shouldBe "ddd"
+
+        // Verify single undo step
+        state.document.undo()
+        state.document.line(0).toString() shouldBe "aaa"
+        state.document.line(1).toString() shouldBe "bbb"
+        state.document.line(2).toString() shouldBe "ccc"
+        state.document.line(3).toString() shouldBe "ddd"
     }
 
     @Test
@@ -517,6 +524,13 @@ class EditorStateTest {
         state.document.line(0).toString() shouldBe "ccc"
         state.document.line(1).toString() shouldBe "aaa"
         state.document.line(2).toString() shouldBe "bbb"
+        state.document.line(3).toString() shouldBe "ddd"
+
+        // Verify single undo step
+        state.document.undo()
+        state.document.line(0).toString() shouldBe "aaa"
+        state.document.line(1).toString() shouldBe "bbb"
+        state.document.line(2).toString() shouldBe "ccc"
         state.document.line(3).toString() shouldBe "ddd"
     }
 
