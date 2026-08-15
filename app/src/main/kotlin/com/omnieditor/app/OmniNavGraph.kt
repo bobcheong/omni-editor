@@ -389,13 +389,18 @@ fun OmniNavGraph(
             val leftKey = backStackEntry.arguments?.getString("leftKey") ?: ""
             val rightKey = backStackEntry.arguments?.getString("rightKey") ?: ""
             val baseKey = backStackEntry.arguments?.getString("baseKey")
-            val compareTabId = "$leftKey-$rightKey"
+            val compareTabId = if (baseKey != null) "$leftKey-$rightKey-$baseKey" else "$leftKey-$rightKey"
             // R-34b: register this compare as the active tab.
             LaunchedEffect(compareTabId) {
                 activeTabId = compareTabId
                 val leftLabel = DocumentRegistry.get(leftKey)?.label ?: "left"
                 val rightLabel = DocumentRegistry.get(rightKey)?.label ?: "right"
-                val label = "$leftLabel ↔ $rightLabel"
+                val baseLabel = baseKey?.let { DocumentRegistry.get(it)?.label }
+                val label = if (baseLabel != null) {
+                    "$leftLabel ↔ $rightLabel (base: $baseLabel)"
+                } else {
+                    "$leftLabel ↔ $rightLabel"
+                }
                 val existing = tabs.indexOfFirst { it.id == compareTabId }
                 val tab = TabInfo(id = compareTabId, label = label, dirty = false, isCompare = true)
                 if (existing >= 0) tabs[existing] = tab else tabs.add(tab)

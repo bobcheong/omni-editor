@@ -27,6 +27,19 @@ val keystoreProps = Properties().apply {
 fun signingValue(key: String, env: String): String? =
     keystoreProps.getProperty(key) ?: System.getenv(env)
 
+// Incremental build number: reads from build-number.txt, increments on each build.
+// The file is gitignored — each dev environment has its own counter.
+val buildNumberFile = rootProject.file("build-number.txt")
+val buildNumber: Int = if (buildNumberFile.exists()) {
+    val current = buildNumberFile.readText().trim().toIntOrNull() ?: 0
+    val next = current + 1
+    buildNumberFile.writeText(next.toString())
+    next
+} else {
+    buildNumberFile.writeText("1")
+    1
+}
+
 android {
     namespace = "com.omnieditor.app"
     compileSdk = libs.versions.compileSdk.get().toInt()
@@ -38,6 +51,8 @@ android {
         versionCode = 1
         versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Expose build number to BuildConfig for the About screen.
+        buildConfigField("int", "BUILD_NUMBER", buildNumber.toString())
     }
 
     // DIST-1: two flavours, one codebase. They differ only in a manifest permission and
