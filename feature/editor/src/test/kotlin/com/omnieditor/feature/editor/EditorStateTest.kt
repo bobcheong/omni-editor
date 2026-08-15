@@ -430,6 +430,96 @@ class EditorStateTest {
         state.document.line(1).toString() shouldBe "bbb"
     }
 
+    // ── R-54: Batch undo for multi-line operations ────────────────────────
+
+    @Test
+    fun `indent 3 lines is single undo step`() {
+        val state = stateOf("aaa\nbbb\nccc")
+        state.selectionAnchorLine = 0L
+        state.selectionAnchorColumn = 0
+        state.caretLine = 2L
+        state.caretColumn = 3
+        state.indent(4)
+
+        state.document.line(0).toString() shouldBe "    aaa"
+        state.document.line(1).toString() shouldBe "    bbb"
+        state.document.line(2).toString() shouldBe "    ccc"
+
+        // Single undo reverts all three
+        state.document.undo()
+        state.document.line(0).toString() shouldBe "aaa"
+        state.document.line(1).toString() shouldBe "bbb"
+        state.document.line(2).toString() shouldBe "ccc"
+    }
+
+    @Test
+    fun `outdent 3 lines is single undo step`() {
+        val state = stateOf("    aaa\n    bbb\n    ccc")
+        state.selectionAnchorLine = 0L
+        state.selectionAnchorColumn = 0
+        state.caretLine = 2L
+        state.caretColumn = 7
+        state.outdent(4)
+
+        state.document.line(0).toString() shouldBe "aaa"
+        state.document.line(1).toString() shouldBe "bbb"
+        state.document.line(2).toString() shouldBe "ccc"
+
+        state.document.undo()
+        state.document.line(0).toString() shouldBe "    aaa"
+        state.document.line(1).toString() shouldBe "    bbb"
+        state.document.line(2).toString() shouldBe "    ccc"
+    }
+
+    @Test
+    fun `toggleComment 3 lines is single undo step`() {
+        val state = stateOf("aaa\nbbb\nccc")
+        state.selectionAnchorLine = 0L
+        state.selectionAnchorColumn = 0
+        state.caretLine = 2L
+        state.caretColumn = 3
+        state.toggleComment("//")
+
+        state.document.line(0).toString() shouldBe "// aaa"
+        state.document.line(1).toString() shouldBe "// bbb"
+        state.document.line(2).toString() shouldBe "// ccc"
+
+        state.document.undo()
+        state.document.line(0).toString() shouldBe "aaa"
+        state.document.line(1).toString() shouldBe "bbb"
+        state.document.line(2).toString() shouldBe "ccc"
+    }
+
+    @Test
+    fun `moveLineUp with multi-line selection moves all selected lines`() {
+        val state = stateOf("aaa\nbbb\nccc\nddd")
+        state.selectionAnchorLine = 1L
+        state.selectionAnchorColumn = 0
+        state.caretLine = 2L
+        state.caretColumn = 3
+        state.moveLineUp()
+
+        state.document.line(0).toString() shouldBe "bbb"
+        state.document.line(1).toString() shouldBe "ccc"
+        state.document.line(2).toString() shouldBe "aaa"
+        state.document.line(3).toString() shouldBe "ddd"
+    }
+
+    @Test
+    fun `moveLineDown with multi-line selection moves all selected lines`() {
+        val state = stateOf("aaa\nbbb\nccc\nddd")
+        state.selectionAnchorLine = 0L
+        state.selectionAnchorColumn = 0
+        state.caretLine = 1L
+        state.caretColumn = 3
+        state.moveLineDown()
+
+        state.document.line(0).toString() shouldBe "ccc"
+        state.document.line(1).toString() shouldBe "aaa"
+        state.document.line(2).toString() shouldBe "bbb"
+        state.document.line(3).toString() shouldBe "ddd"
+    }
+
     // ── #12 commentPrefixForExtension ─────────────────────────────────────
 
     @Test

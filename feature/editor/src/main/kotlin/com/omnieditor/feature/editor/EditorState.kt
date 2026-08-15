@@ -512,21 +512,43 @@ class EditorState(
         moveCaret(caretLine + 1, 0)
     }
 
-    /** Swap the caret line with the line above. */
+    /** Swap the caret line (or selected block) with the line above. */
     fun moveLineUp() {
-        if (readOnly || caretLine <= 0) return
-        val curText = document.line(caretLine).toString()
-        val prevText = document.line(caretLine - 1).toString()
-        document.edit((caretLine - 1)..caretLine, curText + "\n" + prevText)
+        if (readOnly) return
+        val (startLine, endLine) = selectedLineRange()
+        if (startLine <= 0) return
+        val prevText = document.line(startLine - 1).toString()
+        document.beginBatch()
+        try {
+            val blockLines = (startLine..endLine).map { document.line(it).toString() }
+            val replacement = (blockLines + prevText).joinToString("\n")
+            document.edit((startLine - 1)..endLine, replacement)
+        } finally {
+            document.commitBatch()
+        }
+        if (hasSelection) {
+            selectionAnchorLine = selectionAnchorLine?.let { it - 1 }
+        }
         moveCaret(caretLine - 1, caretColumn)
     }
 
-    /** Swap the caret line with the line below. */
+    /** Swap the caret line (or selected block) with the line below. */
     fun moveLineDown() {
-        if (readOnly || caretLine >= lineCount - 1) return
-        val curText = document.line(caretLine).toString()
-        val nextText = document.line(caretLine + 1).toString()
-        document.edit(caretLine..(caretLine + 1), nextText + "\n" + curText)
+        if (readOnly) return
+        val (startLine, endLine) = selectedLineRange()
+        if (endLine >= lineCount - 1) return
+        val nextText = document.line(endLine + 1).toString()
+        document.beginBatch()
+        try {
+            val blockLines = (startLine..endLine).map { document.line(it).toString() }
+            val replacement = nextText + "\n" + blockLines.joinToString("\n")
+            document.edit(startLine..(endLine + 1), replacement)
+        } finally {
+            document.commitBatch()
+        }
+        if (hasSelection) {
+            selectionAnchorLine = selectionAnchorLine?.let { it + 1 }
+        }
         moveCaret(caretLine + 1, caretColumn)
     }
 
@@ -538,9 +560,14 @@ class EditorState(
         if (readOnly) return
         val spaces = " ".repeat(tabWidth)
         val (startLine, endLine) = selectedLineRange()
-        for (l in startLine..endLine) {
-            val text = document.line(l).toString()
-            document.edit(l..l, spaces + text)
+        document.beginBatch()
+        try {
+            for (l in startLine..endLine) {
+                val text = document.line(l).toString()
+                document.edit(l..l, spaces + text)
+            }
+        } finally {
+            document.commitBatch()
         }
         if (!hasSelection) {
             caretColumn += tabWidth
@@ -554,16 +581,21 @@ class EditorState(
     fun outdent(tabWidth: Int = 4) {
         if (readOnly) return
         val (startLine, endLine) = selectedLineRange()
-        for (l in startLine..endLine) {
-            val text = document.line(l).toString()
-            val leading = text.length - text.trimStart(' ').length
-            val remove = minOf(leading, tabWidth)
-            if (remove > 0) {
-                document.edit(l..l, text.substring(remove))
-                if (l == caretLine) {
-                    caretColumn = maxOf(0, caretColumn - remove)
+        document.beginBatch()
+        try {
+            for (l in startLine..endLine) {
+                val text = document.line(l).toString()
+                val leading = text.length - text.trimStart(' ').length
+                val remove = minOf(leading, tabWidth)
+                if (remove > 0) {
+                    document.edit(l..l, text.substring(remove))
+                    if (l == caretLine) {
+                        caretColumn = maxOf(0, caretColumn - remove)
+                    }
                 }
             }
+        } finally {
+            document.commitBatch()
         }
     }
 
@@ -578,26 +610,31 @@ class EditorState(
         val allCommented = (startLine..endLine).all { l ->
             document.line(l).toString().trimStart().startsWith(prefix)
         }
-        for (l in startLine..endLine) {
-            val text = document.line(l).toString()
-            if (allCommented) {
-                // Remove the first occurrence of prefix (with optional trailing space)
-                val idx = text.indexOf(prefix)
-                if (idx >= 0) {
-                    val afterPrefix = idx + prefix.length
-                    val end = if (afterPrefix < text.length && text[afterPrefix] == ' ') {
-                        afterPrefix + 1
-                    } else {
-                        afterPrefix
+        document.beginBatch()
+        try {
+            for (l in startLine..endLine) {
+                val text = document.line(l).toString()
+                if (allCommented) {
+                    // Remove the first occurrence of prefix (with optional trailing space)
+                    val idx = text.indexOf(prefix)
+                    if (idx >= 0) {
+                        val afterPrefix = idx + prefix.length
+                        val end = if (afterPrefix < text.length && text[afterPrefix] == ' ') {
+                            afterPrefix + 1
+                        } else {
+                            afterPrefix
+                        }
+                        document.edit(l..l, text.removeRange(idx, end))
                     }
-                    document.edit(l..l, text.removeRange(idx, end))
+                } else {
+                    // Add prefix + space at line start (after leading whitespace)
+                    val leadingSpaces = text.length - text.trimStart().length
+                    val newLine = text.substring(0, leadingSpaces) + prefix + " " + text.substring(leadingSpaces)
+                    document.edit(l..l, newLine)
                 }
-            } else {
-                // Add prefix + space at line start (after leading whitespace)
-                val leadingSpaces = text.length - text.trimStart().length
-                val newLine = text.substring(0, leadingSpaces) + prefix + " " + text.substring(leadingSpaces)
-                document.edit(l..l, newLine)
             }
+        } finally {
+            document.commitBatch()
         }
     }
 
