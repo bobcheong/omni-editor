@@ -283,3 +283,31 @@ document pairs.
 `TextDocument.text()` added to the interface. `FindReplace` widened to
 `TextDocument`. INDEXED_READ_ONLY tier now opens files 16–256 MiB via
 `LargeFileDocument` in read-only mode instead of showing OverThreshold.
+
+## v0.4 — Compare/editor UX completion (spec P1 closure, part 2)
+
+### C.4 — NavGraph split — Issue #16
+
+`OmniNavGraph.kt` split from ~1,400 lines into `EditorCoordinator.kt` (302
+lines) and `CompareCoordinator.kt` (486 lines). NavGraph retains route
+declarations only (~647 lines). Pure refactor — zero behaviour change.
+
+### F-06 — Compare find completion (OE-FND-1) — Issue #16
+
+Compare find bar extended with case-sensitivity, whole-word, and regex
+toggles via `FilterChip`. Per-side match counts displayed (L:n / R:n).
+`FindReplace.findAllInLines()` added for line-list-based matching.
+
+### C.6 — Error-model audit — Issue #16
+
+Audited all catch blocks in app/src/main and feature/ modules. All 15
+catch-all blocks map correctly to UI states (OverThreshold, error messages)
+or are legitimately defensive (rendering, IME, diagnostics infrastructure).
+No gaps found.
+
+### Scaffolded data models — Issue #16
+
+`CompareBookmark` (F-08), `HexViewConfig` (F-07), `UserTheme` (F-14),
+`SessionGroup` (F-13) — serializable data classes in `core/model`.
+ADR-013 documents the swipe gesture conflict resolution for F-09
+(fling-at-bound approach).
