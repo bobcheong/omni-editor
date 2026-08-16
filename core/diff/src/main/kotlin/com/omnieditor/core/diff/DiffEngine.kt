@@ -208,6 +208,47 @@ object DiffEngine {
     }
 
     /**
+     * Auto-selecting compare: uses [BlockDiff] for files above the line threshold,
+     * falls back to full [compare] for smaller files.
+     *
+     * The threshold is [BlockDiff.DEFAULT_LINE_THRESHOLD] (250,000 lines).
+     * Reports [EngineMode.BLOCK_MATCH] or [EngineMode.FULL_INDEX] in the result.
+     */
+    suspend fun compareAuto(
+        leftLineCount: Long,
+        rightLineCount: Long,
+        leftLine: (Long) -> CharSequence,
+        rightLine: (Long) -> CharSequence,
+        leftHash: ((Long) -> Long)? = null,
+        rightHash: ((Long) -> Long)? = null,
+        rules: RuleSet = RuleSet.DEFAULT,
+        progress: ((Progress) -> Unit)? = null,
+    ): CompareResult {
+        val totalLines = leftLineCount + rightLineCount
+        return if (totalLines > BlockDiff.DEFAULT_LINE_THRESHOLD) {
+            BlockDiff.compare(
+                leftLineCount = leftLineCount,
+                rightLineCount = rightLineCount,
+                leftLine = leftLine,
+                rightLine = rightLine,
+                rules = rules,
+                progress = progress,
+            )
+        } else {
+            compare(
+                leftLineCount = leftLineCount,
+                rightLineCount = rightLineCount,
+                leftLine = leftLine,
+                rightLine = rightLine,
+                leftHash = leftHash,
+                rightHash = rightHash,
+                rules = rules,
+                progress = progress,
+            )
+        }
+    }
+
+    /**
      * FNV-1a hash for normalised line text, matching the LineIndex hash function.
      */
     internal fun hashString(s: String): Long {
