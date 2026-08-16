@@ -586,15 +586,29 @@ private fun EditorDestination(
     LaunchedEffect(contentKey) {
         if (uiState is EditorUiState.Empty && cached != null) {
             val size = cached.sizeBytes
-            if (size > 0 && size > DocumentLimits.EDITOR_MAX_BYTES) {
-                // R-12: refuse oversized files; content was never read from disk.
-                viewModel.signalOverThreshold(
-                    fileName = cached.label,
-                    fileBytes = size,
-                    limitBytes = DocumentLimits.EDITOR_MAX_BYTES,
-                )
-            } else {
-                viewModel.openDocument(cached.text, fileName = cached.label)
+            when (DocumentLimits.editorTier(size)) {
+                DocumentLimits.SizeTier.FULL_MEMORY -> {
+                    viewModel.openDocument(cached.text, fileName = cached.label)
+                }
+                DocumentLimits.SizeTier.INDEXED_READ_ONLY -> {
+                    // F-01: Large file — INDEXED_READ_ONLY tier.
+                    // Full integration requires EditorViewModel to accept TextDocument.
+                    // TODO F-01: wire LargeFileDocument into EditorViewModel (follow-up task).
+                    // For now, surface a read-only-not-yet-available message via OverThreshold.
+                    viewModel.signalOverThreshold(
+                        fileName = cached.label,
+                        fileBytes = size,
+                        limitBytes = DocumentLimits.INDEXED_MAX_BYTES,
+                    )
+                }
+                DocumentLimits.SizeTier.REFUSED -> {
+                    // R-12: refuse oversized files; content was never read from disk.
+                    viewModel.signalOverThreshold(
+                        fileName = cached.label,
+                        fileBytes = size,
+                        limitBytes = DocumentLimits.INDEXED_MAX_BYTES,
+                    )
+                }
             }
         }
 
@@ -1016,11 +1030,10 @@ private fun CompareDestination(
 
     LaunchedEffect(effectiveLeftKey, effectiveRightKey, currentRuleSet, flipped, rerunVersion) {
         if (leftCached != null && rightCached != null) {
-            // R-12: size guard — refuse over-threshold files on the compare path.
-            val limit = DocumentLimits.COMPARE_MAX_BYTES_PER_SIDE
-            val leftSize = leftCached.sizeBytes
-            val rightSize = rightCached.sizeBytes
-            if ((leftSize > 0 && leftSize > limit) || (rightSize > 0 && rightSize > limit)) {
+            // R-12: size guard — refuse over-threshold files on the compare path (F-01).
+            val leftTier = DocumentLimits.compareTier(leftCached.sizeBytes)
+            val rightTier = DocumentLimits.compareTier(rightCached.sizeBytes)
+            if (leftTier == DocumentLimits.SizeTier.REFUSED || rightTier == DocumentLimits.SizeTier.REFUSED) {
                 return@LaunchedEffect
             }
 
@@ -1078,8 +1091,8 @@ private fun CompareDestination(
                         rightLines.size.toLong(),
                     )
                 } else {
-                    // 2-way compare
-                    com.omnieditor.core.diff.DiffEngine.compare(
+                    // 2-way compare — compareAuto selects BlockDiff above 250k lines (F-02).
+                    com.omnieditor.core.diff.DiffEngine.compareAuto(
                         leftLineCount = leftLines.size.toLong(),
                         rightLineCount = rightLines.size.toLong(),
                         leftLine = { leftLines[it.toInt()] },
