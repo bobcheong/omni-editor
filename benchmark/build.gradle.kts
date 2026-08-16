@@ -5,7 +5,6 @@ import kotlin.random.Random
 
 plugins {
     alias(libs.plugins.android.test)
-    alias(libs.plugins.kotlin.compose)
 }
 
 android {
