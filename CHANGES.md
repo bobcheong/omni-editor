@@ -275,3 +275,11 @@ when git is not on PATH.
 Property test: apply all left→right hunks from DiffEngine to the left document,
 assert result is identical to the right document. 50 iterations with random
 document pairs.
+
+### F-01 completion — EditorViewModel accepts TextDocument — Issue #15
+
+`EditorState` widened from `PieceTableDocument` to `TextDocument`. New
+`EditorViewModel.openLargeDocument()` accepts any `TextDocument` directly.
+`TextDocument.text()` added to the interface. `FindReplace` widened to
+`TextDocument`. INDEXED_READ_ONLY tier now opens files 16–256 MiB via
+`LargeFileDocument` in read-only mode instead of showing OverThreshold.
