@@ -48,7 +48,11 @@ android {
         applicationId = "com.omnieditor"
         minSdk = libs.versions.minSdk.get().toInt()          // Android 12. Decision recorded: OE-SPEC-001 §11 NFR-C1.
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1
+        versionCode = providers.exec {
+            commandLine("git", "rev-list", "--count", "HEAD")
+            workingDir = rootProject.projectDir
+            isIgnoreExitValue = true
+        }.standardOutput.asText.map { it.trim().toIntOrNull() ?: 1 }.get()
         versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Expose build number to BuildConfig for the About screen.
