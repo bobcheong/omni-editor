@@ -1,6 +1,5 @@
 package com.omnieditor.core.diff
 
-import com.omnieditor.core.model.HunkType
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import org.junit.Assume.assumeTrue
