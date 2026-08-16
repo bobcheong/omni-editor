@@ -591,15 +591,35 @@ private fun EditorDestination(
                     viewModel.openDocument(cached.text, fileName = cached.label)
                 }
                 DocumentLimits.SizeTier.INDEXED_READ_ONLY -> {
-                    // F-01: Large file — INDEXED_READ_ONLY tier.
-                    // Full integration requires EditorViewModel to accept TextDocument.
-                    // TODO F-01: wire LargeFileDocument into EditorViewModel (follow-up task).
-                    // For now, surface a read-only-not-yet-available message via OverThreshold.
-                    viewModel.signalOverThreshold(
-                        fileName = cached.label,
-                        fileBytes = size,
-                        limitBytes = DocumentLimits.INDEXED_MAX_BYTES,
-                    )
+                    // F-01: Large file — open via LargeFileDocument (read-only).
+                    val sourceUri = cached.uri
+                    val uri = Uri.parse(sourceUri)
+                    try {
+                        val largeDoc = withContext(Dispatchers.IO) {
+                            // Copy URI content to a cache file for FileIndexer (needs java.io.File)
+                            val cacheFile = java.io.File(
+                                context.cacheDir,
+                                "large-${contentKey.hashCode().toUInt()}.tmp",
+                            )
+                            if (!cacheFile.exists()) {
+                                context.contentResolver.openInputStream(uri)?.use { input ->
+                                    cacheFile.outputStream().use { output -> input.copyTo(output) }
+                                }
+                            }
+                            com.omnieditor.core.io.LargeFileDocument.open(cacheFile)
+                        }
+                        viewModel.openLargeDocument(
+                            document = largeDoc,
+                            readOnly = true,
+                            fileName = cached.label + " (read-only)",
+                        )
+                    } catch (e: Exception) {
+                        viewModel.signalOverThreshold(
+                            fileName = cached.label,
+                            fileBytes = size,
+                            limitBytes = DocumentLimits.INDEXED_MAX_BYTES,
+                        )
+                    }
                 }
                 DocumentLimits.SizeTier.REFUSED -> {
                     // R-12: refuse oversized files; content was never read from disk.
