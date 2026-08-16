@@ -14,6 +14,8 @@ coroutines = "1.11.0"
 serialization = "1.11.0"
 room = "2.8.4"
 datastore = "1.2.1"
+benchmarkMacro = "1.3.4"
+uiautomator = "2.3.0"
 junit = "4.13.2"
 kotest = "5.9.1"
 turbine = "1.2.1"
@@ -51,6 +53,8 @@ turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTest" }
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
+benchmark-macro-junit4 = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "benchmarkMacro" }
+uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -62,3 +66,4 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+android-test = { id = "com.android.test", version.ref = "agp" }

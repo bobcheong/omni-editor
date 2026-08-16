@@ -21,3 +21,4 @@ include(":feature:editor")
 include(":feature:compare")
 include(":feature:setup")
 // Remaining: T-24 adds feature:home if needed.
+include(":benchmark")
