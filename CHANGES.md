@@ -221,3 +221,14 @@ Save safety, correctness, and undo batching fixes from Review-3 (OE-REV-003).
   temp file deleted on `renameTo` failure. `docs/licenses.md` contradictory line
   removed; JUnit 4 EPL-1.0 carve-out added. `README.md` module table completed.
   ADR-001 notes GMD coverage is smoke-only at v0.2.0.
+
+### F-05b — Benchmark harness — Issue #14
+
+`:benchmark` macrobenchmark module targeting `:app` with `benchmark` build type
+(minified, profileable). Four benchmark classes: `StartupBenchmark` (NFR-P1),
+`CompareThresholdBenchmark` (NFR-P2), `ScrollBenchmark` (NFR-P3),
+`HeapBenchmark` (NFR-P4/P5). Deterministic fixture generator
+(`./gradlew :benchmark:generateFixtures`) produces 250 MB pair and 500k-line
+file from seeded PRNG. ADR-002 documents methodology and results table.
+Benchmark navigation sequences are structural placeholders refined when
+F-01/F-02/F-03 land large-file support.

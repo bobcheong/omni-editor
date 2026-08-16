@@ -21,6 +21,8 @@ Permitted: Apache-2.0, MIT, BSD. LGPL by justification only. GPL/AGPL forbidden.
 
 | AndroidX DataStore Preferences | 1.2.1 | Apache-2.0 | app (settings persistence) | R-35 |
 | Navigation Compose | 2.9.0 | Apache-2.0 | app (nav graph) | T-01 |
+| AndroidX Benchmark Macro | 1.3.4 | Apache-2.0 (test only) | benchmark | F-05b |
+| AndroidX UiAutomator | 2.3.0 | Apache-2.0 (test only) | benchmark | F-05b |
 
 **Licence notes:**
 - JUnit 4 (EPL-1.0): test-only dependency, not bundled in release APKs. EPL-1.0 is
