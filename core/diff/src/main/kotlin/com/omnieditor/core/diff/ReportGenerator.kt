@@ -221,6 +221,126 @@ object ReportGenerator {
         return sb.toString()
     }
 
+    // ── Side-by-side report ──
+
+    /**
+     * Scope of the side-by-side report: entire file, a selection, or the visible viewport.
+     * ALL: include every line. SELECTION: include only lines within [scopeRange].
+     * VISIBLE: treated the same as ALL at report-generation time (viewport is ephemeral).
+     */
+    enum class ReportScope { ALL, SELECTION, VISIBLE }
+
+    /**
+     * Generate a side-by-side HTML report (OE-RPT-2).
+     *
+     * Each line of the left and right file occupies adjacent table cells.
+     * Changed, added, and removed regions are colour-coded.
+     * When [scope] is [ReportScope.SELECTION] only lines within [scopeRange] (0-based,
+     * inclusive) are emitted.
+     */
+    fun htmlSideBySide(
+        result: CompareResult,
+        leftLines: List<String>,
+        rightLines: List<String>,
+        meta: ReportMeta,
+        scope: ReportScope = ReportScope.ALL,
+        scopeRange: LongRange? = null,
+    ): String {
+        val sb = StringBuilder()
+        sb.appendLine("<!DOCTYPE html><html><head><meta charset='utf-8'>")
+        sb.appendLine("<style>")
+        sb.appendLine("body{font-family:monospace;font-size:13px;margin:0;padding:16px}")
+        sb.appendLine("table{border-collapse:collapse;width:100%}")
+        sb.appendLine("td{padding:2px 8px;vertical-align:top;white-space:pre-wrap;border:1px solid #ddd}")
+        sb.appendLine(".ln{color:#999;text-align:right;width:40px;user-select:none}")
+        sb.appendLine(".add{background:#e6ffec}.del{background:#ffebe9}.chg{background:#fff3cd}")
+        sb.appendLine("h2{font-family:sans-serif;font-size:14px;margin:8px 0}")
+        sb.appendLine("</style></head><body>")
+
+        // Header
+        sb.appendLine("<h2>${esc(meta.leftLabel)} &#x21D4; ${esc(meta.rightLabel)}</h2>")
+        sb.appendLine("<p>Generated: ${esc(meta.timestamp)} &middot; Engine: ${esc(meta.engineMode)} &middot; Rules: ${esc(meta.rules.toString())}</p>")
+
+        sb.appendLine("<table>")
+        sb.appendLine("<tr><th></th><th>${esc(meta.leftLabel)}</th><th></th><th>${esc(meta.rightLabel)}</th></tr>")
+
+        val maxLine = maxOf(leftLines.size, rightLines.size)
+
+        // Determine which lines to render
+        val lineRange: IntRange = if (scope == ReportScope.SELECTION && scopeRange != null) {
+            scopeRange.first.toInt()..minOf(scopeRange.last.toInt(), maxLine - 1)
+        } else {
+            0 until maxLine
+        }
+
+        // Filter hunks that overlap the rendered range
+        val hunksInScope: List<Hunk> = if (scope == ReportScope.SELECTION && scopeRange != null) {
+            result.hunks.filter {
+                it.leftStart < scopeRange.last + 1 && it.leftEnd > scopeRange.first
+            }
+        } else {
+            result.hunks
+        }
+
+        var leftIdx = lineRange.first
+        var rightIdx = lineRange.first
+
+        for (hunk in hunksInScope) {
+            // Context lines before this hunk
+            while (leftIdx < hunk.leftStart.toInt() && leftIdx <= lineRange.last) {
+                val lText = leftLines.getOrElse(leftIdx) { "" }
+                val rText = rightLines.getOrElse(rightIdx) { "" }
+                sb.appendLine(
+                    "<tr><td class='ln'>${leftIdx + 1}</td><td>${esc(lText)}</td>" +
+                        "<td class='ln'>${rightIdx + 1}</td><td>${esc(rText)}</td></tr>"
+                )
+                leftIdx++
+                rightIdx++
+            }
+
+            // Hunk rows
+            val leftEnd = hunk.leftEnd.toInt()
+            val rightEnd = hunk.rightEnd.toInt()
+            val hunkLeft = (hunk.leftStart.toInt() until leftEnd).map { leftLines.getOrElse(it) { "" } }
+            val hunkRight = (hunk.rightStart.toInt() until rightEnd).map { rightLines.getOrElse(it) { "" } }
+            val maxHunk = maxOf(hunkLeft.size, hunkRight.size)
+            val css = when (hunk.type) {
+                HunkType.ADDED -> "add"
+                HunkType.REMOVED -> "del"
+                else -> "chg"
+            }
+            for (i in 0 until maxHunk) {
+                val lText = hunkLeft.getOrNull(i)
+                val rText = hunkRight.getOrNull(i)
+                val lNum = if (lText != null) "${hunk.leftStart.toInt() + i + 1}" else ""
+                val rNum = if (rText != null) "${hunk.rightStart.toInt() + i + 1}" else ""
+                sb.appendLine(
+                    "<tr><td class='ln'>$lNum</td><td class='$css'>${esc(lText ?: "")}</td>" +
+                        "<td class='ln'>$rNum</td><td class='$css'>${esc(rText ?: "")}</td></tr>"
+                )
+            }
+            leftIdx = leftEnd
+            rightIdx = rightEnd
+        }
+
+        // Trailing context after all hunks
+        while (leftIdx <= lineRange.last && leftIdx < leftLines.size) {
+            val lText = leftLines.getOrElse(leftIdx) { "" }
+            val rText = rightLines.getOrElse(rightIdx) { "" }
+            sb.appendLine(
+                "<tr><td class='ln'>${leftIdx + 1}</td><td>${esc(lText)}</td>" +
+                    "<td class='ln'>${rightIdx + 1}</td><td>${esc(rText)}</td></tr>"
+            )
+            leftIdx++
+            rightIdx++
+        }
+
+        sb.appendLine("</table>")
+        sb.appendLine("<footer><p>Rules: ${esc(meta.rules.toString())} &middot; Engine: ${esc(meta.engineMode)}</p></footer>")
+        sb.appendLine("</body></html>")
+        return sb.toString()
+    }
+
     // ── Helpers ──
 
     private data class HunkGroup(

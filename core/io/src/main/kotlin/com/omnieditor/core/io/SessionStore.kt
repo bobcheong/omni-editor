@@ -1,6 +1,7 @@
 package com.omnieditor.core.io
 
 import com.omnieditor.core.model.Session
+import com.omnieditor.core.model.SessionGroup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -150,6 +151,114 @@ class SessionStore(private val sessionDir: File) {
                 }
             }
         }
+    }
+
+    // ── Session group CRUD (F-13) ──
+
+    private val groupDir: File = File(sessionDir, "groups").apply { mkdirs() }
+
+    /** Create a new named group and persist it. */
+    fun createGroup(name: String): SessionGroup {
+        val group = SessionGroup(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+        )
+        saveGroupBlocking(group)
+        return group
+    }
+
+    /** Delete a group by ID (sessions are NOT deleted). */
+    fun deleteGroup(id: String) {
+        File(groupDir, "$id.json").delete()
+    }
+
+    /** Add [sessionId] to [groupId] if not already present. */
+    fun addToGroup(groupId: String, sessionId: String) {
+        val group = loadGroupBlocking(groupId) ?: return
+        if (sessionId !in group.sessionIds) {
+            saveGroupBlocking(group.copy(sessionIds = group.sessionIds + sessionId))
+        }
+    }
+
+    /** Remove [sessionId] from [groupId]. */
+    fun removeFromGroup(groupId: String, sessionId: String) {
+        val group = loadGroupBlocking(groupId) ?: return
+        saveGroupBlocking(group.copy(sessionIds = group.sessionIds - sessionId))
+    }
+
+    /** List all groups sorted by name. */
+    fun listGroups(): List<SessionGroup> {
+        return groupDir.listFiles()
+            ?.filter { it.extension == "json" }
+            ?.mapNotNull { file ->
+                try {
+                    json.decodeFromString(SessionGroup.serializer(), file.readText())
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            ?.sortedBy { it.name }
+            ?: emptyList()
+    }
+
+    private fun saveGroupBlocking(group: SessionGroup) {
+        groupDir.mkdirs()
+        File(groupDir, "${group.id}.json")
+            .writeText(json.encodeToString(SessionGroup.serializer(), group))
+    }
+
+    private fun loadGroupBlocking(id: String): SessionGroup? {
+        val file = File(groupDir, "$id.json")
+        if (!file.exists()) return null
+        return try {
+            json.decodeFromString(SessionGroup.serializer(), file.readText())
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    // ── JSON export / import (F-12) ──
+
+    // A separate Json instance that always encodes default values so schemaVersion
+    // is always present in the exported JSON even when it equals the default.
+    private val exportJson = Json { ignoreUnknownKeys = true; prettyPrint = false; encodeDefaults = true }
+
+    @Serializable
+    private data class SessionExport(
+        val schemaVersion: Int = SCHEMA_VERSION,
+        val session: Session,
+    )
+
+    /**
+     * Export a single session as a self-contained JSON string including a schemaVersion field.
+     * Throws [IllegalArgumentException] if the session is not found.
+     */
+    fun exportAsJson(sessionId: String): String {
+        val file = File(sessionDir, "$sessionId.json")
+        if (!file.exists()) throw IllegalArgumentException("Session $sessionId not found")
+        val wrapper = try {
+            json.decodeFromString(VersionedSession.serializer(), file.readText())
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Session $sessionId could not be read: ${e.message}")
+        }
+        val export = SessionExport(session = wrapper.data)
+        return exportJson.encodeToString(SessionExport.serializer(), export)
+    }
+
+    /**
+     * Import a session from a JSON string produced by [exportAsJson].
+     * A new ID is assigned to avoid collisions. The session is persisted and returned.
+     */
+    fun importFromJson(jsonString: String): Session {
+        val export = json.decodeFromString(SessionExport.serializer(), jsonString)
+        val session = export.session.copy(id = java.util.UUID.randomUUID().toString())
+        val wrapper = VersionedSession(schemaVersion = SCHEMA_VERSION, data = session)
+        sessionDir.mkdirs()
+        File(sessionDir, "${session.id}.json")
+            .writeText(json.encodeToString(VersionedSession.serializer(), wrapper))
+        // Update in-memory cache
+        cache[session.id] = session
+        return session
     }
 
     @Serializable
