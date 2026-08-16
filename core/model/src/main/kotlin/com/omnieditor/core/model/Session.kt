@@ -23,6 +23,7 @@ data class Session(
     val ruleSetId: String? = null,
     val displaySettings: DisplaySettings = DisplaySettings(),
     val bookmarks: List<Bookmark> = emptyList(),
+    val compareBookmarks: List<CompareBookmark> = emptyList(),
 )
 
 @Serializable
