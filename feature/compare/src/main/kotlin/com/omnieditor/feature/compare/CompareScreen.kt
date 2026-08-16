@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -41,7 +42,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.omnieditor.core.io.FindReplace
 import com.omnieditor.core.model.RuleSet
 import com.omnieditor.core.model.WhitespaceRule
 import com.omnieditor.design.KeyboardShortcutsSheet
@@ -116,24 +117,48 @@ fun CompareScreen(
     var showUnsavedDialog by remember { mutableStateOf(false) }
     var showShortcutsSheet by remember { mutableStateOf(false) }
 
-    // Find-within-compare state (OE-FND-1)
+    // Find-within-compare state (OE-FND-1, F-06)
     var showFindBar by remember { mutableStateOf(false) }
     var findQuery by remember { mutableStateOf("") }
     var findMatchIndex by remember { mutableIntStateOf(0) }
-    // Match indices: rows where either left or right text contains the query (case-insensitive).
-    val findMatches by remember(state, findQuery) {
-        derivedStateOf {
-            if (state == null || findQuery.isBlank()) emptyList()
-            else {
-                val q = findQuery.lowercase()
-                state.buildAlignedRows().mapIndexedNotNull { idx, row ->
-                    val leftText = row.left?.let { state.leftLines.getOrElse(it.toInt()) { "" } } ?: ""
-                    val rightText = row.right?.let { state.rightLines.getOrElse(it.toInt()) { "" } } ?: ""
-                    if (leftText.lowercase().contains(q) || rightText.lowercase().contains(q)) idx else null
-                }
+    var findCaseSensitive by remember { mutableStateOf(false) }
+    var findWholeWord by remember { mutableStateOf(false) }
+    var findRegex by remember { mutableStateOf(false) }
+
+    // Per-side match lists; findMatches drives prev/next navigation (aligned row indices).
+    val findOptions = FindReplace.FindOptions(
+        caseSensitive = findCaseSensitive,
+        wholeWord = findWholeWord,
+        regex = findRegex,
+    )
+    // All three derived values share the same keys and are computed together so the
+    // navigation index list always uses the freshly-computed per-side match sets.
+    // Triple<leftMatches, rightMatches, navRowIndices>
+    val findState = remember(state, findQuery, findOptions) {
+        if (findQuery.isBlank() || state == null) {
+            Triple(
+                emptyList<FindReplace.Match>(),
+                emptyList<FindReplace.Match>(),
+                emptyList<Int>(),
+            )
+        } else {
+            val lm = FindReplace.findAllInLines(state.leftLines, findQuery, findOptions)
+            val rm = FindReplace.findAllInLines(state.rightLines, findQuery, findOptions)
+            val leftLineSet = lm.map { it.line.toInt() }.toSet()
+            val rightLineSet = rm.map { it.line.toInt() }.toSet()
+            val rows = state.buildAlignedRows()
+            val navRows = rows.mapIndexedNotNull { idx, row ->
+                val leftHit = row.left != null && row.left.toInt() in leftLineSet
+                val rightHit = row.right != null && row.right.toInt() in rightLineSet
+                if (leftHit || rightHit) idx else null
             }
+            Triple(lm, rm, navRows)
         }
     }
+    val leftMatches = findState.first
+    val rightMatches = findState.second
+    val findMatches = findState.third
+
     // Clamp findMatchIndex when matches change
     LaunchedEffect(findMatches) {
         if (findMatchIndex >= findMatches.size) findMatchIndex = 0
@@ -244,6 +269,11 @@ fun CompareScreen(
                 findQuery = findQuery,
                 findMatches = findMatches,
                 findMatchIndex = findMatchIndex,
+                findCaseSensitive = findCaseSensitive,
+                findWholeWord = findWholeWord,
+                findRegex = findRegex,
+                leftMatchCount = leftMatches.size,
+                rightMatchCount = rightMatches.size,
                 showActiveLineSheet = showActiveLineSheet,
                 settingsState = settingsState,
                 tappedHunkIndex = tappedHunkIndex,
@@ -259,6 +289,9 @@ fun CompareScreen(
                     }
                 },
                 onFindClose = { showFindBar = false; findQuery = "" },
+                onToggleCaseSensitive = { findCaseSensitive = !findCaseSensitive; findMatchIndex = 0 },
+                onToggleWholeWord = { findWholeWord = !findWholeWord; findMatchIndex = 0 },
+                onToggleRegex = { findRegex = !findRegex; findMatchIndex = 0 },
                 onDiffRowTapped = { hunkIndex -> tappedHunkIndex = hunkIndex; showActiveLineSheet = true },
                 onActiveLineSheetDismiss = { showActiveLineSheet = false },
                 onMergeHunk = { hunkIndex, direction ->
@@ -337,6 +370,11 @@ private fun CompareContent(
     findQuery: String,
     findMatches: List<Int>,
     findMatchIndex: Int,
+    findCaseSensitive: Boolean = false,
+    findWholeWord: Boolean = false,
+    findRegex: Boolean = false,
+    leftMatchCount: Int = 0,
+    rightMatchCount: Int = 0,
     showActiveLineSheet: Boolean,
     settingsState: CompareSettingsState = CompareSettingsState(),
     tappedHunkIndex: Int?,
@@ -344,6 +382,9 @@ private fun CompareContent(
     onFindPrevious: () -> Unit,
     onFindNext: () -> Unit,
     onFindClose: () -> Unit,
+    onToggleCaseSensitive: () -> Unit = {},
+    onToggleWholeWord: () -> Unit = {},
+    onToggleRegex: () -> Unit = {},
     onDiffRowTapped: (hunkIndex: Int) -> Unit,
     onActiveLineSheetDismiss: () -> Unit,
     onMergeHunk: (hunkIndex: Int, direction: MergeDirection) -> Unit,
@@ -361,9 +402,17 @@ private fun CompareContent(
                     onQueryChanged = onFindQueryChanged,
                     matchIndex = findMatchIndex,
                     matchCount = findMatches.size,
+                    caseSensitive = findCaseSensitive,
+                    wholeWord = findWholeWord,
+                    regex = findRegex,
+                    leftMatchCount = leftMatchCount,
+                    rightMatchCount = rightMatchCount,
                     onPrevious = onFindPrevious,
                     onNext = onFindNext,
                     onClose = onFindClose,
+                    onToggleCaseSensitive = onToggleCaseSensitive,
+                    onToggleWholeWord = onToggleWholeWord,
+                    onToggleRegex = onToggleRegex,
                 )
             }
             if (state.diffCount == 0) {
@@ -696,47 +745,89 @@ private fun FilterBar(
 }
 
 /**
- * Find bar for compare — searches both left and right content (OE-FND-1).
+ * Find bar for compare — searches both left and right content (OE-FND-1, F-06).
+ *
+ * Includes case-sensitivity, whole-word, and regex toggles plus per-side match counts.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CompareFindBar(
     query: String,
     onQueryChanged: (String) -> Unit,
     matchIndex: Int,
     matchCount: Int,
+    caseSensitive: Boolean = false,
+    wholeWord: Boolean = false,
+    regex: Boolean = false,
+    leftMatchCount: Int = 0,
+    rightMatchCount: Int = 0,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onClose: () -> Unit,
+    onToggleCaseSensitive: () -> Unit = {},
+    onToggleWholeWord: () -> Unit = {},
+    onToggleRegex: () -> Unit = {},
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChanged,
-            placeholder = { Text("Find in compare…") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { onNext() }),
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.width(4.dp))
-        Text(
-            text = if (matchCount == 0) "No matches"
-                   else "${matchIndex + 1}/$matchCount",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        IconButton(onClick = onPrevious, enabled = matchCount > 0) {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous match")
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChanged,
+                placeholder = { Text("Find in compare\u2026") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onNext() }),
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(4.dp))
+            // Option toggles
+            FilterChip(
+                selected = caseSensitive,
+                onClick = onToggleCaseSensitive,
+                label = { Text("Aa") },
+            )
+            Spacer(Modifier.width(4.dp))
+            FilterChip(
+                selected = wholeWord,
+                onClick = onToggleWholeWord,
+                label = { Text("W") },
+            )
+            Spacer(Modifier.width(4.dp))
+            FilterChip(
+                selected = regex,
+                onClick = onToggleRegex,
+                label = { Text(".*") },
+            )
+            Spacer(Modifier.width(4.dp))
+            // Navigation + count
+            Text(
+                text = if (matchCount == 0) "No matches"
+                       else "${matchIndex + 1}/$matchCount",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            IconButton(onClick = onPrevious, enabled = matchCount > 0) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous match")
+            }
+            IconButton(onClick = onNext, enabled = matchCount > 0) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next match")
+            }
+            IconButton(onClick = onClose) {
+                Icon(Icons.Default.Close, contentDescription = "Close find bar")
+            }
         }
-        IconButton(onClick = onNext, enabled = matchCount > 0) {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next match")
-        }
-        IconButton(onClick = onClose) {
-            Icon(Icons.Default.Close, contentDescription = "Close find bar")
+        // Per-side match counts — only shown when query is non-empty and matches exist
+        if (matchCount > 0) {
+            Text(
+                text = "L: $leftMatchCount  R: $rightMatchCount",
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+            )
         }
     }
 }

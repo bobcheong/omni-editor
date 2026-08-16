@@ -177,6 +177,36 @@ object FindReplace {
         return sb.toString()
     }
 
+    /**
+     * Find all matches across a plain list of strings (e.g. compare side lines).
+     *
+     * Returns one [Match] per occurrence; [Match.line] is the 0-based index into [lines].
+     * Invalid regex patterns return an empty list.
+     */
+    fun findAllInLines(
+        lines: List<String>,
+        query: String,
+        options: FindOptions = FindOptions(),
+    ): List<Match> {
+        if (query.isEmpty()) return emptyList()
+        val compiledRegex: Regex? = if (options.regex) {
+            try {
+                val regexOptions = if (options.caseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)
+                Regex(query, regexOptions)
+            } catch (_: Exception) {
+                return emptyList()
+            }
+        } else null
+        val matches = mutableListOf<Match>()
+        for ((lineIdx, line) in lines.withIndex()) {
+            val lineMatches = findInLine(line, query, options, compiledRegex)
+            for ((start, end, matchText) in lineMatches) {
+                matches.add(Match(lineIdx.toLong(), start, end, matchText))
+            }
+        }
+        return matches
+    }
+
     // ── Internal helpers ──
 
     internal data class LineMatch(val start: Int, val end: Int, val text: String)
