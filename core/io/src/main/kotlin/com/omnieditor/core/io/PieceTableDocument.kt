@@ -373,7 +373,7 @@ class PieceTableDocument private constructor(
     }
 
     /** Get the full text. Use for testing; prefer materialise for save. */
-    fun text(): String = table.text()
+    override fun text(): String = table.text()
 
     /** Release the journal file handle. */
     override fun close() {

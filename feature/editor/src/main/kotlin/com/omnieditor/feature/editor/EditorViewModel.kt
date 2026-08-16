@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.omnieditor.core.io.FindReplace
 import com.omnieditor.core.io.PieceTableDocument
+import com.omnieditor.core.io.TextDocument
 import com.omnieditor.core.io.TextTools
 import com.omnieditor.core.model.LineEnding
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -157,6 +158,24 @@ class EditorViewModel @Inject constructor() : ViewModel() {
         }
     }
 
+    /**
+     * Open a pre-constructed TextDocument (e.g. LargeFileDocument for large files).
+     * The document is used directly — no PieceTableDocument.create() step.
+     */
+    fun openLargeDocument(
+        document: TextDocument,
+        readOnly: Boolean = true,
+        fileName: String = "",
+    ) {
+        if (fileName.isNotBlank()) currentFileName = fileName
+        val state = EditorState(document)
+        state.readOnly = readOnly
+        editorState = state
+        isDirty = false
+        _uiState.value = EditorUiState.Loaded(state)
+        // Read-only documents don't need dirty tracking — skip changes collection.
+    }
+
     fun getContent(): String = editorState?.document?.text() ?: ""
 
     /**
@@ -179,7 +198,7 @@ class EditorViewModel @Inject constructor() : ViewModel() {
                 val baos = ByteArrayOutputStream()
                 state.document.materialise(Channels.newChannel(baos))
                 fn(baos.toByteArray())
-                state.document.markSaved()
+                (state.document as? PieceTableDocument)?.markSaved()
                 isDirty = false
                 _uiState.value = EditorUiState.Loaded(state)
             } catch (e: IOException) {

@@ -6,7 +6,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
-import com.omnieditor.core.io.PieceTableDocument
+import com.omnieditor.core.io.TextDocument
 
 /**
  * Selection mode: LINEAR for normal contiguous selection,
@@ -17,12 +17,12 @@ enum class SelectionMode { LINEAR, COLUMN }
 /**
  * Observable state for the editor composable.
  *
- * Backed by [PieceTableDocument] for content, with Compose-observable
+ * Backed by a [TextDocument] for content, with Compose-observable
  * caret position, selection, and scroll offset.
  */
 @Stable
 class EditorState(
-    val document: PieceTableDocument,
+    val document: TextDocument,
 ) {
     /** 0-based caret line. */
     var caretLine by mutableLongStateOf(0L)

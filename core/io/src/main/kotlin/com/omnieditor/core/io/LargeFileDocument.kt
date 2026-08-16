@@ -105,6 +105,15 @@ class LargeFileDocument private constructor(
         }
     }
 
+    override fun text(): String {
+        return buildString {
+            for (i in 0 until lineCount) {
+                if (i > 0) append('\n')
+                append(line(i))
+            }
+        }
+    }
+
     override val changes: Flow<DocumentChange> = _changes.asSharedFlow()
     override val dirty: Boolean get() = false
     override val editGeneration: Long get() = 0L

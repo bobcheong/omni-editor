@@ -1,6 +1,7 @@
 package com.omnieditor.feature.editor
 
 import androidx.activity.compose.BackHandler
+import com.omnieditor.core.io.PieceTableDocument
 import com.omnieditor.core.model.DisplaySettings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -274,8 +275,8 @@ fun EditorScreen(
             if (state is EditorUiState.Loaded) {
                 Column(modifier = Modifier.navigationBarsPadding().imePadding()) {
                     EditorTouchBar(
-                        canUndo = state.editorState.document.undoCount > 0,
-                        canRedo = state.editorState.document.redoCount > 0,
+                        canUndo = (state.editorState.document as? PieceTableDocument)?.undoCount?.let { it > 0 } ?: false,
+                        canRedo = (state.editorState.document as? PieceTableDocument)?.redoCount?.let { it > 0 } ?: false,
                         hasSelection = state.editorState.hasSelection,
                         onCut = {
                             if (state.editorState.hasSelection) {

@@ -1,7 +1,7 @@
 package com.omnieditor.core.io
 
 /**
- * Find and replace engine operating on a [PieceTableDocument] (OE-EDT-4, OE-FND-1).
+ * Find and replace engine operating on a [TextDocument] (OE-EDT-4, OE-FND-1).
  *
  * Supports case sensitivity, whole word, regex with capture groups,
  * replace-all with count, and find-in-selection.
@@ -42,7 +42,7 @@ object FindReplace {
      * @param selectionOnly if non-null, restrict search to this line range (inclusive)
      */
     fun findAll(
-        document: PieceTableDocument,
+        document: TextDocument,
         pattern: String,
         options: FindOptions = FindOptions(),
         selectionOnly: LongRange? = null,

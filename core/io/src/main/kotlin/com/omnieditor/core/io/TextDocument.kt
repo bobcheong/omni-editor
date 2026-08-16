@@ -43,6 +43,13 @@ interface TextDocument {
     /** Total document length in characters. */
     val length: Int
 
+    /**
+     * Get the full document text as a String.
+     * For small documents this is cheap; for large documents it joins all lines.
+     * Prefer [line] access for rendering; use this only for find/replace and export.
+     */
+    fun text(): String
+
     /** Undo the most recent edit. Returns the edit ID undone, or null if nothing to undo. */
     fun undo(): Long?
 
