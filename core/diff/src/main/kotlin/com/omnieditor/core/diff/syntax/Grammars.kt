@@ -256,6 +256,22 @@ private fun markdownGrammar(): Grammar {
 }
 
 /**
+ * Public entry point: resolve a grammar from a file extension.
+ *
+ * Returns the matching [Grammar] for the extension, or a zero-rule plain-text
+ * grammar when the extension is unknown (e.g. "txt"). Never returns null so
+ * callers can use it without a null-check.
+ */
+object Grammars {
+    private val PLAIN_TEXT = Grammar("plain", emptyList())
+
+    fun forExtension(ext: String): Grammar {
+        val lang = SyntaxEngine.detectLanguage("file.$ext") ?: return PLAIN_TEXT
+        return GRAMMARS[lang] ?: PLAIN_TEXT
+    }
+}
+
+/**
  * Built-in grammars for P1 languages (OE-TXT-5).
  *
  * Our own format — not imported from any third-party grammar system (IND-3).
