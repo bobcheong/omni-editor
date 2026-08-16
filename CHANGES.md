@@ -311,3 +311,43 @@ No gaps found.
 `SessionGroup` (F-13) — serializable data classes in `core/model`.
 ADR-013 documents the swipe gesture conflict resolution for F-09
 (fling-at-bound approach).
+
+### F-10, F-11 — WordMerge, SymbolExtractor, BracketMatcher — `e423c5a`
+
+Word-level three-way merge engine: `WordMerge` applies token-level diffs to
+resolve non-conflicting word changes. `SymbolExtractor` walks `SyntaxEngine`
+token streams to build symbol tables (classes, functions, variables). `BracketMatcher`
+tracks brace/bracket/paren nesting with an explicit stack; O(n) per line.
+`Grammars.forExtension()` added to route file extensions to grammar instances.
+13 JVM tests, all passing.
+
+### F-12, F-13 — HTML side-by-side report, session groups, JSON export — `c3ecab6`
+
+`ReportGenerator.htmlSideBySide()` produces a two-column colour-coded HTML
+table (changed/added/removed rows, per-line gutter, scope filtering via
+`ReportScope.SELECTION`). `SessionStore` extended with group CRUD
+(`createGroup`, `deleteGroup`, `addToGroup`, `removeFromGroup`, `listGroups`)
+and `exportAsJson`/`importFromJson` for portable session transfer.
+Separate `exportJson` instance ensures `schemaVersion` is always present
+in exports. 6 JVM tests, all passing.
+
+### F-07, F-08, F-09 — HexGrid composable, compare bookmarks, swipe scaffold — `0804cbf`
+
+`HexGrid` Compose component renders hex + ASCII view of a `ByteArray` via
+`LazyColumn` (address gutter, padded hex string, printable ASCII column).
+`Session.compareBookmarks` field added (`List<CompareBookmark>`, default-empty,
+backward-compatible). `SwipeDiffDetector` scaffold: `detectSwipeDiff` modifier
+extension with `FLING_VELOCITY_THRESHOLD = 1000f`; pointer-input body deferred
+pending device tuning (ADR-013).
+
+### F-15, F-16 — Dynamic app shortcuts and quick-settings tile scaffold — `HEAD`
+
+`AppShortcuts.register(context)` creates two dynamic shortcuts via
+`ShortcutManagerCompat` at startup: "New Compare" (action
+`com.omnieditor.action.NEW_COMPARE`, routes to setup screen) and "Open Editor"
+(action `com.omnieditor.action.OPEN_EDITOR`, routes to home). `CompareClipboardTile`
+extends `TileService`; tile state `STATE_INACTIVE` with label "Compare Clipboard";
+tap launches app with `com.omnieditor.action.COMPARE_CLIPBOARD`. `IntentRouter`
+extended with `ShowSetup` action variant. `OmniApplication.onCreate` calls
+`AppShortcuts.register`. Manifest declares the `BIND_QUICK_SETTINGS_TILE` service.
+Both flavours build clean.

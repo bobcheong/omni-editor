@@ -32,6 +32,9 @@ object IntentRouter {
         /** Open snippet compare with pasted text. */
         data class SnippetCompare(val text: String) : IntentAction
 
+        /** Navigate directly to the compare setup screen (no sources pre-filled). */
+        data object ShowSetup : IntentAction
+
         /** No actionable intent — show Home. */
         data object ShowHome : IntentAction
     }
@@ -44,6 +47,10 @@ object IntentRouter {
             Intent.ACTION_SEND_MULTIPLE -> handleSendMultiple(intent)
             Intent.ACTION_VIEW,
             Intent.ACTION_EDIT -> handleView(intent)
+            // Dynamic shortcut and QS-tile actions (AppShortcuts, CompareClipboardTile)
+            AppShortcuts.ACTION_NEW_COMPARE -> IntentAction.ShowSetup
+            AppShortcuts.ACTION_OPEN_EDITOR -> IntentAction.ShowHome
+            AppShortcuts.ACTION_COMPARE_CLIPBOARD -> IntentAction.ShowHome
             else -> IntentAction.ShowHome
         }
     }

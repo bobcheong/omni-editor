@@ -8,11 +8,12 @@
     <string name="home_open_file">Open a file</string>
     <string name="home_new_compare">New compare</string>
 
-    <!-- App shortcuts (launcher) -->
+    <!-- App shortcuts (launcher) and quick-settings tile -->
     <string name="shortcut_new_compare">New compare</string>
     <string name="shortcut_new_compare_long">Start a new file comparison</string>
     <string name="shortcut_open_file">Open file</string>
     <string name="shortcut_open_file_long">Open a file in the editor</string>
+    <string name="tile_compare_clipboard">Compare Clipboard</string>
 
     <!-- Editor screen -->
     <string name="editor_title_fallback">Editor</string>

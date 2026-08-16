@@ -16,6 +16,8 @@ class OmniApplication : Application() {
         // R-41: start ANR watchdog as a daemon thread — it will not prevent
         // process exit but will log main-thread stalls > 5 seconds.
         AnrWatchdog(this).start()
+        // F-07/R-33: register dynamic shortcuts (supplements static shortcuts.xml).
+        AppShortcuts.register(this)
         validateBuiltInThemeContrast()
     }
 }

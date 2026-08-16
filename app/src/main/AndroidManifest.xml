@@ -63,5 +63,17 @@
             android:name=".LongJobService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+
+        <!-- F-16: Quick-settings tile scaffold (Compare Clipboard) -->
+        <service
+            android:name=".CompareClipboardTile"
+            android:icon="@android:drawable/ic_menu_view"
+            android:label="@string/tile_compare_clipboard"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

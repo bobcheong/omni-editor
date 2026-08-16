@@ -158,6 +158,10 @@ fun OmniNavGraph(
                 )
                 navController.navigate("setup?leftKey=$snippetId")
             }
+            is IntentRouter.IntentAction.ShowSetup -> {
+                // Dynamic shortcut: navigate to the compare setup screen with no pre-filled source.
+                navController.navigate("setup")
+            }
         }
     }
 
