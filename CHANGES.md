@@ -232,3 +232,46 @@ Save safety, correctness, and undo batching fixes from Review-3 (OE-REV-003).
 file from seeded PRNG. ADR-002 documents methodology and results table.
 Benchmark navigation sequences are structural placeholders refined when
 F-01/F-02/F-03 land large-file support.
+
+## v0.3 — Large files and data paths (spec P1 closure, part 1)
+
+### F-01 — Size ladder and LargeFileDocument — Issue #15
+
+`DocumentLimits.SizeTier` enum replaces ADR-003's hard cliff with a three-tier
+ladder: FULL_MEMORY (≤16 MiB), INDEXED_READ_ONLY (16–256 MiB), REFUSED
+(>256 MiB). ADR-012 records the decision.
+
+`LargeFileDocument`: read-only `TextDocument` over `FileChannel` + `LineIndex`.
+Uses `FileIndexer` to memory-map files and provide O(1) line access without
+loading content into heap. Editor open path uses `editorTier()` for size-based
+dispatch; INDEXED_READ_ONLY tier scaffolded pending EditorViewModel refactor.
+
+### F-02 — BlockDiff auto-selection — Issue #15
+
+`DiffEngine.compareAuto()` branches to `BlockDiff.compare()` when total line
+count exceeds 250,000 (BlockDiff.DEFAULT_LINE_THRESHOLD). Reports
+`EngineMode.BLOCK_MATCH` in the result. Compare path in NavGraph updated.
+
+### F-04 — LongJobService scaffold — Issue #15
+
+`LongJobService`: foreground service scaffold for compares >10 s. Notification
+channel, progress notification, start/stop lifecycle. Wiring deferred until
+large-file compares are exercised on device.
+
+### F-05 — Dynamic versionCode — Issue #15
+
+`versionCode` derived from `git rev-list --count HEAD` via Gradle
+`providers.exec` (configuration-cache-safe). Falls back to 1 when git is
+unavailable.
+
+### C.2 — Differential testing — Issue #15
+
+JVM test comparing DiffEngine output with `git diff --histogram` on generated
+file pairs. Asserts semantic equivalence of changed regions. Skips gracefully
+when git is not on PATH.
+
+### C.3 — Merge round-trip property test — Issue #15
+
+Property test: apply all left→right hunks from DiffEngine to the left document,
+assert result is identical to the right document. 50 iterations with random
+document pairs.
