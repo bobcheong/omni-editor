@@ -51,6 +51,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.omnieditor.core.diff.syntax.Grammars
+import com.omnieditor.core.diff.syntax.SymbolExtractor
+import com.omnieditor.design.HexGrid
 import com.omnieditor.design.KeyboardShortcutsSheet
 
 /**
@@ -111,6 +114,12 @@ data class EditorMenuCallbacks(
     val onDecreaseFontSize: () -> Unit = {},
     /** Navigate to the Settings screen. */
     val onOpenSettings: () -> Unit = {},
+    /** W-04: Show the symbol outline sheet. */
+    val onOutline: () -> Unit = {},
+    /** W-04: Jump to the bracket matching the one at the caret. */
+    val onJumpToBracket: () -> Unit = {},
+    /** W-06: Toggle hex view of the current document. */
+    val onViewAsHex: () -> Unit = {},
 )
 
 @Suppress("LongMethod")
@@ -142,6 +151,8 @@ fun EditorScreen(
     var showUnsavedDialog by remember { mutableStateOf(false) }
     var showGoToLineDialog by remember { mutableStateOf(false) }
     var showShortcutsSheet by remember { mutableStateOf(false) }
+    var showOutline by remember { mutableStateOf(false) }
+    var showHexView by remember { mutableStateOf(false) }
 
     val isDirty = viewModel.isDirty
 
@@ -191,6 +202,31 @@ fun EditorScreen(
     // ── Keyboard shortcuts sheet (R-37) ──
     if (showShortcutsSheet) {
         KeyboardShortcutsSheet(onDismiss = { showShortcutsSheet = false })
+    }
+
+    // ── Symbol outline sheet (W-04) ──
+    if (showOutline) {
+        val loadedState = (uiState as? EditorUiState.Loaded)?.editorState
+        if (loadedState != null) {
+            val ext = fileName.substringAfterLast('.', "")
+            val grammar = Grammars.forExtension(ext)
+            val lines = remember(loadedState.document.editGeneration) {
+                (0L until loadedState.lineCount).map { loadedState.document.line(it).toString() }
+            }
+            val symbols = remember(loadedState.document.editGeneration) {
+                SymbolExtractor.extract(lines, grammar)
+            }
+            SymbolOutlineSheet(
+                symbols = symbols,
+                onSymbolClick = { symbol ->
+                    loadedState.moveCaret(symbol.line, 0)
+                    showOutline = false
+                },
+                onDismiss = { showOutline = false },
+            )
+        } else {
+            showOutline = false
+        }
     }
 
     // ── Destructive-tool confirmation dialog (spec §2.3) ──
@@ -261,6 +297,9 @@ fun EditorScreen(
                         viewModel.lastLoadedState?.toggleComment(commentPrefixForExtension(ext))
                     },
                     onKeyboardShortcuts = { showShortcutsSheet = true },
+                    onOutline = { showOutline = true },
+                    onJumpToBracket = { viewModel.lastLoadedState?.jumpToMatchingBracket() },
+                    onViewAsHex = { showHexView = !showHexView },
                     onToggleWordWrap = onToggleWordWrap,
                     onToggleLineNumbers = onToggleLineNumbers,
                     onToggleWhitespace = onToggleWhitespace,
@@ -375,36 +414,44 @@ fun EditorScreen(
                 is EditorUiState.Loaded -> {
                     val focusRequester = remember { FocusRequester() }
                     val keyboard = LocalSoftwareKeyboardController.current
-                    ImeHandler(
-                        state = state.editorState,
-                        focusRequester = focusRequester,
-                        onSave = { viewModel.save() },
-                        onUndo = { viewModel.undo() },
-                        onRedo = { viewModel.redo() },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        EditorContent(
+                    if (showHexView) {
+                        val bytes = remember(state.editorState.document.editGeneration) {
+                            state.editorState.document.text().toByteArray()
+                        }
+                        HexGrid(bytes = bytes, modifier = Modifier.fillMaxSize().weight(1f))
+                    } else {
+                        ImeHandler(
                             state = state.editorState,
-                            modifier = Modifier.fillMaxSize(),
-                            fileName = fileName,
-                            displaySettings = DisplaySettings(
-                                wordWrap = settingsState.wordWrapEnabled,
-                                showLineNumbers = settingsState.showLineNumbers,
-                                showWhitespace = settingsState.showWhitespace,
-                                fontSize = settingsState.fontSize,
-                            ),
-                            // R-41: taps on the editing surface (which owns all
-                            // gestures) re-focus the IME bridge and re-summon
-                            // the keyboard after the user dismisses it.
-                            onRequestIme = {
-                                focusRequester.requestFocus()
-                                keyboard?.show()
-                            },
-                        )
-                    }
-                    // Auto-focus so the soft keyboard can be opened on tap
-                    LaunchedEffect(state) {
-                        focusRequester.requestFocus()
+                            focusRequester = focusRequester,
+                            onSave = { viewModel.save() },
+                            onUndo = { viewModel.undo() },
+                            onRedo = { viewModel.redo() },
+                            onJumpToBracket = { state.editorState.jumpToMatchingBracket() },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            EditorContent(
+                                state = state.editorState,
+                                modifier = Modifier.fillMaxSize(),
+                                fileName = fileName,
+                                displaySettings = DisplaySettings(
+                                    wordWrap = settingsState.wordWrapEnabled,
+                                    showLineNumbers = settingsState.showLineNumbers,
+                                    showWhitespace = settingsState.showWhitespace,
+                                    fontSize = settingsState.fontSize,
+                                ),
+                                // R-41: taps on the editing surface (which owns all
+                                // gestures) re-focus the IME bridge and re-summon
+                                // the keyboard after the user dismisses it.
+                                onRequestIme = {
+                                    focusRequester.requestFocus()
+                                    keyboard?.show()
+                                },
+                            )
+                        }
+                        // Auto-focus so the soft keyboard can be opened on tap
+                        LaunchedEffect(state) {
+                            focusRequester.requestFocus()
+                        }
                     }
                 }
                 is EditorUiState.OverThreshold -> {
@@ -435,6 +482,7 @@ fun EditorScreen(
                             onSave = { viewModel.save() },
                             onUndo = { viewModel.undo() },
                             onRedo = { viewModel.redo() },
+                            onJumpToBracket = { editorContent.jumpToMatchingBracket() },
                             modifier = Modifier.weight(1f),
                         ) {
                             EditorContent(
@@ -519,6 +567,10 @@ private fun EditorTopBar(
                     text = { Text("Decrease font") },
                     onClick = { menuExpanded = false; callbacks.onDecreaseFontSize() },
                 )
+                DropdownMenuItem(
+                    text = { Text("View as hex") },
+                    onClick = { menuExpanded = false; callbacks.onViewAsHex() },
+                )
                 HorizontalDivider()
                 // ── Edit section ──
                 DropdownMenuItem(
@@ -528,6 +580,14 @@ private fun EditorTopBar(
                 DropdownMenuItem(
                     text = { Text("Go to line…") },
                     onClick = { menuExpanded = false; callbacks.onGoToLine() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Outline") },
+                    onClick = { menuExpanded = false; callbacks.onOutline() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Jump to bracket    Ctrl+Shift+M") },
+                    onClick = { menuExpanded = false; callbacks.onJumpToBracket() },
                 )
                 DropdownMenuItem(text = { Text("Text tools ▸") }, onClick = {
                     menuExpanded = false; textToolsExpanded = true

@@ -638,6 +638,23 @@ class EditorState(
         }
     }
 
+    // ── Navigation (W-04) ──────────────────────────────────────────────
+
+    /**
+     * W-04: Jump to the matching bracket at the current caret position.
+     * Returns true if a match was found and the caret moved.
+     */
+    fun jumpToMatchingBracket(): Boolean {
+        val line = document.line(caretLine).toString()
+        if (caretColumn >= line.length) return false
+        val match = com.omnieditor.core.diff.BracketMatcher.findMatch(line, caretColumn)
+        if (match != null) {
+            caretColumn = match
+            return true
+        }
+        return false
+    }
+
     /**
      * Return the line range affected by the current operation:
      * the selection range (if active) or just the caret line.

@@ -72,6 +72,7 @@ fun ImeHandler(
     onSave: () -> Unit = {},
     onUndo: () -> Unit = {},
     onRedo: () -> Unit = {},
+    onJumpToBracket: () -> Unit = {},
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
@@ -117,7 +118,7 @@ fun ImeHandler(
                 .focusRequester(focusRequester)
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    handleHardwareKey(state, event, clipboardManager, onSave, onUndo, onRedo)
+                    handleHardwareKey(state, event, clipboardManager, onSave, onUndo, onRedo, onJumpToBracket)
                 },
             textStyle = TextStyle(fontSize = 1.sp),
             singleLine = false,
@@ -273,6 +274,7 @@ internal fun handleHardwareKey(
     onSave: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
+    onJumpToBracket: () -> Unit = {},
 ): Boolean {
     val ctrl = event.isCtrlPressed
     val shift = event.isShiftPressed
@@ -348,6 +350,10 @@ internal fun handleHardwareKey(
         // Ctrl+/ — toggle comment
         ctrl && event.key == Key.Slash -> {
             state.toggleComment(); true
+        }
+        // Ctrl+Shift+M — jump to matching bracket (W-04)
+        ctrl && shift && event.key == Key.M -> {
+            onJumpToBracket(); true
         }
 
         // Forward delete at end of line — join with the next line. The IME
