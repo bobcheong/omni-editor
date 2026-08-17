@@ -71,6 +71,53 @@ object MergeEngine {
     }
 
     /**
+     * W-05: Word-level merge within a changed line pair (OE-MRG-2).
+     * Uses [WordMerge] to select left/right per intra-line changed range.
+     *
+     * For each line pair in the named hunk, [selections] determines which side
+     * to take for each changed range. Returns one [MergeAction] per line pair.
+     *
+     * @param selections one [WordMerge.Side] per changed range in the line pair;
+     *   extras beyond the changed-range count are ignored; missing entries default to LEFT.
+     */
+    fun mergeWordLevel(
+        hunkIndex: Int,
+        result: CompareResult,
+        leftLines: List<String>,
+        rightLines: List<String>,
+        direction: Direction,
+        selections: List<WordMerge.Side>,
+    ): List<MergeAction> {
+        val hunk = result.hunks[hunkIndex]
+        val actions = mutableListOf<MergeAction>()
+
+        val leftCount = (hunk.leftEnd - hunk.leftStart).toInt()
+        val rightCount = (hunk.rightEnd - hunk.rightStart).toInt()
+        val pairCount = minOf(leftCount, rightCount)
+
+        for (i in 0 until pairCount) {
+            val leftLine = leftLines[(hunk.leftStart + i).toInt()]
+            val rightLine = rightLines[(hunk.rightStart + i).toInt()]
+            val merged = WordMerge.merge(leftLine, rightLine, selections = selections)
+
+            val targetLine = if (direction == Direction.LEFT_TO_RIGHT) {
+                hunk.rightStart + i
+            } else {
+                hunk.leftStart + i
+            }
+            actions.add(
+                MergeAction(
+                    targetStartLine = targetLine,
+                    targetEndLine = targetLine + 1,
+                    replacementLines = listOf(merged),
+                    hunkIndex = hunkIndex,
+                )
+            )
+        }
+        return actions
+    }
+
+    /**
      * Accept all hunks in one direction (OE-MRG-3).
      * Returns the count and the list of actions to apply.
      * Actions are ordered from bottom to top so applying them

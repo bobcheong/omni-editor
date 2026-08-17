@@ -224,26 +224,41 @@ object ReportGenerator {
     // ── Side-by-side report ──
 
     /**
-     * Scope of the side-by-side report: entire file, a selection, or the visible viewport.
-     * ALL: include every line. SELECTION: include only lines within [scopeRange].
-     * VISIBLE: treated the same as ALL at report-generation time (viewport is ephemeral).
+     * Scope of the side-by-side report.
+     *
+     * - [All]: every line (default).
+     * - [Selection]: only lines within the caller-supplied [htmlSideBySide.scopeRange].
+     * - [Visible]: treated identically to [All] at report-generation time (the viewport
+     *   is ephemeral and is not passed to the generator).
+     * - [DiffOnly]: only hunk lines; no surrounding context lines at all.
+     * - [Context]: each hunk surrounded by exactly [lines] context lines.
      */
-    enum class ReportScope { ALL, SELECTION, VISIBLE }
+    sealed class ReportScope {
+        data object All : ReportScope()
+        data object Selection : ReportScope()
+        data object Visible : ReportScope()
+        data object DiffOnly : ReportScope()
+        data class Context(val lines: Int) : ReportScope()
+    }
 
     /**
      * Generate a side-by-side HTML report (OE-RPT-2).
      *
      * Each line of the left and right file occupies adjacent table cells.
      * Changed, added, and removed regions are colour-coded.
-     * When [scope] is [ReportScope.SELECTION] only lines within [scopeRange] (0-based,
-     * inclusive) are emitted.
+     *
+     * Scope semantics:
+     * - [ReportScope.All] / [ReportScope.Visible]: entire file.
+     * - [ReportScope.Selection]: only lines within [scopeRange] (0-based, inclusive).
+     * - [ReportScope.DiffOnly]: hunk lines only, no context rows.
+     * - [ReportScope.Context]: each hunk with up to n context lines before and after.
      */
     fun htmlSideBySide(
         result: CompareResult,
         leftLines: List<String>,
         rightLines: List<String>,
         meta: ReportMeta,
-        scope: ReportScope = ReportScope.ALL,
+        scope: ReportScope = ReportScope.All,
         scopeRange: LongRange? = null,
     ): String {
         val sb = StringBuilder()
@@ -251,7 +266,7 @@ object ReportGenerator {
         sb.appendLine("<style>")
         sb.appendLine("body{font-family:monospace;font-size:13px;margin:0;padding:16px}")
         sb.appendLine("table{border-collapse:collapse;width:100%}")
-        sb.appendLine("td{padding:2px 8px;vertical-align:top;white-space:pre-wrap;border:1px solid #ddd}")
+        sb.appendLine("td{padding:2px 8px;vertical-align:top;white-space:pre-wrap;border:1px solid #ccc}")
         sb.appendLine(".ln{color:#999;text-align:right;width:40px;user-select:none}")
         sb.appendLine(".add{background:#e6ffec}.del{background:#ffebe9}.chg{background:#fff3cd}")
         sb.appendLine("h2{font-family:sans-serif;font-size:14px;margin:8px 0}")
@@ -266,73 +281,94 @@ object ReportGenerator {
 
         val maxLine = maxOf(leftLines.size, rightLines.size)
 
-        // Determine which lines to render
-        val lineRange: IntRange = if (scope == ReportScope.SELECTION && scopeRange != null) {
-            scopeRange.first.toInt()..minOf(scopeRange.last.toInt(), maxLine - 1)
-        } else {
-            0 until maxLine
-        }
-
-        // Filter hunks that overlap the rendered range
-        val hunksInScope: List<Hunk> = if (scope == ReportScope.SELECTION && scopeRange != null) {
-            result.hunks.filter {
-                it.leftStart < scopeRange.last + 1 && it.leftEnd > scopeRange.first
-            }
-        } else {
-            result.hunks
-        }
-
-        var leftIdx = lineRange.first
-        var rightIdx = lineRange.first
-
-        for (hunk in hunksInScope) {
-            // Context lines before this hunk
-            while (leftIdx < hunk.leftStart.toInt() && leftIdx <= lineRange.last) {
-                val lText = leftLines.getOrElse(leftIdx) { "" }
-                val rText = rightLines.getOrElse(rightIdx) { "" }
-                sb.appendLine(
-                    "<tr><td class='ln'>${leftIdx + 1}</td><td>${esc(lText)}</td>" +
-                        "<td class='ln'>${rightIdx + 1}</td><td>${esc(rText)}</td></tr>"
-                )
-                leftIdx++
-                rightIdx++
+        when (scope) {
+            is ReportScope.DiffOnly -> {
+                // Emit hunk lines only — no context rows.
+                for (hunk in result.hunks) {
+                    emitHunkRows(sb, hunk, leftLines, rightLines)
+                }
             }
 
-            // Hunk rows
-            val leftEnd = hunk.leftEnd.toInt()
-            val rightEnd = hunk.rightEnd.toInt()
-            val hunkLeft = (hunk.leftStart.toInt() until leftEnd).map { leftLines.getOrElse(it) { "" } }
-            val hunkRight = (hunk.rightStart.toInt() until rightEnd).map { rightLines.getOrElse(it) { "" } }
-            val maxHunk = maxOf(hunkLeft.size, hunkRight.size)
-            val css = when (hunk.type) {
-                HunkType.ADDED -> "add"
-                HunkType.REMOVED -> "del"
-                else -> "chg"
+            is ReportScope.Context -> {
+                val n = scope.lines
+                // Merge nearby hunks so their context windows don't overlap, then emit.
+                val groups = groupHunksForContext(result.hunks, maxLine, n)
+                for (group in groups) {
+                    var leftIdx = group.first
+                    var rightIdx = group.first
+                    for (hunk in group.hunks) {
+                        // Context before hunk (within the group window)
+                        while (leftIdx < hunk.leftStart.toInt() && leftIdx < maxLine) {
+                            emitContextRow(sb, leftIdx, rightIdx, leftLines, rightLines)
+                            leftIdx++
+                            rightIdx++
+                        }
+                        emitHunkRows(sb, hunk, leftLines, rightLines)
+                        leftIdx = hunk.leftEnd.toInt()
+                        rightIdx = hunk.rightEnd.toInt()
+                    }
+                    // Context after last hunk in group
+                    while (leftIdx <= group.last && leftIdx < maxLine) {
+                        emitContextRow(sb, leftIdx, rightIdx, leftLines, rightLines)
+                        leftIdx++
+                        rightIdx++
+                    }
+                }
             }
-            for (i in 0 until maxHunk) {
-                val lText = hunkLeft.getOrNull(i)
-                val rText = hunkRight.getOrNull(i)
-                val lNum = if (lText != null) "${hunk.leftStart.toInt() + i + 1}" else ""
-                val rNum = if (rText != null) "${hunk.rightStart.toInt() + i + 1}" else ""
-                sb.appendLine(
-                    "<tr><td class='ln'>$lNum</td><td class='$css'>${esc(lText ?: "")}</td>" +
-                        "<td class='ln'>$rNum</td><td class='$css'>${esc(rText ?: "")}</td></tr>"
-                )
-            }
-            leftIdx = leftEnd
-            rightIdx = rightEnd
-        }
 
-        // Trailing context after all hunks
-        while (leftIdx <= lineRange.last && leftIdx < leftLines.size) {
-            val lText = leftLines.getOrElse(leftIdx) { "" }
-            val rText = rightLines.getOrElse(rightIdx) { "" }
-            sb.appendLine(
-                "<tr><td class='ln'>${leftIdx + 1}</td><td>${esc(lText)}</td>" +
-                    "<td class='ln'>${rightIdx + 1}</td><td>${esc(rText)}</td></tr>"
-            )
-            leftIdx++
-            rightIdx++
+            is ReportScope.Selection -> {
+                val lineRange: IntRange = if (scopeRange != null) {
+                    scopeRange.first.toInt()..minOf(scopeRange.last.toInt(), maxLine - 1)
+                } else {
+                    0 until maxLine
+                }
+                val hunksInScope: List<Hunk> = if (scopeRange != null) {
+                    result.hunks.filter {
+                        it.leftStart < scopeRange.last + 1 && it.leftEnd > scopeRange.first
+                    }
+                } else {
+                    result.hunks
+                }
+                var leftIdx = lineRange.first
+                var rightIdx = lineRange.first
+                for (hunk in hunksInScope) {
+                    while (leftIdx < hunk.leftStart.toInt() && leftIdx <= lineRange.last) {
+                        emitContextRow(sb, leftIdx, rightIdx, leftLines, rightLines)
+                        leftIdx++
+                        rightIdx++
+                    }
+                    emitHunkRows(sb, hunk, leftLines, rightLines)
+                    leftIdx = hunk.leftEnd.toInt()
+                    rightIdx = hunk.rightEnd.toInt()
+                }
+                while (leftIdx <= lineRange.last && leftIdx < leftLines.size) {
+                    emitContextRow(sb, leftIdx, rightIdx, leftLines, rightLines)
+                    leftIdx++
+                    rightIdx++
+                }
+            }
+
+            else -> {
+                // All / Visible: entire file
+                val lineRange = 0 until maxLine
+                var leftIdx = lineRange.first
+                var rightIdx = lineRange.first
+                for (hunk in result.hunks) {
+                    while (leftIdx < hunk.leftStart.toInt() && leftIdx <= lineRange.last) {
+                        emitContextRow(sb, leftIdx, rightIdx, leftLines, rightLines)
+                        leftIdx++
+                        rightIdx++
+                    }
+                    emitHunkRows(sb, hunk, leftLines, rightLines)
+                    leftIdx = hunk.leftEnd.toInt()
+                    rightIdx = hunk.rightEnd.toInt()
+                }
+                while (leftIdx <= lineRange.last && leftIdx < leftLines.size) {
+                    emitContextRow(sb, leftIdx, rightIdx, leftLines, rightLines)
+                    leftIdx++
+                    rightIdx++
+                }
+            }
         }
 
         sb.appendLine("</table>")
@@ -341,7 +377,84 @@ object ReportGenerator {
         return sb.toString()
     }
 
-    // ── Helpers ──
+    // ── Row helpers ──
+
+    private fun emitContextRow(
+        sb: StringBuilder,
+        leftIdx: Int,
+        rightIdx: Int,
+        leftLines: List<String>,
+        rightLines: List<String>,
+    ) {
+        val lText = leftLines.getOrElse(leftIdx) { "" }
+        val rText = rightLines.getOrElse(rightIdx) { "" }
+        sb.appendLine(
+            "<tr><td class='ln'>${leftIdx + 1}</td><td>${esc(lText)}</td>" +
+                "<td class='ln'>${rightIdx + 1}</td><td>${esc(rText)}</td></tr>"
+        )
+    }
+
+    private fun emitHunkRows(
+        sb: StringBuilder,
+        hunk: Hunk,
+        leftLines: List<String>,
+        rightLines: List<String>,
+    ) {
+        val leftEnd = hunk.leftEnd.toInt()
+        val rightEnd = hunk.rightEnd.toInt()
+        val hunkLeft = (hunk.leftStart.toInt() until leftEnd).map { leftLines.getOrElse(it) { "" } }
+        val hunkRight = (hunk.rightStart.toInt() until rightEnd).map { rightLines.getOrElse(it) { "" } }
+        val maxHunk = maxOf(hunkLeft.size, hunkRight.size)
+        val css = when (hunk.type) {
+            HunkType.ADDED -> "add"
+            HunkType.REMOVED -> "del"
+            else -> "chg"
+        }
+        for (i in 0 until maxHunk) {
+            val lText = hunkLeft.getOrNull(i)
+            val rText = hunkRight.getOrNull(i)
+            val lNum = if (lText != null) "${hunk.leftStart.toInt() + i + 1}" else ""
+            val rNum = if (rText != null) "${hunk.rightStart.toInt() + i + 1}" else ""
+            sb.appendLine(
+                "<tr><td class='ln'>$lNum</td><td class='$css'>${esc(lText ?: "")}</td>" +
+                    "<td class='ln'>$rNum</td><td class='$css'>${esc(rText ?: "")}</td></tr>"
+            )
+        }
+    }
+
+    /** Groups hunks for Context(n) scope, merging overlapping context windows. */
+    private data class ContextGroup(val hunks: List<Hunk>, val first: Int, val last: Int)
+
+    private fun groupHunksForContext(
+        hunks: List<Hunk>,
+        maxLine: Int,
+        n: Int,
+    ): List<ContextGroup> {
+        if (hunks.isEmpty()) return emptyList()
+        val groups = mutableListOf<ContextGroup>()
+        var currentHunks = mutableListOf(hunks[0])
+        var groupFirst = maxOf(0, hunks[0].leftStart.toInt() - n)
+        var groupLast = minOf(maxLine - 1, hunks[0].leftEnd.toInt() - 1 + n)
+
+        for (i in 1 until hunks.size) {
+            val h = hunks[i]
+            val hFirst = maxOf(0, h.leftStart.toInt() - n)
+            if (hFirst <= groupLast) {
+                // Overlapping windows — merge into current group
+                currentHunks.add(h)
+                groupLast = minOf(maxLine - 1, h.leftEnd.toInt() - 1 + n)
+            } else {
+                groups.add(ContextGroup(currentHunks, groupFirst, groupLast))
+                currentHunks = mutableListOf(h)
+                groupFirst = hFirst
+                groupLast = minOf(maxLine - 1, h.leftEnd.toInt() - 1 + n)
+            }
+        }
+        groups.add(ContextGroup(currentHunks, groupFirst, groupLast))
+        return groups
+    }
+
+    // ── Unified-diff helpers ──
 
     private data class HunkGroup(
         val hunks: List<Hunk>,
