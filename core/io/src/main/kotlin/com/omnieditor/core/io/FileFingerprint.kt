@@ -33,9 +33,10 @@ data class FileFingerprint(
          */
         fun check(file: File, expected: FileFingerprint): Boolean {
             if (!file.exists()) return false
-            if (file.length() != expected.size) return false
+            val currentSize = file.length()
+            if (currentSize != expected.size) return false
             if (file.lastModified() != expected.lastModified) return false
-            val currentHash = hashFile(file, file.length())
+            val currentHash = hashFile(file, currentSize)
             return currentHash == expected.contentHash
         }
 
@@ -60,8 +61,7 @@ data class FileFingerprint(
                 // Hash last SAMPLE_SIZE bytes (skip if file fits in first sample)
                 if (size > SAMPLE_SIZE) {
                     val lastStart = size - SAMPLE_SIZE
-                    val lastLen = SAMPLE_SIZE
-                    val lastBuf = ByteBuffer.allocate(lastLen)
+                    val lastBuf = ByteBuffer.allocate(SAMPLE_SIZE)
                     channel.read(lastBuf, lastStart)
                     lastBuf.flip()
                     for (i in 0 until lastBuf.limit()) {
