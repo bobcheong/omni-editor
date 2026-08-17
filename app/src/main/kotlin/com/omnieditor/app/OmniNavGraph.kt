@@ -384,12 +384,17 @@ private fun HomeDestination(
         groups.addAll(sessionStore.listGroups())
     }
 
+    // Track which group to auto-assign when opening a file
+    var pendingGroupId by remember { mutableStateOf<String?>(null) }
+
     val openFileLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
             takePersistablePermission(context.contentResolver, uri)
             val sourceId = UUID.randomUUID().toString()
+            val assignGroupId = pendingGroupId
+            pendingGroupId = null
             scope.launch {
                 val doc = withContext(Dispatchers.IO) {
                     readUriIntoRegistry(context, uri, id = sourceId)
@@ -401,13 +406,31 @@ private fun HomeDestination(
                     label = doc?.label ?: "file",
                 )
                 recentsStore.addRecent(ref)
-                sessionStore.save(Session(
+                val session = Session(
                     id = sourceId,
                     name = ref.label,
                     mode = CompareMode.EDITOR,
                     createdAt = System.currentTimeMillis(),
                     sources = listOf(ref),
-                ))
+                    groupId = assignGroupId,
+                )
+                sessionStore.save(session)
+                // Also add to the SessionGroup's sessionIds list
+                if (assignGroupId != null) {
+                    sessionStore.addToGroup(assignGroupId, sourceId)
+                    val idx = groups.indexOfFirst { it.id == assignGroupId }
+                    if (idx >= 0) {
+                        groups[idx] = groups[idx].copy(
+                            sessionIds = groups[idx].sessionIds + sourceId,
+                        )
+                    }
+                }
+                // Refresh session lists
+                val all = sessionStore.listAll()
+                recentSessions.clear()
+                recentSessions.addAll(all.filter { !it.pinned })
+                pinnedSessions.clear()
+                pinnedSessions.addAll(all.filter { it.pinned })
                 navController.navigate("editor/$sourceId")
             }
         }
@@ -417,7 +440,10 @@ private fun HomeDestination(
         pinnedSessions = pinnedSessions,
         recentSessions = recentSessions,
         groups = groups,
-        onOpenFile = { openFileLauncher.launch(arrayOf("*/*")) },
+        onOpenFile = { groupId ->
+            pendingGroupId = groupId
+            openFileLauncher.launch(arrayOf("*/*"))
+        },
         onNewCompare = { navController.navigate("setup") },
         onCreateGroup = { name ->
             val g = sessionStore.createGroup(name)
@@ -431,6 +457,45 @@ private fun HomeDestination(
         onDeleteGroup = { id ->
             sessionStore.deleteGroup(id)
             groups.removeAll { it.id == id }
+        },
+        onMoveToGroup = { sessionId, groupId ->
+            val session = (pinnedSessions + recentSessions).find { it.id == sessionId }
+            if (session != null) {
+                scope.launch {
+                    // Remove from old group
+                    if (session.groupId != null) {
+                        sessionStore.removeFromGroup(session.groupId!!, sessionId)
+                    }
+                    // Add to new group
+                    if (groupId != null) {
+                        sessionStore.addToGroup(groupId, sessionId)
+                    }
+                    // Update session itself
+                    val updated = session.copy(groupId = groupId)
+                    sessionStore.save(updated)
+                    // Refresh UI state
+                    if (session.groupId != null) {
+                        val oldIdx = groups.indexOfFirst { it.id == session.groupId }
+                        if (oldIdx >= 0) {
+                            groups[oldIdx] = groups[oldIdx].copy(
+                                sessionIds = groups[oldIdx].sessionIds - sessionId,
+                            )
+                        }
+                    }
+                    if (groupId != null) {
+                        val newIdx = groups.indexOfFirst { it.id == groupId }
+                        if (newIdx >= 0) {
+                            groups[newIdx] = groups[newIdx].copy(
+                                sessionIds = groups[newIdx].sessionIds + sessionId,
+                            )
+                        }
+                    }
+                    val pIdx = pinnedSessions.indexOfFirst { it.id == sessionId }
+                    if (pIdx >= 0) pinnedSessions[pIdx] = updated
+                    val rIdx = recentSessions.indexOfFirst { it.id == sessionId }
+                    if (rIdx >= 0) recentSessions[rIdx] = updated
+                }
+            }
         },
         onSessionTap = { sessionId ->
             val session = (pinnedSessions + recentSessions).find { it.id == sessionId }

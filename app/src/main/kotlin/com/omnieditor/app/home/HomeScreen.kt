@@ -67,12 +67,13 @@ fun HomeScreen(
     groups: List<SessionGroup> = emptyList(),
     onSessionTap: (String) -> Unit = {},
     onNewCompare: () -> Unit = {},
-    onOpenFile: () -> Unit = {},
+    onOpenFile: (groupId: String?) -> Unit = {},
     onSearch: () -> Unit = {},
     onSettings: () -> Unit = {},
     onCreateGroup: (name: String) -> Unit = {},
     onRenameGroup: (id: String, name: String) -> Unit = { _, _ -> },
     onDeleteGroup: (id: String) -> Unit = {},
+    onMoveToGroup: (sessionId: String, groupId: String?) -> Unit = { _, _ -> },
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
 
@@ -110,17 +111,19 @@ fun HomeScreen(
             }
 
             when (selectedTab) {
-                0 -> RecentTab(pinnedSessions, recentSessions, onSessionTap, onOpenFile, onNewCompare)
+                0 -> RecentTab(pinnedSessions, recentSessions, onSessionTap, { onOpenFile(null) }, onNewCompare)
                 1 -> SessionsTab(
                     sessions = pinnedSessions + recentSessions,
                     groups = groups,
                     onTap = onSessionTap,
                     onNewCompare = onNewCompare,
+                    onOpenFile = onOpenFile,
                     onCreateGroup = onCreateGroup,
                     onRenameGroup = onRenameGroup,
                     onDeleteGroup = onDeleteGroup,
+                    onMoveToGroup = onMoveToGroup,
                 )
-                2 -> FilesTab(onOpenFile)
+                2 -> FilesTab { onOpenFile(null) }
             }
         }
     }
@@ -177,9 +180,11 @@ private fun SessionsTab(
     groups: List<SessionGroup>,
     onTap: (String) -> Unit,
     onNewCompare: () -> Unit,
+    onOpenFile: (groupId: String?) -> Unit,
     onCreateGroup: (name: String) -> Unit,
     onRenameGroup: (id: String, name: String) -> Unit,
     onDeleteGroup: (id: String) -> Unit,
+    onMoveToGroup: (sessionId: String, groupId: String?) -> Unit,
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var selectedGroupId by remember { mutableStateOf<String?>(null) }
@@ -276,13 +281,77 @@ private fun SessionsTab(
             }
         }
 
-        // Session list
+        // Open file button (assigns to selected group)
+        if (selectedGroupId != null) {
+            TextButton(
+                onClick = { onOpenFile(selectedGroupId) },
+                modifier = Modifier.padding(horizontal = 16.dp),
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Text("Open file in group")
+            }
+        }
+
+        // Session list with long-press group management
         if (filtered.isEmpty()) {
             EmptyState({}, onNewCompare)
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 items(filtered, key = { it.id }) { session ->
-                    SessionRow(session, onTap)
+                    var showSessionMenu by remember { mutableStateOf(false) }
+                    Box {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    onClick = { onTap(session.id) },
+                                    onLongClick = { showSessionMenu = true },
+                                )
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(session.name, style = MaterialTheme.typography.bodyLarge)
+                                val groupName = groups.find { it.id == session.groupId }?.name
+                                val subtitle = buildString {
+                                    append(session.mode.name.lowercase())
+                                    if (groupName != null) append(" · $groupName")
+                                }
+                                Text(
+                                    subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = showSessionMenu,
+                            onDismissRequest = { showSessionMenu = false },
+                        ) {
+                            // Move to group options
+                            for (group in groups) {
+                                if (group.id != session.groupId) {
+                                    DropdownMenuItem(
+                                        text = { Text("Move to ${group.name}") },
+                                        onClick = {
+                                            showSessionMenu = false
+                                            onMoveToGroup(session.id, group.id)
+                                        },
+                                    )
+                                }
+                            }
+                            // Remove from group (if in a group)
+                            if (session.groupId != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Remove from group") },
+                                    onClick = {
+                                        showSessionMenu = false
+                                        onMoveToGroup(session.id, null)
+                                    },
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
