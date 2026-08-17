@@ -5,9 +5,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.setValue
 import com.omnieditor.core.diff.MergeEngine
 import com.omnieditor.core.io.PieceTableDocument
+import com.omnieditor.core.model.CompareBookmark
+import com.omnieditor.core.model.CompareSide
 import com.omnieditor.core.model.CompareResult
 import com.omnieditor.core.model.Granularity
 import com.omnieditor.core.model.Hunk
@@ -121,6 +124,46 @@ class CompareState(
     /** True when at least one document has undoable edits (i.e. restore is possible). */
     val canUndo: Boolean
         get() = (leftDocument?.undoCount ?: 0) > 0 || (rightDocument?.undoCount ?: 0) > 0
+
+    // ── Bookmarks (F-08, W-02) ────────────────────────────────────────────
+
+    /** Compare bookmarks (persisted with session). */
+    val compareBookmarks = mutableStateListOf<CompareBookmark>()
+
+    /**
+     * Toggle a bookmark at the given line index and side.
+     * If a bookmark already exists there it is removed; otherwise one is added.
+     */
+    fun toggleBookmark(lineIndex: Long, side: CompareSide) {
+        val existing = compareBookmarks.find { it.lineIndex == lineIndex && it.side == side }
+        if (existing != null) {
+            compareBookmarks.remove(existing)
+        } else {
+            compareBookmarks.add(CompareBookmark(lineIndex, side))
+        }
+    }
+
+    /**
+     * Return the next bookmark after [currentDiffIndex], wrapping around.
+     * Returns null when there are no bookmarks.
+     */
+    fun nextBookmark(): CompareBookmark? {
+        if (compareBookmarks.isEmpty()) return null
+        val sorted = compareBookmarks.sortedBy { it.lineIndex }
+        return sorted.firstOrNull { it.lineIndex > currentDiffIndex } ?: sorted.first()
+    }
+
+    /**
+     * Return the previous bookmark before [currentDiffIndex], wrapping around.
+     * Returns null when there are no bookmarks.
+     */
+    fun prevBookmark(): CompareBookmark? {
+        if (compareBookmarks.isEmpty()) return null
+        val sorted = compareBookmarks.sortedByDescending { it.lineIndex }
+        return sorted.firstOrNull { it.lineIndex < currentDiffIndex } ?: sorted.first()
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
 
     /** Navigate to the next difference. */
     fun nextDiff() {

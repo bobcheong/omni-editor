@@ -223,10 +223,25 @@ fun CompareScreen(
                     totalDiffs = state.diffCount,
                     conflictCount = state.conflictCount,
                     isHunkMerged = state.currentDiffIndex in state.mergedHunks,
+                    bookmarkCount = state.compareBookmarks.size,
                     onPrevious = { state.prevDiff() },
                     onNext = { state.nextDiff() },
                     onPreviousConflict = { state.prevConflict() },
                     onNextConflict = { state.nextConflict() },
+                    onPreviousBookmark = {
+                        val bm = state.prevBookmark()
+                        if (bm != null) state.goToDiff(
+                            state.result.hunks.indexOfFirst { h -> h.leftStart <= bm.lineIndex && bm.lineIndex < h.leftEnd || h.rightStart <= bm.lineIndex && bm.lineIndex < h.rightEnd }
+                                .coerceAtLeast(0)
+                        )
+                    },
+                    onNextBookmark = {
+                        val bm = state.nextBookmark()
+                        if (bm != null) state.goToDiff(
+                            state.result.hunks.indexOfFirst { h -> h.leftStart <= bm.lineIndex && bm.lineIndex < h.leftEnd || h.rightStart <= bm.lineIndex && bm.lineIndex < h.rightEnd }
+                                .coerceAtLeast(0)
+                        )
+                    },
                     onMergeLeftToRight = {
                         if (state.currentHunk != null) {
                             val applied = state.mergeHunk(state.currentDiffIndex, MergeDirection.LEFT_TO_RIGHT)

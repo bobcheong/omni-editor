@@ -1,7 +1,9 @@
 package com.omnieditor.feature.compare
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -166,9 +168,32 @@ fun UnifiedDiffView(
             .onGloballyPositioned { viewportWidthPx = it.size.width.toFloat() }
             // Horizontal panning shares the container with vertical list
             // scrolling; axis disambiguation routes each gesture (R-44).
-            .horizontalDocumentScroll(hScroll),
+            .horizontalDocumentScroll(hScroll)
+            // Fling-at-bound swipe navigation (F-09, W-03, ADR-013).
+            .then(
+                with(SwipeDiffDetector) {
+                    Modifier.detectSwipeDiff(
+                        isAtLeftBound = hScroll.offsetPx <= 0f,
+                        isAtRightBound = hScroll.offsetPx >= hScroll.maxOffsetPx,
+                        onPrevDiff = { state.prevDiff() },
+                        onNextDiff = { state.nextDiff() },
+                    )
+                }
+            ),
     ) {
         itemsIndexed(rows, key = { idx, row -> "${row.left}_${row.right}_${row.type}_$idx" }) { idx, row ->
+            // Determine bookmark state for this row.
+            // AlignedRow uses left/right nullable longs; prefer left for context/removed,
+            // right for added rows.
+            val rowSide = if (row.right != null && row.left == null) {
+                com.omnieditor.core.model.CompareSide.RIGHT
+            } else {
+                com.omnieditor.core.model.CompareSide.LEFT
+            }
+            val rowLineIndex = row.left ?: row.right ?: 0L
+            val isBookmarked = state.compareBookmarks.any {
+                it.lineIndex == rowLineIndex && it.side == rowSide
+            }
             UnifiedAlignedRow(
                 row = row,
                 leftLines = state.leftLines,
@@ -176,6 +201,7 @@ fun UnifiedDiffView(
                 isCurrentHunk = row.hunkIndex != null && row.hunkIndex == state.currentDiffIndex,
                 isFindMatch = idx in findMatchSet,
                 isFocusedMatch = idx == focusedFindRow,
+                isBookmarked = isBookmarked,
                 colors = colors,
                 hunks = hunks,
                 intraLineCache = cache,
@@ -186,11 +212,13 @@ fun UnifiedDiffView(
                 } else {
                     null
                 },
+                onLongPress = { state.toggleBookmark(rowLineIndex, rowSide) },
             )
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun UnifiedAlignedRow(
     row: AlignedRow,
@@ -199,12 +227,14 @@ private fun UnifiedAlignedRow(
     isCurrentHunk: Boolean,
     isFindMatch: Boolean = false,
     isFocusedMatch: Boolean = false,
+    isBookmarked: Boolean = false,
     colors: com.omnieditor.design.CompareColors,
     hunks: List<com.omnieditor.core.model.Hunk>,
     intraLineCache: IntraLineCache,
     granularity: Granularity,
     hScroll: HorizontalScrollController,
     onTap: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val (bgColor, fgColor, glyph) = when (row.type) {
         RowType.ADDED -> Triple(colors.addedBg, colors.addedFg, "+")
@@ -266,21 +296,34 @@ private fun UnifiedAlignedRow(
             .fillMaxWidth()
             .background(rowBg)
             .height(22.dp)
-            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
+            .combinedClickable(
+                onClick = { onTap?.invoke() },
+                onLongClick = { onLongPress?.invoke() },
+            )
             .semantics { contentDescription = a11yDescription },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Gutter: glyph marker (OE-APP-2: colour is never the only signal) — pinned.
+        // When bookmarked, a bookmark indicator overlays the glyph slot.
         Box(
             modifier = Modifier.width(20.dp).padding(start = 4.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = glyph,
-                color = fgColor,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 14.sp,
-            )
+            if (isBookmarked) {
+                Text(
+                    text = "\u25CF",  // bookmark indicator: filled circle
+                    color = MaterialTheme.colorScheme.primary,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                )
+            } else {
+                Text(
+                    text = glyph,
+                    color = fgColor,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 14.sp,
+                )
+            }
         }
 
         // Line number — pinned.

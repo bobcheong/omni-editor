@@ -1,8 +1,10 @@
 package com.omnieditor.feature.compare
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -161,6 +164,20 @@ fun SplitDiffView(
         }
     }
 
+    // Compute bookmarked line sets per side from state (W-02).
+    val leftBookmarkedLines = remember(state.compareBookmarks.toList()) {
+        state.compareBookmarks
+            .filter { it.side == com.omnieditor.core.model.CompareSide.LEFT }
+            .map { it.lineIndex }
+            .toHashSet()
+    }
+    val rightBookmarkedLines = remember(state.compareBookmarks.toList()) {
+        state.compareBookmarks
+            .filter { it.side == com.omnieditor.core.model.CompareSide.RIGHT }
+            .map { it.lineIndex }
+            .toHashSet()
+    }
+
     Row(modifier = modifier.fillMaxSize()) {
         // Left pane — renders left side of each AlignedRow (null → spacer)
         SplitPane(
@@ -176,6 +193,8 @@ fun SplitDiffView(
             granularity = granularity,
             contentPadding = contentPadding,
             onDiffRowTapped = onDiffRowTapped,
+            onBookmarkToggle = { lineIndex, side -> state.toggleBookmark(lineIndex, side) },
+            bookmarkedLines = leftBookmarkedLines,
             findMatchSet = findMatchSet,
             focusedFindRow = focusedFindRow,
             hScroll = hScroll,
@@ -206,6 +225,8 @@ fun SplitDiffView(
             granularity = granularity,
             contentPadding = contentPadding,
             onDiffRowTapped = onDiffRowTapped,
+            onBookmarkToggle = { lineIndex, side -> state.toggleBookmark(lineIndex, side) },
+            bookmarkedLines = rightBookmarkedLines,
             findMatchSet = findMatchSet,
             focusedFindRow = focusedFindRow,
             hScroll = hScroll,
@@ -230,19 +251,39 @@ private fun SplitPane(
     contentPadding: PaddingValues,
     hScroll: HorizontalScrollController,
     onDiffRowTapped: ((hunkIndex: Int) -> Unit)? = null,
+    onBookmarkToggle: ((lineIndex: Long, side: com.omnieditor.core.model.CompareSide) -> Unit)? = null,
+    bookmarkedLines: Set<Long> = emptySet(),
     findMatchSet: Set<Int> = emptySet(),
     focusedFindRow: Int = -1,
     modifier: Modifier = Modifier,
 ) {
+    val compareSide = if (side == Side.LEFT) {
+        com.omnieditor.core.model.CompareSide.LEFT
+    } else {
+        com.omnieditor.core.model.CompareSide.RIGHT
+    }
     LazyColumn(
         state = listState,
         contentPadding = contentPadding,
         modifier = modifier
             // Horizontal pans on either pane feed the shared controller, so
             // both panes translate together (R-45).
-            .horizontalDocumentScroll(hScroll),
+            .horizontalDocumentScroll(hScroll)
+            // Fling-at-bound swipe navigation (F-09, W-03, ADR-013).
+            .then(
+                with(SwipeDiffDetector) {
+                    Modifier.detectSwipeDiff(
+                        isAtLeftBound = hScroll.offsetPx <= 0f,
+                        isAtRightBound = hScroll.offsetPx >= hScroll.maxOffsetPx,
+                        onPrevDiff = { /* driven from left pane only to avoid double-fire */ },
+                        onNextDiff = { /* driven from left pane only to avoid double-fire */ },
+                    )
+                }
+            ),
     ) {
         itemsIndexed(alignedRows, key = { idx, row -> "${side}_${row.left}_${row.right}_$idx" }) { idx, row ->
+            val lineIdx = if (side == Side.LEFT) row.left else row.right
+            val isBookmarked = lineIdx != null && lineIdx in bookmarkedLines
             SplitPaneRow(
                 row = row,
                 idx = idx,
@@ -252,17 +293,22 @@ private fun SplitPane(
                 currentHunkIndex = currentHunkIndex,
                 findMatchSet = findMatchSet,
                 focusedFindRow = focusedFindRow,
+                isBookmarked = isBookmarked,
                 colors = colors,
                 hunks = hunks,
                 intraLineCache = intraLineCache,
                 granularity = granularity,
                 hScroll = hScroll,
                 onDiffRowTapped = onDiffRowTapped,
+                onLongPress = if (lineIdx != null && onBookmarkToggle != null) {
+                    { onBookmarkToggle(lineIdx, compareSide) }
+                } else null,
             )
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SplitPaneRow(
     row: AlignedRow,
@@ -273,12 +319,14 @@ private fun SplitPaneRow(
     currentHunkIndex: Int,
     findMatchSet: Set<Int>,
     focusedFindRow: Int,
+    isBookmarked: Boolean = false,
     colors: com.omnieditor.design.CompareColors,
     hunks: List<com.omnieditor.core.model.Hunk>,
     intraLineCache: IntraLineCache,
     granularity: Granularity,
     hScroll: HorizontalScrollController,
     onDiffRowTapped: ((hunkIndex: Int) -> Unit)?,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val lineIdx = if (side == Side.LEFT) row.left else row.right
     val isSpacer = lineIdx == null
@@ -332,18 +380,31 @@ private fun SplitPaneRow(
             .fillMaxWidth()
             .background(rowBg)
             .height(22.dp)
-            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
+            .combinedClickable(
+                onClick = { onTap?.invoke() },
+                onLongClick = { onLongPress?.invoke() },
+            )
             .semantics { contentDescription = a11y },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Glyph — pinned.
-        Text(
-            text = glyph,
-            color = fgColor,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 12.sp,
-            modifier = Modifier.width(16.dp).padding(start = 2.dp),
-        )
+        // Glyph — pinned. Bookmark indicator overlays when the row is bookmarked (W-02).
+        if (isBookmarked && !isSpacer) {
+            Text(
+                text = "\u25CF",  // bookmark indicator: filled circle
+                color = MaterialTheme.colorScheme.primary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+                modifier = Modifier.width(16.dp).padding(start = 2.dp),
+            )
+        } else {
+            Text(
+                text = glyph,
+                color = fgColor,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                modifier = Modifier.width(16.dp).padding(start = 2.dp),
+            )
+        }
         // Line number — pinned.
         Text(
             text = if (lineIdx != null) "${lineIdx + 1}" else "",

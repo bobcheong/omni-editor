@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
@@ -40,10 +41,13 @@ fun DiffNavigationBar(
     totalDiffs: Int,
     conflictCount: Int = 0,
     isHunkMerged: Boolean = false,
+    bookmarkCount: Int = 0,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onPreviousConflict: () -> Unit = {},
     onNextConflict: () -> Unit = {},
+    onPreviousBookmark: () -> Unit = {},
+    onNextBookmark: () -> Unit = {},
     onMergeLeftToRight: () -> Unit = {},
     onMergeRightToLeft: () -> Unit = {},
     onAcceptAllLeftToRight: () -> Unit = {},
@@ -122,6 +126,30 @@ fun DiffNavigationBar(
                         color = conflictColors.conflictFg,
                         style = MaterialTheme.typography.labelSmall,
                     )
+                }
+            }
+
+            // Bookmark navigation (F-08, W-02) — only shown when bookmarks exist.
+            if (bookmarkCount > 0) {
+                IconButton(
+                    onClick = onPreviousBookmark,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .semantics { contentDescription = "Previous bookmark" },
+                ) {
+                    Icon(Icons.Default.Bookmark, contentDescription = "Previous bookmark", modifier = Modifier.size(16.dp))
+                }
+                Text(
+                    text = "$bookmarkCount \u25CF",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                IconButton(
+                    onClick = onNextBookmark,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .semantics { contentDescription = "Next bookmark" },
+                ) {
+                    Icon(Icons.Default.Bookmark, contentDescription = "Next bookmark", modifier = Modifier.size(16.dp))
                 }
             }
 
