@@ -19,6 +19,22 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
 
+      # D-8 / X-1: tag==file guard — refuse to build if the tag name does not
+      # match the version declared in version.properties.
+      - name: Verify tag matches version.properties
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          MAJOR=$(grep '^major=' version.properties | cut -d= -f2)
+          MINOR=$(grep '^minor=' version.properties | cut -d= -f2)
+          PATCH=$(grep '^patch=' version.properties | cut -d= -f2)
+          EXPECTED="v${MAJOR}.${MINOR}.${PATCH}"
+          if [ "$TAG" != "$EXPECTED" ]; then
+            echo "::error::Tag '$TAG' does not match version.properties ('$EXPECTED')"
+            exit 1
+          fi
+          echo "Tag '$TAG' matches version.properties ✓"
+
       # DIST-4: the same key must sign every build, or updates will not install over
       # the previous version. Store it as a base64 repository secret.
       - name: Restore keystore

@@ -1,82 +1,51 @@
 # SPEC-GAP-PLAN — OE-SPEC-001 v1.2 audit and forward implementation plan
 
-**Revision:** 5 · **Date:** 17 August 2026 · **Audited at:** HEAD `a15124a` (issue #16 closed)
+**Revision:** 6 · **Date:** 17 August 2026 · **Audited at:** HEAD `e6434cb` (issue #22 closed)
 **Companion to:** `docs/OE-SPEC-001.html`, `docs/P1-BUILD-PLAN.md`, `docs/P1-COMPLETION-PLAN.md`
 **Task IDs:** F-nn (feature-gap tasks). Requirement IDs cited are from OE-SPEC-001.
 
 ---
 
-## Part A — Re-audit at #16 closure: verified task status
+## Part A — Re-audit at #22 closure: verified task status
 
-Method: every F-nn claim in commits `43302b8..a15124a` (#16) and `d555789..12e2c59` (#15) was verified against the tree by grep, not taken from commit messages. Three statuses: **DONE** (engine + UI wired), **ENGINE-ONLY** (tested component exists, nothing reachable from the UI), **DIVERGENT** (implemented against the plan/decision).
+Method unchanged: every W-nn claim verified against the tree by grep at `e6434cb`, not taken from commit messages. The post-feature fix commits (five HexGrid scroll fixes, session-group UX fixes, Compare-with/Save-as corrections) indicate real on-device testing.
 
-### A.1 v0.3 tasks (#15)
-
-| Task | Status | Evidence |
-|---|---|---|
-| F-01 large-file open | **DONE** (read-only tier) | `INDEXED_READ_ONLY` wired via `EditorCoordinator` → `LargeFileDocument`; ADR-012 ladder in force. |
-| F-02 BlockDiff wiring | **DONE** | `compareAuto` path in `DiffEngine`; wired via `CompareCoordinator`. |
-| F-03 large-file *editing* | **NOT DONE** | Large files open read-only (`EditorState.readOnly` guards all edit paths). Changelog `[F-01..F-05]` overstates; F-03 remains open. Acceptable sequencing — read-only-first was the plan — but the ledger should say so. |
-| F-04 long-job service | **SCAFFOLD** | `LongJobService` exists; notification progress + cancel and generic-host shape not verified as wired to compares. |
-| F-05 release/versioning | **DIVERGENT** | `versionCode = git rev-list --count HEAD` — the scheme D-8 rejected, and broken under the project's own `--depth 50` convention (count caps at fetch depth, so versionCode can *decrease*). `versionName` still hardcoded `"0.2.0"`; `BUILD_NUMBER` still alive. Tags v0.1.0/v0.1.0-store/v0.2.0 now exist on the remote (earlier "no tags" finding is stale), but no `v0.3.0` tag and no tag==file enforcement. |
-| F-05b benchmark harness | **DONE** | `:benchmark` module present. Per D-7, first results land at the v0.3 release run. |
-
-### A.2 v0.4 tasks (#16)
+### A.1 W-task disposition
 
 | Task | Status | Evidence |
 |---|---|---|
-| C.4 NavGraph split | **DONE** | `OmniNavGraph` 648 lines + `EditorCoordinator` (302) + `CompareCoordinator` (486). |
-| F-06 compare find | **DONE** | Case/whole-word/regex toggles + per-side counts live in `CompareScreen`. |
-| F-07 hex view | **ENGINE-ONLY** | `HexGrid` composable in `design` + `HexViewConfig` model — **zero usages** in `feature/*` or `app`. No "View as hex" toggle exists. |
-| F-08 compare bookmarks | **ENGINE-ONLY** | `CompareBookmark` serialised in `Session` — **zero references** in `feature/compare`. No UI to set, list, or jump. |
-| F-09 swipe navigation | **ENGINE-ONLY** | `SwipeDiffDetector` (fling-at-bound per ADR-013) exists — **never attached** to any view. |
-| F-10 word-level merge | **ENGINE-ONLY** | `WordMerge.kt` in `core/diff` — not referenced by `MergeEngine`, any feature, or the app. |
-| F-11 outline + brackets | **ENGINE-ONLY** | `SymbolExtractor` + `BracketMatcher` in `core/diff` — no outline sheet, no jump action in the editor. |
-| F-12 reports | **PARTIAL + DIVERGENT** | HTML side-by-side ✓, PDF-via-print noted ✓, header/footer carries rules + engine mode ✓. But `ReportScope` = ALL/SELECTION/VISIBLE, which is **not** OE-RPT-2's scope set (diff-only / N-context-lines / full / one side). Diff-only and context-N — the two most-used report scopes — are missing. |
-| F-13 sessions | **MOSTLY DONE** | `search()` ✓, `exportAsJson`/`importFromJson` ✓, `SessionGroup` model ✓. Home-screen UI for groups/search not verified; staleness badge absent. |
-| F-14 theme editor | **MODEL-ONLY** | `UserTheme` data class exists. No editor screen, no import/export UI — the smallest slice of any task. |
-| F-15 accessibility | **UNSUBSTANTIATED** | Commit `a15124a` is tagged `[F-15, F-16]` but its content is entirely F-16 (shortcuts + tile); no a11y work in the diff, no a11y CI checks added. Pre-existing `contentDescription` on diff rows predates #16. F-15 remains open. |
-| F-16 shortcuts + QS tile | **DONE (tile as scaffold)** | Dynamic shortcuts registered and routed ✓; `CompareClipboardTile` launches the activity but is `STATE_INACTIVE` scaffold — acceptable v1 for a launcher tile. |
+| W-01 ReportScope | **DONE** | Sealed class with `DiffOnly` + `Context(n)`; matches OE-RPT-2. |
+| W-02 Compare bookmarks | **DONE** | Wired across `CompareState`/`CompareScreen`/`UnifiedDiffView`/`SplitDiffView`; session-persisted. |
+| W-03 Swipe navigation | **DONE** | `SwipeDiffDetector` attached in both Unified and Split views per ADR-013. |
+| W-04 Outline + brackets | **DONE** | `SymbolOutlineSheet` + bracket jump in `EditorScreen`. |
+| W-05 Word-level merge | **ENGINE-ONLY — still open** | `MergeEngine.mergeWordLevel()` exists and documented; zero references from `feature/compare` or `app`. The active-line-sheet accept UI was not built. F-10/OE-MRG-2 remains user-unreachable. |
+| W-06 Hex view toggle | **DONE** | Wired in `EditorScreen`; five follow-up scroll fixes show device exercise. |
+| W-07 Groups + search | **DONE** | `HomeScreen` UI incl. group chips with move/rename/delete; search field. |
+| W-08 Theme editor | **DONE** | `ThemeEditorScreen` in app. |
+| W-09 Accessibility | **HALF DONE** | TalkBack semantics on diff rows ✓; **no a11y check in `ci.yml`**, no recorded manual pass. |
+| W-10 D-8 versioning | **MOSTLY DONE** | `version.properties` (0.4.0) as source of truth, arithmetic `versionCode`, `ValueSource` SHA, `BUILD_NUMBER` deleted, About/CrashLogger show `version (sha) · type`. **Missing: tag==file guard step in `release.yml`, and no `v0.4.0` tag pushed** — remote still has only v0.1.0/v0.2.0. Nit (non-blocking): SHA provider is `.get()`-ed at configuration time, partially defeating configuration-cache safety; wire lazily into `buildConfigField`. |
+| W-11 ADR renumber | **DONE** | `014-performance-verification.md`; collision resolved. |
+| W-12 F-03 resolution | **DONE (deferred path)** | ADR-012 gains an explicit F-03 deferral to v0.5 (INDEXED_EDITABLE tier); CHANGES.md corrected for the F-03/F-15 overstatements. |
+| W-13 LongJobService | **DONE** | Wired in `CompareCoordinator` with start/stop + notification path. |
 
-### A.3 Cross-cutting corrections outstanding
+### A.2 v0.4 exit punch-list (all that remains)
 
-1. **D-8 versioning violation** (F-05 above) — highest priority; the current scheme mis-versions any shallow build.
-2. **ADR numbering collision** — `002-performance-budgets.md` and `002-performance-verification.md` both exist. Renumber the newer to ADR-014.
-3. **Changelog inflation** — CHANGES.md claims `[F-01..F-05]` and `[F-15, F-16]` for commits that don't contain F-03/F-15 work. Per the project's own honesty convention (OE-ENG-4 spirit), the ledger should distinguish *scaffolded* from *done*; this plan's三-status vocabulary (DONE / ENGINE-ONLY / DIVERGENT) is offered for reuse.
+1. **X-1 — Tag + guard** *(blocking; also the D-1 desktop gate)*: add a `release.yml` step comparing `GITHUB_REF_NAME` to `version.properties` (fail on mismatch); push `v0.4.0`; verify green run, installable APK, About string.
+2. **X-2 — a11y CI check** (finish W-09): Compose accessibility checks in CI; record one manual TalkBack pass.
+3. **X-3 — Word-merge UI or explicit deferral** (resolve W-05): either build the word-level accept UI in the active-line sheet, or defer F-10 to v0.5 alongside F-03 with a note in ADR-012 — defensible, since both touch the same sheet and the editable large-file work lands there anyway. Either way the ledger states it.
 
-### A.4 Assessment
+v0.4 closes when X-1..X-3 are resolved. Nothing else in the audit is open.
 
-Issue #16 delivered the *engine layer* of v0.4 — every hard algorithmic piece (word merge, symbol extraction, bracket matching, hex grid rendering, swipe detection, report generation, session serialisation) exists and is presumably tested. What it did not deliver is the *feature layer*: six of eleven tasks have no user-reachable surface. The plan's v0.4 phase is therefore roughly half done, not closed. This is a natural seam, not a failure — but the next work package should be framed as "v0.4 wiring" rather than new scope.
+## Part B — Forward plan
 
----
+### v0.4 closure
+The X-1..X-3 punch-list above (small; X-1 is ~an hour including the workflow run). Recommend a `v0.4.x` patch tag if X-2/X-3 land after X-1's `v0.4.0`.
 
-## Part B — Revised near-term plan
+### v0.5 — Linux desktop port (project P2) + riders
+The D-1 gate is passed once X-1 is done. Pre-work unchanged: app-ID ADR first commit, KMP plugin, `expect/actual`, IME/Wayland spike, three desktop ADRs, JetBrains Mono, jpackage/appimagetool CI. **Riders confirmed for v0.5:** F-03 large-file editing (INDEXED_EDITABLE tier, per ADR-012 deferral) and — if X-3 takes the deferral path — F-10 word-merge UI; both concentrate in the editor/active-line surface and should land *before* the KMP `expect/actual` split touches those files, for the same reason save-path consolidation preceded the port.
 
-### v0.4-w — Wiring package (recommended next issue, #17)
-
-Ordered by user value per unit effort:
-
-- **W-1 (F-12 fix)** Reconcile `ReportScope` with OE-RPT-2: add DIFF_ONLY and CONTEXT(n) scopes; keep SELECTION/VISIBLE as extensions beyond spec. Small, pure-Kotlin, unblocks real report use.
-- **W-2 (F-08)** Compare bookmarks UI: long-press row → toggle bookmark; bookmark strip/menu to jump; persists via the already-serialised `Session.compareBookmarks`.
-- **W-3 (F-09)** Attach `SwipeDiffDetector` to unified + split views; wire to Prev/Next actions; settings toggle per OE-TXT-2 ("configurable off").
-- **W-4 (F-11)** Outline sheet in editor (from `SymbolExtractor`) + "jump to matching bracket" action (keyboard + overflow), disabled above the full-index tier.
-- **W-5 (F-10)** Route `WordMerge` through `MergeEngine` for intra-line replace/insert; add the word-level accept UI in the active-line sheet.
-- **W-6 (F-07)** "View as hex" toggle in the editor using `HexGrid`, backed by `FileIndexer`'s channel; becomes the destination for the "binary detected" state (§13).
-- **W-7 (F-13 finish)** Home UI for session groups + search field; staleness badge.
-- **W-8 (F-14)** Theme editor screen + JSON import/export UI over `UserTheme`.
-- **W-9 (F-15, real)** The a11y pass as specified: TalkBack labels asserting side + change type per row, Compose a11y checks in CI, manual pass recorded.
-- **W-10 (F-05 redo)** Implement D-8 as specified in rev-4's F-05: version file as source of truth, `versionCode` derived arithmetically, tag==file enforcement in `release.yml`, `ValueSource` SHA+dirty display, delete `BUILD_NUMBER`, update `CrashLogger`/`AnrWatchdog`. Then tag `v0.3.0` retroactively on the #15 closure commit or `v0.4.0` at #17 closure — either is fine, but one real tagged release must be exercised before the desktop branch (pre-agreed desktop gate).
-- **W-11** Renumber `002-performance-verification.md` → ADR-014; fix internal references.
-- **W-12 (F-03)** Large-file editing tier, or an explicit deferral note in ADR-012 if it slips to v0.5 — either resolves the changelog overstatement.
-- **W-13 (F-04 finish)** LongJobService: bind to `compareAuto` for >10 s jobs, notification progress + cancel, generic-host shape for future sync reuse.
-
-Exit criteria for calling v0.4 closed: every A.2 row reads DONE, W-10/W-11 landed, and a tagged release exists.
-
-### v0.5 onward
-
-Unchanged from rev 4: desktop port (project P2) after v0.4 closes → v0.6 three-way merge UI (F-17) + binary compare (F-18) + hex editing (F-18b, ADR on byte undo model first) → v0.7 structured data → v0.8 filesystems (7z + tar.gz per D-4) → v0.9 remote + URL → v1.0 Git + reach (M18/M19 requirements analysis per D-6 before any adoption).
-
----
+### v0.6 onward (issues #17–#21, unchanged)
+#17 v0.6 three-way merge UI + binary compare + hex editing (F-17/F-18/F-18b; hex-grid dependency now satisfied by W-06) → #18 v0.7 structured data → #19 v0.8 folders/sync/archives (7z + tar.gz, D-4) → #20 v0.9 remote + URL → #21 v1.0 Git + reach (M18/M19 per D-6). The "Blocked by #22" note on #17 can be cleared once X-1 lands.
 
 ## Part C — Standing refinements (carried, still applicable)
 
@@ -93,12 +62,13 @@ Unchanged from rev 4: desktop port (project P2) after v0.4 closes → v0.6 three
 
 ## Part E — Open questions
 
-None standing. New question only if W-12 defers: which release picks up F-03.
+One: X-3 — build the word-merge UI now, or defer F-10 to v0.5 with F-03. Both acceptable; the plan assumes deferral if unanswered.
 
 ---
 
 ## Appendix — Change history
 
+- **Rev 6 (17 Aug 2026):** Re-audit at `e6434cb` after #22 closure. 11 of 13 W-tasks verified DONE with UI wiring; W-05 remains engine-only (no word-merge UI), W-09 half done (labels ✓, CI check ✗), W-10 missing only the tag==file guard and the `v0.4.0` tag itself. v0.4 exit reduced to punch-list X-1..X-3; X-1 is the D-1 desktop gate. v0.5 gains riders F-03 (per ADR-012 deferral) and conditionally F-10, both to land before the KMP split. Configuration-time `.get()` on the SHA provider noted as a non-blocking nit.
 - **Rev 5 (17 Aug 2026):** Re-audit at `a15124a` after #16 closure. Per-task verification with DONE/ENGINE-ONLY/DIVERGENT status: 6 of 11 v0.4 tasks are engine-only (F-07/08/09/10/11/14), F-12 diverges from OE-RPT-2 scopes, F-15 unsubstantiated, F-05 violates D-8 (shallow-clone versionCode bug), F-03 open despite changelog claim. Tags v0.1.0/v0.2.0 found on remote (stale "no tags" finding corrected). v0.4-w wiring package (W-1..W-13) defined as the next issue; exit criteria for v0.4 stated. ADR-002 collision correction carried as W-11.
 - **Rev 4 (16 Aug 2026):** D-8 versioning scheme; F-05 rescoped with full mechanics.
 - **Rev 3 (16 Aug 2026):** D-4..D-7; F-05b benchmark harness; F-18b hex editing; all questions closed.

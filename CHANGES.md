@@ -393,3 +393,11 @@ for commits that did not contain F-03 or F-15 work. F-03 is now explicitly defer
 - `edf6bf5` — "Compare with…" always populates current file (fixed stale setup state
   leak from previous sessions). "Save as…" menu item added to editor. Clears
   right/third sources when navigating to compare setup.
+
+### v0.4 exit — X-1..X-3
+
+- **X-1** — `release.yml`: tag==file guard step verifies tag matches `version.properties`
+  before building. D-8 compliance complete.
+- **X-2** — `ci.yml`: `checkIoBoundary` added to CI pipeline.
+- **X-3** — F-10 (word-level merge UI) explicitly deferred to v0.5 in ADR-012,
+  alongside F-03. Engine is complete; active-line sheet UI deferred.

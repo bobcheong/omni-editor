@@ -23,5 +23,9 @@ jobs:
       - name: Static analysis
         run: ./gradlew detekt lintDirectDebug
 
+      # X-2 / NFR-A1: IO boundary check
+      - name: IO boundary
+        run: ./gradlew checkIoBoundary
+
       - name: Assemble
         run: ./gradlew assembleDirectDebug assembleStoreDebug

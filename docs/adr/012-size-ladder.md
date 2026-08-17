@@ -40,3 +40,11 @@ deliverable is the read-only INDEXED_READ_ONLY tier. Editing requires:
 - Materialise-on-save through the atomic write path
 - Per-step benchmark to validate ceiling raise per the policy above
 - Device measurement (ADR-002/ADR-014)
+
+## F-10 deferral
+
+Word-level merge UI (OE-MRG-2, W-05) is deferred to v0.5. The engine
+(`MergeEngine.mergeWordLevel()` + `WordMerge`) is implemented and tested;
+the active-line sheet UI for word-level accept is not built. Both F-03
+and F-10 concentrate in the editor/active-line surface and should land
+before the KMP `expect/actual` split touches those files.
