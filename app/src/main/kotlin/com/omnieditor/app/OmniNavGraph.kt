@@ -246,8 +246,14 @@ fun OmniNavGraph(
             val prefilledLeftKey = backStackEntry.arguments?.getString("leftKey")
             // Initialize hoisted state from prefilled key on first entry
             LaunchedEffect(prefilledLeftKey) {
-                if (prefilledLeftKey != null && setupLeftKey == null) {
+                if (prefilledLeftKey != null) {
+                    // Always apply the prefilled key — clear stale state from prior sessions
                     setupLeftKey = prefilledLeftKey
+                    setupRightKey = null
+                    setupRightSource = null
+                    setupThirdKey = null
+                    setupThirdSource = null
+                    setupShowThirdSlot = false
                     val doc = DocumentRegistry.get(prefilledLeftKey)
                     if (doc != null) {
                         setupLeftSource = SourceRef(

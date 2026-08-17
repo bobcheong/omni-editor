@@ -3,15 +3,19 @@ package com.omnieditor.app
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import kotlinx.coroutines.launch
 import com.omnieditor.core.model.DocumentLimits
 import com.omnieditor.feature.editor.EditorScreen
 import com.omnieditor.feature.editor.EditorSettingsState
@@ -108,6 +112,28 @@ internal fun EditorDestination(
     val context = androidx.compose.ui.platform.LocalContext.current
     val viewModel: EditorViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsState()
+    val scope = rememberCoroutineScope()
+
+    // Save As: launch document creator to pick destination, then write content
+    val saveAsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("*/*")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                try {
+                    val content = viewModel.getContent()
+                    withContext(Dispatchers.IO) {
+                        context.contentResolver.openOutputStream(uri, "wt")?.use { out ->
+                            out.write(content.toByteArray())
+                            out.flush()
+                        }
+                    }
+                } catch (_: Exception) {
+                    // Write failure — silently handled for now
+                }
+            }
+        }
+    }
 
     // R-34b: pin this document so LRU eviction cannot remove it while open.
     LaunchedEffect(contentKey) {
@@ -290,6 +316,10 @@ internal fun EditorDestination(
         onNewTab = onNewTab,
         onNavigateBack = onNavigateBack,
         onCompareWith = onCompareWith,
+        onSaveAs = {
+            val name = cached?.label ?: "document.txt"
+            saveAsLauncher.launch(name)
+        },
         settingsState = settingsState,
         onToggleWordWrap = onToggleWordWrap,
         onToggleLineNumbers = onToggleLineNumbers,

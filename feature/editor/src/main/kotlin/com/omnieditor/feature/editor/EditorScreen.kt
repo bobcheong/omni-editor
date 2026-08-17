@@ -73,6 +73,7 @@ data class EditorSettingsState(
  */
 data class EditorMenuCallbacks(
     val onSave: () -> Unit = {},
+    val onSaveAs: () -> Unit = {},
     val onUndo: () -> Unit = {},
     val onRedo: () -> Unit = {},
     val onGoToLine: () -> Unit = {},
@@ -134,6 +135,7 @@ fun EditorScreen(
     onNewTab: () -> Unit = {},
     onNavigateBack: () -> Unit = {},
     onCompareWith: () -> Unit = {},
+    onSaveAs: () -> Unit = {},
     settingsState: EditorSettingsState = EditorSettingsState(),
     onToggleWordWrap: () -> Unit = {},
     onToggleLineNumbers: () -> Unit = {},
@@ -263,6 +265,7 @@ fun EditorScreen(
                 settingsState = settingsState,
                 callbacks = EditorMenuCallbacks(
                     onSave = { viewModel.save() },
+                    onSaveAs = onSaveAs,
                     onUndo = { viewModel.undo() },
                     onRedo = { viewModel.redo() },
                     onGoToLine = { showGoToLineDialog = true },
@@ -603,6 +606,7 @@ private fun EditorTopBar(
                 HorizontalDivider()
                 // ── Document section ──
                 DropdownMenuItem(text = { Text("Save") }, onClick = { menuExpanded = false; callbacks.onSave() })
+                DropdownMenuItem(text = { Text("Save as…") }, onClick = { menuExpanded = false; callbacks.onSaveAs() })
                 DropdownMenuItem(text = { Text("Undo") }, onClick = { menuExpanded = false; callbacks.onUndo() })
                 DropdownMenuItem(text = { Text("Redo") }, onClick = { menuExpanded = false; callbacks.onRedo() })
                 DropdownMenuItem(text = { Text("Bookmarks ▸") }, onClick = {
