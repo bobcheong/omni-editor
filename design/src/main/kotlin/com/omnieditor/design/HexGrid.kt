@@ -67,10 +67,16 @@ fun HexGrid(
     val density = LocalDensity.current
 
     val contentWidthPx = remember(bytesPerRow, showAscii, density) {
+        // Measure hex and ASCII parts separately, then add the actual padding
         val hexPart = (0 until bytesPerRow).joinToString(" ") { "FF" }
-        val asciiPart = if (showAscii) "  " + "X".repeat(bytesPerRow) else ""
-        val sample = hexPart + asciiPart
-        measurer.measure(sample, textStyle).size.width.toFloat()
+        val hexWidth = measurer.measure(hexPart, textStyle).size.width.toFloat()
+        val asciiWidth = if (showAscii) {
+            val asciiText = "X".repeat(bytesPerRow)
+            val textWidth = measurer.measure(asciiText, textStyle).size.width.toFloat()
+            val paddingPx = with(density) { 16.dp.toPx() }
+            paddingPx + textWidth
+        } else 0f
+        hexWidth + asciiWidth
     }
 
     var viewportWidthPx by remember { mutableFloatStateOf(0f) }
