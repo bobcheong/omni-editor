@@ -1,4 +1,7 @@
+import java.io.File
 import java.util.Properties
+import org.gradle.api.provider.ValueSource
+import org.gradle.api.provider.ValueSourceParameters
 
 plugins {
     alias(libs.plugins.android.application)
@@ -20,25 +23,35 @@ plugins {
 //   storePassword=...
 //   keyAlias=omni
 //   keyPassword=...
+
+// D-8: git SHA as a configuration-cache-safe ValueSource
+abstract class GitShaValueSource : ValueSource<String, ValueSourceParameters.None> {
+    override fun obtain(): String = try {
+        val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+            .directory(File(System.getProperty("user.dir")))
+            .redirectErrorStream(true)
+            .start()
+        val sha = process.inputStream.bufferedReader().readText().trim()
+        process.waitFor()
+        if (sha.length in 7..12) sha else ""
+    } catch (_: Exception) { "" }
+}
+
+// D-8: version from version.properties (single source of truth)
+val versionProps = Properties().apply {
+    rootProject.file("version.properties").inputStream().use { load(it) }
+}
+val vMajor = versionProps.getProperty("major").toInt()
+val vMinor = versionProps.getProperty("minor").toInt()
+val vPatch = versionProps.getProperty("patch").toInt()
+val gitSha: String = providers.of(GitShaValueSource::class.java) {}.get()
+
 val keystorePropsFile = rootProject.file("keystore.properties")
 val keystoreProps = Properties().apply {
     if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
 }
 fun signingValue(key: String, env: String): String? =
     keystoreProps.getProperty(key) ?: System.getenv(env)
-
-// Incremental build number: reads from build-number.txt, increments on each build.
-// The file is gitignored — each dev environment has its own counter.
-val buildNumberFile = rootProject.file("build-number.txt")
-val buildNumber: Int = if (buildNumberFile.exists()) {
-    val current = buildNumberFile.readText().trim().toIntOrNull() ?: 0
-    val next = current + 1
-    buildNumberFile.writeText(next.toString())
-    next
-} else {
-    buildNumberFile.writeText("1")
-    1
-}
 
 android {
     namespace = "com.omnieditor.app"
@@ -48,15 +61,11 @@ android {
         applicationId = "com.omnieditor"
         minSdk = libs.versions.minSdk.get().toInt()          // Android 12. Decision recorded: OE-SPEC-001 §11 NFR-C1.
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = providers.exec {
-            commandLine("git", "rev-list", "--count", "HEAD")
-            workingDir = rootProject.projectDir
-            isIgnoreExitValue = true
-        }.standardOutput.asText.map { it.trim().toIntOrNull() ?: 1 }.get()
-        versionName = "0.2.0"
+        versionCode = vMajor * 10000 + vMinor * 100 + vPatch
+        versionName = "$vMajor.$vMinor.$vPatch"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // Expose build number to BuildConfig for the About screen.
-        buildConfigField("int", "BUILD_NUMBER", buildNumber.toString())
+        // Expose git SHA to BuildConfig for the About screen.
+        buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
     }
 
     // DIST-1: two flavours, one codebase. They differ only in a manifest permission and

@@ -1,4 +1,4 @@
-# ADR 002 — Performance verification methodology
+# ADR 014 — Performance verification methodology
 
 **Status:** accepted — F-05b, 16 August 2026.
 

@@ -152,7 +152,7 @@ fun SettingsScreen(
                 SettingsSection("About")
                 SettingsItem(
                     title = "Version",
-                    subtitle = "${BuildConfig.VERSION_NAME} (build ${BuildConfig.BUILD_NUMBER})",
+                    subtitle = "${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_SHA}) · ${BuildConfig.BUILD_TYPE}",
                 ) { }
                 SettingsItem(
                     title = "Licences",

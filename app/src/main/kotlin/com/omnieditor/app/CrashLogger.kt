@@ -46,7 +46,7 @@ class CrashLogger private constructor(
         appendLine("Thread: ${thread.name}")
         appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
         appendLine("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
-        appendLine("App: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+        appendLine("App: version=${BuildConfig.VERSION_NAME} sha=${BuildConfig.GIT_SHA}")
         appendLine()
         appendLine("Stack trace:")
         appendLine(throwable.stackTraceToString())
