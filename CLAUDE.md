@@ -27,7 +27,9 @@ This product has no relationship to any existing compare or editor tool or vendo
 - All file access goes through `SourceProvider`. No `java.io.File`, no `ContentResolver`
   outside `core/io` and the flavour source sets. `OmniNavGraph` split into
   `EditorCoordinator`, `CompareCoordinator`, and `OmniNavGraph` (route declarations).
-- The editor and both compare panes share one `TextDocument`.
+- The editor and both compare panes share one `TextDocument`. Editor has Save and
+  Save As (via `CreateDocument` picker). "Compare with…" prefills setup from the
+  current file and clears stale state from prior sessions.
 - Documents are tiered by size via `DocumentLimits.SizeTier`: FULL_MEMORY (≤16 MiB,
   full editing), INDEXED_READ_ONLY (16–256 MiB, read-only via `LargeFileDocument`),
   REFUSED (>256 MiB, `OmniError.TooLarge`). **No code path may be O(file) per

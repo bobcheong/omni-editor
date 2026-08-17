@@ -382,3 +382,14 @@ for commits that did not contain F-03 or F-15 work. F-03 is now explicitly defer
   scroll together instead of per-row independent scroll). Offset column pinned outside
   scrollable area (stays visible during horizontal scroll, like line numbers in text mode).
   Menu toggle shows "View as text" when hex view is active.
+- `e8da591`..`4bd0d75` — HexGrid: text uses `softWrap=false` + `maxLines=1` +
+  `wrapContentWidth(unbounded=true)` to prevent wrapping in narrow portrait mode.
+  Content width measured from actual rendered Row. Viewport measured from Box not
+  LazyColumn. 16dp right margin for full scroll visibility.
+- `1760e97` — Session groups: auto-assign new sessions to selected group; long-press
+  session row for "Move to group" / "Remove from group"; "Open file in group" button.
+- `1ea8c12` — Group chips: trailing ⋮ icon for Rename/Delete (replaces broken
+  long-press on FilterChip).
+- `edf6bf5` — "Compare with…" always populates current file (fixed stale setup state
+  leak from previous sessions). "Save as…" menu item added to editor. Clears
+  right/third sources when navigating to compare setup.
