@@ -1,8 +1,8 @@
 # Omni Editor — working rules
 
 Read this before every task. The specification is `docs/OE-SPEC-001.html`; the completion
-plan is `docs/P1-COMPLETION-PLAN.md` (v3, authoritative). Supplement:
-`docs/Review-1/P1-INPUT-SCROLL-REWORK.md` (R-42..R-50). Change log: `CHANGES.md`.
+plan is `docs/P1-COMPLETION-PLAN.md` (v3, authoritative). Forward plan:
+`docs/SPEC-GAP-PLAN.md` (rev 5, v0.3–v1.0). Change log: `CHANGES.md`.
 
 ## Independence (non-negotiable)
 
@@ -25,12 +25,13 @@ This product has no relationship to any existing compare or editor tool or vendo
 - `core/model` and `core/diff` must not import `android.*` or `androidx.*`.
   `./gradlew checkCorePurity` enforces this and is wired into `check`.
 - All file access goes through `SourceProvider`. No `java.io.File`, no `ContentResolver`
-  outside `core/io` and the flavour source sets.
+  outside `core/io` and the flavour source sets. `OmniNavGraph` split into
+  `EditorCoordinator`, `CompareCoordinator`, and `OmniNavGraph` (route declarations).
 - The editor and both compare panes share one `TextDocument`.
-- Documents above `DocumentLimits.EDITOR_MAX_BYTES` are refused with `OmniError.TooLarge`.
-  Within the ceiling a file may be held in memory. **No code path may be O(file) per
-  keystroke or per rendered row** — the ceiling does not excuse that. See
-  `docs/adr/003-size-ceiling.md`.
+- Documents are tiered by size via `DocumentLimits.SizeTier`: FULL_MEMORY (≤16 MiB,
+  full editing), INDEXED_READ_ONLY (16–256 MiB, read-only via `LargeFileDocument`),
+  REFUSED (>256 MiB, `OmniError.TooLarge`). **No code path may be O(file) per
+  keystroke or per rendered row.** See `docs/adr/012-size-ladder.md`.
 - Line count is `newlines + 1`. A file ending in a terminator has a real, caret-placeable
   empty final line. See `docs/adr/007-line-model.md`.
 - Long operations are cancellable coroutines scoped to a session, calling `ensureActive()`

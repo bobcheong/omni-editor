@@ -375,3 +375,10 @@ Wires all engine-only v0.4 components into user-reachable features:
 **Corrections:** Earlier CHANGES.md entries claimed `[F-01..F-05]` and `[F-15, F-16]`
 for commits that did not contain F-03 or F-15 work. F-03 is now explicitly deferred
 (W-12). F-15 (accessibility) is delivered by W-09.
+
+### Bug fixes
+
+- `4e5817f` — HexGrid: shared horizontal scroll via `HorizontalScrollController` (all rows
+  scroll together instead of per-row independent scroll). Offset column pinned outside
+  scrollable area (stays visible during horizontal scroll, like line numbers in text mode).
+  Menu toggle shows "View as text" when hex view is active.
