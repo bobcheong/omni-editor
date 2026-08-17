@@ -83,11 +83,7 @@ fun HexGrid(
 
     LazyColumn(
         modifier = modifier
-            .horizontalDocumentScroll(hScroll)
-            .onSizeChanged { size ->
-                viewportWidthPx = size.width.toFloat()
-                hScroll.updateBounds(contentWidthPx, viewportWidthPx)
-            },
+            .horizontalDocumentScroll(hScroll),
     ) {
         items(rows) { row ->
             Row(
@@ -107,10 +103,16 @@ fun HexGrid(
                 )
 
                 // Scrollable content area (hex bytes + ASCII)
+                // onSizeChanged here measures the Box (viewport), not the full row,
+                // so updateBounds gets the correct scrollable area width.
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .clipToBounds(),
+                        .clipToBounds()
+                        .onSizeChanged { size ->
+                            viewportWidthPx = size.width.toFloat()
+                            hScroll.updateBounds(contentWidthPx, viewportWidthPx)
+                        },
                 ) {
                     Row(
                         modifier = Modifier
