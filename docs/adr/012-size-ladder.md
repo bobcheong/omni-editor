@@ -14,7 +14,8 @@ size ladder: ceilings raised stepwise, never silently degraded (OE-ENG-4).
 | Tier | Size | Behaviour | Disclosed as |
 |---|---|---|---|
 | FULL_MEMORY | ≤16 MiB | In-memory PieceTableDocument, full editing | *(none)* |
-| INDEXED_READ_ONLY | 16–256 MiB | FileIndexer + mmap'd channel, read-only | "Read-only (large file)" |
+| INDEXED_EDITABLE | 16–256 MiB (UTF-8/ASCII) | ChannelPieceTable over FileChannel, full editing | *(none)* |
+| INDEXED_READ_ONLY | 16–256 MiB (other encodings) | FileIndexer + mmap'd channel, read-only | "Read-only (large file)" |
 | REFUSED | >256 MiB | OmniError.TooLarge | Error screen |
 
 Compare uses the same tiers — both sides are tiered independently.
@@ -28,18 +29,15 @@ Each ceiling raise (e.g. 256 → 512 MiB) requires:
 
 ## Trigger to revisit
 
-When F-03 (large-file editing) lands, INDEXED_READ_ONLY becomes
-INDEXED_EDITABLE for a sub-range (64–256 MiB). Update the table then.
+When the editable ceiling is raised beyond 256 MiB, a recorded benchmark on
+the reference device is required per the ceiling raise policy above.
 
-## F-03 deferral
+## F-03 landing (v0.5 pre-KMP rider)
 
-Large-file editing (INDEXED_EDITABLE tier) is deferred to v0.5. The v0.4
-deliverable is the read-only INDEXED_READ_ONLY tier. Editing requires:
-
-- Piece table over mmap'd original channel
-- Materialise-on-save through the atomic write path
-- Per-step benchmark to validate ceiling raise per the policy above
-- Device measurement (ADR-002/ADR-014)
+Large-file editing (INDEXED_EDITABLE tier) landed in v0.5. UTF-8/ASCII files
+in the 16–256 MiB range are opened via `LargeFileEditableDocument`
+(ChannelPieceTable + atomic save). Other encodings remain INDEXED_READ_ONLY.
+See ADR-015 for the encoding gate decision.
 
 ## F-10 deferral
 

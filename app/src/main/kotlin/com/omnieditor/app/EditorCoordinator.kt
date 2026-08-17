@@ -148,12 +148,16 @@ internal fun EditorDestination(
     LaunchedEffect(contentKey) {
         if (uiState is EditorUiState.Empty && cached != null) {
             val size = cached.sizeBytes
-            when (DocumentLimits.editorTier(size)) {
+            // Use encoding-aware tier if encoding is known, otherwise fall back
+            val tier = DocumentLimits.editorTier(size)
+            when (tier) {
                 DocumentLimits.SizeTier.FULL_MEMORY -> {
                     viewModel.openDocument(cached.text, fileName = cached.label)
                 }
+                DocumentLimits.SizeTier.INDEXED_EDITABLE,
                 DocumentLimits.SizeTier.INDEXED_READ_ONLY -> {
-                    // F-01: Large file — open via LargeFileDocument (read-only).
+                    // F-03: Large file — open via LargeFileEditableDocument (UTF-8/ASCII)
+                    // or LargeFileDocument (other encodings, read-only).
                     val sourceUri = cached.uri
                     val uri = Uri.parse(sourceUri)
                     try {
@@ -168,12 +172,21 @@ internal fun EditorDestination(
                                     cacheFile.outputStream().use { output -> input.copyTo(output) }
                                 }
                             }
-                            com.omnieditor.core.io.LargeFileDocument.open(cacheFile)
+                            // Detect encoding to determine editable vs read-only
+                            val indexResult = com.omnieditor.core.io.FileIndexer.index(cacheFile)
+                            val encoding = indexResult.encoding.charset
+                            val editableTier = DocumentLimits.editorTier(size, encoding)
+                            if (editableTier == DocumentLimits.SizeTier.INDEXED_EDITABLE) {
+                                com.omnieditor.core.io.LargeFileEditableDocument.open(cacheFile)
+                            } else {
+                                com.omnieditor.core.io.LargeFileDocument.open(cacheFile)
+                            }
                         }
+                        val isEditable = largeDoc is com.omnieditor.core.io.LargeFileEditableDocument
                         viewModel.openLargeDocument(
                             document = largeDoc,
-                            readOnly = true,
-                            fileName = cached.label + " (read-only)",
+                            readOnly = !isEditable,
+                            fileName = if (isEditable) cached.label else cached.label + " (read-only)",
                         )
                     } catch (e: Exception) {
                         viewModel.signalOverThreshold(
