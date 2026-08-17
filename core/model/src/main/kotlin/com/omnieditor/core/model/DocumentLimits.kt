@@ -25,6 +25,8 @@ object DocumentLimits {
     enum class SizeTier {
         /** Full in-memory: PieceTableDocument, all editing features. */
         FULL_MEMORY,
+        /** Indexed editable: ChannelPieceTable over FileChannel (UTF-8/ASCII only). */
+        INDEXED_EDITABLE,
         /** Indexed read-only: LargeFileDocument over mmap'd channel. */
         INDEXED_READ_ONLY,
         /** Refused with OmniError.TooLarge. */
@@ -35,6 +37,24 @@ object DocumentLimits {
     fun editorTier(sizeBytes: Long): SizeTier = when {
         sizeBytes <= EDITOR_MAX_BYTES -> SizeTier.FULL_MEMORY
         sizeBytes <= INDEXED_MAX_BYTES -> SizeTier.INDEXED_READ_ONLY
+        else -> SizeTier.REFUSED
+    }
+
+    /**
+     * Determine the editor tier for a file of [sizeBytes] with known [encoding].
+     * UTF-8 and ASCII files in the 16–256 MiB range get the INDEXED_EDITABLE tier;
+     * other encodings remain INDEXED_READ_ONLY (ADR-015 encoding gate).
+     */
+    fun editorTier(sizeBytes: Long, encoding: String): SizeTier = when {
+        sizeBytes <= EDITOR_MAX_BYTES -> SizeTier.FULL_MEMORY
+        sizeBytes <= INDEXED_MAX_BYTES -> {
+            val upper = encoding.uppercase()
+            if (upper == "UTF-8" || upper == "US-ASCII" || upper == "ASCII") {
+                SizeTier.INDEXED_EDITABLE
+            } else {
+                SizeTier.INDEXED_READ_ONLY
+            }
+        }
         else -> SizeTier.REFUSED
     }
 

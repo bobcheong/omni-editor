@@ -17,6 +17,7 @@ sealed interface OmniError {
     data class NoTextLayer(val ref: SourceRef) : OmniError
     data class WriteFailed(val ref: SourceRef, val partial: Boolean) : OmniError
     data class DecodeFailed(val ref: SourceRef, val attemptedCharset: String) : OmniError
+    data class ExternallyModified(val path: String) : OmniError
     data object Cancelled : OmniError
 }
 
