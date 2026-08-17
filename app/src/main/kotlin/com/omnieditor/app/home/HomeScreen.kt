@@ -16,7 +16,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -236,10 +238,18 @@ private fun SessionsTab(
                             selected = selectedGroupId == group.id,
                             onClick = { selectedGroupId = if (selectedGroupId == group.id) null else group.id },
                             label = { Text(group.name) },
-                            modifier = Modifier.combinedClickable(
-                                onClick = { selectedGroupId = if (selectedGroupId == group.id) null else group.id },
-                                onLongClick = { showMenu = true },
-                            ),
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = { showMenu = true },
+                                    modifier = Modifier.size(18.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Default.MoreVert,
+                                        contentDescription = "Group options",
+                                        modifier = Modifier.size(14.dp),
+                                    )
+                                }
+                            },
                         )
                         DropdownMenu(
                             expanded = showMenu,
