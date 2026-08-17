@@ -30,3 +30,13 @@ Each ceiling raise (e.g. 256 → 512 MiB) requires:
 
 When F-03 (large-file editing) lands, INDEXED_READ_ONLY becomes
 INDEXED_EDITABLE for a sub-range (64–256 MiB). Update the table then.
+
+## F-03 deferral
+
+Large-file editing (INDEXED_EDITABLE tier) is deferred to v0.5. The v0.4
+deliverable is the read-only INDEXED_READ_ONLY tier. Editing requires:
+
+- Piece table over mmap'd original channel
+- Materialise-on-save through the atomic write path
+- Per-step benchmark to validate ceiling raise per the policy above
+- Device measurement (ADR-002/ADR-014)

@@ -182,46 +182,73 @@ internal fun CompareDestination(
             val leftLines = leftText.lines()
             val rightLines = rightText.lines()
             val baseCached = baseKey?.let { DocumentRegistry.get(it) }
+
+            // F-04: start foreground service for compares exceeding 500k total lines
+            // so the OS does not kill the process while the user switches apps.
+            val totalLines = leftLines.size + rightLines.size
+            val useForegroundService = totalLines > 500_000
+            if (useForegroundService) {
+                JobProgressReporter.progress = 0f
+                JobProgressReporter.message = "Comparing…"
+                JobProgressReporter.isActive = true
+                // onCancel is set after job is created; capture a reference via a holder.
+                val serviceIntent = Intent(context, LongJobService::class.java)
+                context.startService(serviceIntent)
+            }
+
             val job = scope.launch(Dispatchers.Default) {
-                val result = if (baseCached != null) {
-                    // 3-way compare: base → left, base → right, classify conflicts
-                    val baseLines = baseCached.text.lines()
-                    val diff3Result = com.omnieditor.core.diff.Diff3.diff3(
-                        baseLines = baseLines,
-                        leftLines = leftLines,
-                        rightLines = rightLines,
-                        rules = currentRuleSet,
+                try {
+                    val result = if (baseCached != null) {
+                        // 3-way compare: base → left, base → right, classify conflicts
+                        val baseLines = baseCached.text.lines()
+                        val diff3Result = com.omnieditor.core.diff.Diff3.diff3(
+                            baseLines = baseLines,
+                            leftLines = leftLines,
+                            rightLines = rightLines,
+                            rules = currentRuleSet,
+                        )
+                        com.omnieditor.core.diff.Diff3.toCompareResult(
+                            diff3Result,
+                            leftLines.size.toLong(),
+                            rightLines.size.toLong(),
+                        )
+                    } else {
+                        // 2-way compare — compareAuto selects BlockDiff above 250k lines (F-02).
+                        com.omnieditor.core.diff.DiffEngine.compareAuto(
+                            leftLineCount = leftLines.size.toLong(),
+                            rightLineCount = rightLines.size.toLong(),
+                            leftLine = { leftLines[it.toInt()] },
+                            rightLine = { rightLines[it.toInt()] },
+                            rules = currentRuleSet,
+                            progress = { p ->
+                                val total = p.total ?: 1L
+                                val frac = if (total > 0) p.done.toFloat() / total.toFloat() else 0f
+                                compareProgress = frac
+                                if (useForegroundService) JobProgressReporter.progress = frac
+                            },
+                        )
+                    }
+                    compareState = CompareState(
+                        result, leftLines, rightLines,
+                        ruleSet = currentRuleSet,
+                        leftDocument = leftDocument,
+                        rightDocument = rightDocument,
                     )
-                    com.omnieditor.core.diff.Diff3.toCompareResult(
-                        diff3Result,
-                        leftLines.size.toLong(),
-                        rightLines.size.toLong(),
-                    )
-                } else {
-                    // 2-way compare — compareAuto selects BlockDiff above 250k lines (F-02).
-                    com.omnieditor.core.diff.DiffEngine.compareAuto(
-                        leftLineCount = leftLines.size.toLong(),
-                        rightLineCount = rightLines.size.toLong(),
-                        leftLine = { leftLines[it.toInt()] },
-                        rightLine = { rightLines[it.toInt()] },
-                        rules = currentRuleSet,
-                        progress = { p ->
-                            val total = p.total ?: 1L
-                            compareProgress = if (total > 0) p.done.toFloat() / total.toFloat() else 0f
-                        },
-                    )
+                    compareProgress = null
+                    // R-34a: persist result so it survives process death (only for default rules).
+                    if (currentRuleSet == RuleSet.DEFAULT) {
+                        resultStore.store(sessionId, result)
+                    }
+                } finally {
+                    if (useForegroundService) {
+                        JobProgressReporter.isActive = false
+                        JobProgressReporter.onCancel = null
+                        context.stopService(Intent(context, LongJobService::class.java))
+                    }
                 }
-                compareState = CompareState(
-                    result, leftLines, rightLines,
-                    ruleSet = currentRuleSet,
-                    leftDocument = leftDocument,
-                    rightDocument = rightDocument,
-                )
-                compareProgress = null
-                // R-34a: persist result so it survives process death (only for default rules).
-                if (currentRuleSet == RuleSet.DEFAULT) {
-                    resultStore.store(sessionId, result)
-                }
+            }
+            if (useForegroundService) {
+                JobProgressReporter.onCancel = { job.cancel() }
             }
             compareJob = job
             job.join()
