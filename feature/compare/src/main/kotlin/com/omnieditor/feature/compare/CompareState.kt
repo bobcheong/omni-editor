@@ -246,6 +246,49 @@ class CompareState(
     }
 
     /**
+     * F-10: Word-level merge for a single hunk (OE-MRG-2).
+     * Wraps in beginBatch/commitBatch for a single undo step (R-54).
+     */
+    fun mergeWordLevel(
+        hunkIndex: Int,
+        direction: MergeDirection,
+        selections: List<com.omnieditor.core.diff.WordMerge.Side>,
+    ): Boolean {
+        if (hunkIndex in mergedHunks) return false
+
+        val targetDoc = when (direction) {
+            MergeDirection.LEFT_TO_RIGHT -> rightDocument
+            MergeDirection.RIGHT_TO_LEFT -> leftDocument
+        } ?: return false
+
+        val engineDirection = when (direction) {
+            MergeDirection.LEFT_TO_RIGHT -> MergeEngine.Direction.LEFT_TO_RIGHT
+            MergeDirection.RIGHT_TO_LEFT -> MergeEngine.Direction.RIGHT_TO_LEFT
+        }
+
+        val actions = MergeEngine.mergeWordLevel(
+            hunkIndex, result, leftLines, rightLines, engineDirection, selections,
+        )
+
+        if (actions.isEmpty()) return false
+
+        // R-54: single undo step for all word-level merge actions
+        targetDoc.beginBatch()
+        try {
+            for (action in actions.reversed()) { // bottom-to-top
+                applyActionToDocument(targetDoc, action)
+            }
+        } finally {
+            targetDoc.commitBatch()
+        }
+
+        refreshLinesFromDocument(direction, targetDoc)
+        mergedHunks = mergedHunks + hunkIndex
+        mergeMessage = "Word-merged hunk ${hunkIndex + 1}"
+        return true
+    }
+
+    /**
      * Accept all unmerged hunks in one direction as a single batched edit.
      *
      * Builds the complete target content once and issues a single [replaceAll].

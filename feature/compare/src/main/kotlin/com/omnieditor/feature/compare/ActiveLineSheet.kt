@@ -1,6 +1,7 @@
 package com.omnieditor.feature.compare
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,8 +9,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -18,8 +22,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -28,8 +39,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.omnieditor.core.diff.IntraLineDiff
+import com.omnieditor.core.diff.WordMerge
+import com.omnieditor.core.model.Granularity
 import com.omnieditor.core.model.Hunk
 import com.omnieditor.core.model.HunkType
+import com.omnieditor.core.model.LinePair
 import com.omnieditor.design.LocalCompareColors
 
 /**
@@ -47,6 +62,7 @@ import com.omnieditor.design.LocalCompareColors
 fun ActiveLineSheet(
     visible: Boolean,
     hunk: Hunk?,
+    hunkIndex: Int,
     leftLines: List<String>,
     rightLines: List<String>,
     onDismiss: () -> Unit,
@@ -61,6 +77,8 @@ fun ActiveLineSheet(
     baseLines: List<String>? = null,
     /** Called when the user taps "Take base" — apply base content as the resolution. Null hides the button. */
     onTakeBase: (() -> Unit)? = null,
+    /** F-10: Called when the user applies word-level merge selections (OE-MRG-2). Null hides the word-merge section. */
+    onWordMerge: ((hunkIndex: Int, direction: MergeDirection, selections: List<WordMerge.Side>) -> Unit)? = null,
 ) {
     if (!visible || hunk == null) return
 
@@ -239,6 +257,160 @@ fun ActiveLineSheet(
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // F-10: Word-level merge toggle — only for CHANGED hunks with paired lines
+            if (hunk.type == HunkType.CHANGED && onWordMerge != null) {
+                val leftCount = (hunk.leftEnd - hunk.leftStart).toInt()
+                val rightCount = (hunk.rightEnd - hunk.rightStart).toInt()
+                val pairCount = minOf(leftCount, rightCount)
+
+                if (pairCount > 0) {
+                    var wordModeEnabled by remember { mutableStateOf(false) }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    FilterChip(
+                        selected = wordModeEnabled,
+                        onClick = { wordModeEnabled = !wordModeEnabled },
+                        label = { Text("Word") },
+                        modifier = Modifier.semantics {
+                            contentDescription = "Word-level merge mode"
+                        },
+                    )
+
+                    if (wordModeEnabled) {
+                        val leftLine = leftLines.getOrElse(hunk.leftStart.toInt()) { "" }
+                        val rightLine = rightLines.getOrElse(hunk.rightStart.toInt()) { "" }
+                        val pair = LinePair(hunk.leftStart, hunk.rightStart, leftLine, rightLine)
+                        val intraResult = remember(leftLine, rightLine) {
+                            IntraLineDiff.compute(pair, Granularity.WORD)
+                        }
+                        val rangeCount = minOf(
+                            intraResult.leftRanges.size,
+                            intraResult.rightRanges.size,
+                        )
+                        val selections = remember(leftLine, rightLine) {
+                            mutableStateListOf<WordMerge.Side>().apply {
+                                repeat(rangeCount) { add(WordMerge.Side.LEFT) }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Select changes:",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(bottom = 4.dp),
+                        )
+
+                        // Chip strip for each changed range
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            for (i in 0 until rangeCount) {
+                                val leftRange = intraResult.leftRanges[i]
+                                val rightRange = intraResult.rightRanges[i]
+                                val leftText = leftLine.substring(
+                                    leftRange.start.coerceIn(0, leftLine.length),
+                                    leftRange.end.coerceIn(0, leftLine.length),
+                                )
+                                val rightText = rightLine.substring(
+                                    rightRange.start.coerceIn(0, rightLine.length),
+                                    rightRange.end.coerceIn(0, rightLine.length),
+                                )
+                                val side = selections[i]
+                                val chipLabel = if (side == WordMerge.Side.LEFT) leftText else rightText
+                                val chipColor = if (side == WordMerge.Side.LEFT) colors.removedBg else colors.addedBg
+
+                                FilterChip(
+                                    selected = side == WordMerge.Side.RIGHT,
+                                    onClick = {
+                                        selections[i] = if (side == WordMerge.Side.LEFT) {
+                                            WordMerge.Side.RIGHT
+                                        } else {
+                                            WordMerge.Side.LEFT
+                                        }
+                                    },
+                                    label = {
+                                        Text(
+                                            chipLabel.ifEmpty { "(empty)" },
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 12.sp,
+                                            maxLines = 1,
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = chipColor,
+                                    ),
+                                    modifier = Modifier.semantics {
+                                        contentDescription = "Change ${i + 1}: " +
+                                            "left is '$leftText', " +
+                                            "right is '$rightText', " +
+                                            "currently taking ${side.name.lowercase()}"
+                                    },
+                                )
+                            }
+                        }
+
+                        // Live preview
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val preview = remember(selections.toList()) {
+                            WordMerge.merge(leftLine, rightLine, Granularity.WORD, selections.toList())
+                        }
+                        Text(
+                            "Preview:",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                        Text(
+                            text = preview,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 13.sp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(8.dp),
+                        )
+
+                        // Apply buttons (one per direction)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Button(
+                                onClick = {
+                                    onWordMerge(hunkIndex, MergeDirection.LEFT_TO_RIGHT, selections.toList())
+                                    onDismiss()
+                                },
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("← Apply word")
+                            }
+                            Button(
+                                onClick = {
+                                    onWordMerge(hunkIndex, MergeDirection.RIGHT_TO_LEFT, selections.toList())
+                                    onDismiss()
+                                },
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("Apply word →")
+                            }
+                        }
+
+                        // Unpaired lines notice
+                        if (pairCount < maxOf(leftCount, rightCount)) {
+                            Text(
+                                "${maxOf(leftCount, rightCount) - pairCount} unpaired line(s) — use hunk-level accept",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                    }
+                }
             }
 
             // Copy buttons — one per side that has content.

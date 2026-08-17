@@ -475,6 +475,7 @@ private fun CompareContent(
                 ActiveLineSheet(
                     visible = true,
                     hunk = sheetHunk,
+                    hunkIndex = sheetHunkIndex,
                     leftLines = state.leftLines,
                     rightLines = state.rightLines,
                     onDismiss = onActiveLineSheetDismiss,
@@ -487,6 +488,9 @@ private fun CompareContent(
                     // Take-base: for CONFLICT hunks, take-left is used (base is not stored in
                     // CompareResult; a future P2 task will thread base lines through). (R-32)
                     onTakeBase = null,
+                    onWordMerge = if (state.canMerge) {
+                        { idx, direction, selections -> state.mergeWordLevel(idx, direction, selections) }
+                    } else null,
                 )
             }
         } else {
