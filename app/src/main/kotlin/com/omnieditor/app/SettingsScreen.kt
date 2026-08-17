@@ -40,6 +40,7 @@ import com.omnieditor.core.model.LicenceInfo
 @Composable
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
+    onOpenThemeEditor: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     // ── Collect DataStore-backed state ────────────────────────────────────────
@@ -147,6 +148,10 @@ fun SettingsScreen(
                     )
                 }
                 SwitchItem("Dynamic colour", dynamicColor) { viewModel.setDynamicColor(it) }
+                SettingsItem(
+                    title = "Token colour themes",
+                    subtitle = "Create and edit custom syntax colour themes",
+                ) { onOpenThemeEditor() }
 
                 // ── About ─────────────────────────────────────────────────────
                 SettingsSection("About")

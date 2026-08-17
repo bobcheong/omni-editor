@@ -12,7 +12,7 @@ Permitted: Apache-2.0, MIT, BSD. LGPL by justification only. GPL/AGPL forbidden.
 | Material 3 / adaptive | via BOM | Apache-2.0 | app, design | T-01 |
 | Hilt / Dagger | 2.60.1 | Apache-2.0 | app, features | T-01 |
 | Hilt Navigation Compose | 1.4.0 | Apache-2.0 | app, features | T-01 |
-| kotlinx.serialization JSON | 1.11.0 | Apache-2.0 | core/model, core/io | T-01 |
+| kotlinx.serialization JSON | 1.11.0 | Apache-2.0 | core/model, core/io, app | T-01 |
 | KSP | 2.3.11 | Apache-2.0 | build (annotation processing) | T-01 |
 | JUnit 4 | 4.13.2 | EPL-1.0 (test only) | tests | T-01 |
 | Kotest assertions / property | 5.9.1 | Apache-2.0 (test only) | tests | T-01 |

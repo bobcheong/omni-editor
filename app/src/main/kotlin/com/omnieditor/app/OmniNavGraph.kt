@@ -27,8 +27,10 @@ import com.omnieditor.core.io.ResultStore
 import com.omnieditor.core.io.SessionStore
 import com.omnieditor.core.model.CompareMode
 import com.omnieditor.core.model.Session
+import com.omnieditor.core.model.SessionGroup
 import com.omnieditor.core.model.SourceKind
 import com.omnieditor.core.model.SourceRef
+import com.omnieditor.core.model.UserTheme
 import com.omnieditor.feature.compare.CompareSettingsCallbacks
 import com.omnieditor.feature.compare.CompareSettingsState
 import com.omnieditor.feature.editor.EditorSettingsState
@@ -36,6 +38,7 @@ import com.omnieditor.feature.setup.SourceSetupScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.UUID
 
@@ -344,6 +347,14 @@ fun OmniNavGraph(
         composable("settings") {
             SettingsScreen(
                 onNavigateBack = { navController.popBackStack() },
+                onOpenThemeEditor = { navController.navigate("theme_editor") },
+            )
+        }
+
+        // ── Theme editor (F-14) ──
+        composable("theme_editor") {
+            ThemeEditorDestination(
+                onNavigateBack = { navController.popBackStack() },
             )
         }
     }
@@ -360,6 +371,7 @@ private fun HomeDestination(
     val scope = rememberCoroutineScope()
     val recentSessions = remember { mutableStateListOf<Session>() }
     val pinnedSessions = remember { mutableStateListOf<Session>() }
+    val groups = remember { mutableStateListOf<SessionGroup>() }
 
     // R-34b: load sessions from SessionStore (preserves correct CompareMode labels).
     LaunchedEffect(Unit) {
@@ -368,6 +380,8 @@ private fun HomeDestination(
         pinnedSessions.addAll(all.filter { it.pinned })
         recentSessions.clear()
         recentSessions.addAll(all.filter { !it.pinned })
+        groups.clear()
+        groups.addAll(sessionStore.listGroups())
     }
 
     val openFileLauncher = rememberLauncherForActivityResult(
@@ -402,8 +416,22 @@ private fun HomeDestination(
     HomeScreen(
         pinnedSessions = pinnedSessions,
         recentSessions = recentSessions,
+        groups = groups,
         onOpenFile = { openFileLauncher.launch(arrayOf("*/*")) },
         onNewCompare = { navController.navigate("setup") },
+        onCreateGroup = { name ->
+            val g = sessionStore.createGroup(name)
+            groups.add(g)
+        },
+        onRenameGroup = { id, name ->
+            sessionStore.renameGroup(id, name)
+            val idx = groups.indexOfFirst { it.id == id }
+            if (idx >= 0) groups[idx] = groups[idx].copy(name = name)
+        },
+        onDeleteGroup = { id ->
+            sessionStore.deleteGroup(id)
+            groups.removeAll { it.id == id }
+        },
         onSessionTap = { sessionId ->
             val session = (pinnedSessions + recentSessions).find { it.id == sessionId }
             if (session != null && session.mode == CompareMode.TEXT) {
@@ -648,5 +676,74 @@ private fun SetupDestination(
             }
         },
         onNavigateBack = { navController.popBackStack() },
+    )
+}
+
+/**
+ * Theme editor route body (F-14).
+ *
+ * User themes are persisted to `files/themes/` as individual JSON files.
+ * Import accepts JSON produced by the export action. The list is kept in-memory
+ * state and reloaded on each navigation to this destination.
+ */
+@Composable
+private fun ThemeEditorDestination(onNavigateBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val userThemes = remember { mutableStateListOf<UserTheme>() }
+    val json = remember {
+        Json {
+            ignoreUnknownKeys = true
+            prettyPrint = false
+            encodeDefaults = true
+        }
+    }
+    val themeDir = remember { File(context.filesDir, "themes").also { it.mkdirs() } }
+
+    LaunchedEffect(Unit) {
+        val loaded = withContext(Dispatchers.IO) {
+            themeDir.listFiles()
+                ?.filter { it.extension == "json" }
+                ?.mapNotNull { file ->
+                    runCatching { json.decodeFromString(UserTheme.serializer(), file.readText()) }.getOrNull()
+                }
+                ?.sortedBy { it.name }
+                ?: emptyList()
+        }
+        userThemes.clear()
+        userThemes.addAll(loaded)
+    }
+
+    ThemeEditorScreen(
+        userThemes = userThemes,
+        onNavigateBack = onNavigateBack,
+        onCreateTheme = { theme ->
+            scope.launch(Dispatchers.IO) {
+                File(themeDir, "${theme.id}.json").writeText(json.encodeToString(UserTheme.serializer(), theme))
+            }
+            userThemes.add(theme)
+        },
+        onUpdateTheme = { theme ->
+            scope.launch(Dispatchers.IO) {
+                File(themeDir, "${theme.id}.json").writeText(json.encodeToString(UserTheme.serializer(), theme))
+            }
+            val idx = userThemes.indexOfFirst { it.id == theme.id }
+            if (idx >= 0) userThemes[idx] = theme
+        },
+        onDeleteTheme = { id ->
+            scope.launch(Dispatchers.IO) { File(themeDir, "$id.json").delete() }
+            userThemes.removeAll { it.id == id }
+        },
+        onImportTheme = { jsonString ->
+            runCatching {
+                val theme = json.decodeFromString(UserTheme.serializer(), jsonString)
+                val imported = theme.copy(id = UUID.randomUUID().toString())
+                scope.launch(Dispatchers.IO) {
+                    val encodedTheme = json.encodeToString(UserTheme.serializer(), imported)
+                    File(themeDir, "${imported.id}.json").writeText(encodedTheme)
+                }
+                userThemes.add(imported)
+            }
+        },
     )
 }

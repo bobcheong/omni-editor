@@ -186,6 +186,12 @@ class SessionStore(private val sessionDir: File) {
         saveGroupBlocking(group.copy(sessionIds = group.sessionIds - sessionId))
     }
 
+    /** Rename a group by ID. No-op if the group does not exist. */
+    fun renameGroup(id: String, newName: String) {
+        val group = loadGroupBlocking(id) ?: return
+        saveGroupBlocking(group.copy(name = newName))
+    }
+
     /** List all groups sorted by name. */
     fun listGroups(): List<SessionGroup> {
         return groupDir.listFiles()

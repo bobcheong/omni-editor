@@ -165,6 +165,7 @@ dependencies {
     implementation(libs.navigation.compose)
     ksp(libs.hilt.compiler)
     implementation(libs.datastore.preferences)
+    implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotest.assertions)
