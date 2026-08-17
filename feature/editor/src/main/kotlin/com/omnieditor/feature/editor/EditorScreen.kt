@@ -307,6 +307,7 @@ fun EditorScreen(
                     onDecreaseFontSize = onDecreaseFontSize,
                     onOpenSettings = onOpenSettings,
                 ),
+                showHexView = showHexView,
             )
         },
         bottomBar = {
@@ -516,6 +517,7 @@ private fun EditorTopBar(
     onCompareWith: () -> Unit,
     settingsState: EditorSettingsState,
     callbacks: EditorMenuCallbacks,
+    showHexView: Boolean = false,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var editOpsExpanded by remember { mutableStateOf(false) }
@@ -568,7 +570,7 @@ private fun EditorTopBar(
                     onClick = { menuExpanded = false; callbacks.onDecreaseFontSize() },
                 )
                 DropdownMenuItem(
-                    text = { Text("View as hex") },
+                    text = { Text(if (showHexView) "View as text" else "View as hex") },
                     onClick = { menuExpanded = false; callbacks.onViewAsHex() },
                 )
                 HorizontalDivider()
