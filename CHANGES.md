@@ -401,3 +401,5 @@ for commits that did not contain F-03 or F-15 work. F-03 is now explicitly defer
 - **X-2** — `ci.yml`: `checkIoBoundary` added to CI pipeline.
 - **X-3** — F-10 (word-level merge UI) explicitly deferred to v0.5 in ADR-012,
   alongside F-03. Engine is complete; active-line sheet UI deferred.
+
+── v0.4.0 tagged and released ──

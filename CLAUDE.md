@@ -2,7 +2,8 @@
 
 Read this before every task. The specification is `docs/OE-SPEC-001.html`; the completion
 plan is `docs/P1-COMPLETION-PLAN.md` (v3, authoritative). Forward plan:
-`docs/SPEC-GAP-PLAN.md` (rev 5, v0.3–v1.0). Change log: `CHANGES.md`.
+`docs/SPEC-GAP-PLAN.md` (rev 6, v0.3–v1.0). Change log: `CHANGES.md`.
+Current release: v0.4.0 (tagged, D-1 desktop gate passed).
 
 ## Independence (non-negotiable)
 
