@@ -351,3 +351,27 @@ tap launches app with `com.omnieditor.action.COMPARE_CLIPBOARD`. `IntentRouter`
 extended with `ShowSetup` action variant. `OmniApplication.onCreate` calls
 `AppShortcuts.register`. Manifest declares the `BIND_QUICK_SETTINGS_TILE` service.
 Both flavours build clean.
+
+### W-01..W-13 — v0.4 wiring package — Issue #22
+
+Wires all engine-only v0.4 components into user-reachable features:
+
+- **W-10** — D-8 versioning: `version.properties` as source of truth, `versionCode =
+  major*10000 + minor*100 + patch`, git SHA via `ValueSource`, BUILD_NUMBER deleted.
+- **W-11** — ADR-002 renumbered to ADR-014 (collision with 002-performance-budgets).
+- **W-01** — `ReportScope` converted to sealed class with `DiffOnly` and `Context(n)`.
+- **W-05** — `MergeEngine.mergeWordLevel()` routes `WordMerge` for intra-line merge.
+- **W-02** — Compare bookmarks UI: long-press toggle, gutter indicator, next/prev nav.
+- **W-03** — `SwipeDiffDetector` attached to unified + split views per ADR-013.
+- **W-09** — Accessibility: `contentDescription` on diff rows (side + change type).
+- **W-04** — Symbol outline sheet + bracket jump (Ctrl+Shift+M) in editor.
+- **W-06** — "View as hex" toggle in editor using `HexGrid`.
+- **W-07** — Session groups UI + search field on home screen.
+- **W-08** — Theme editor screen with token colour editing + JSON import/export.
+- **W-12** — F-03 (large-file editing) explicitly deferred to v0.5 in ADR-012.
+- **W-13** — `LongJobService` wired to compare flow for jobs >500k lines with
+  `JobProgressReporter` singleton and foreground notification progress polling.
+
+**Corrections:** Earlier CHANGES.md entries claimed `[F-01..F-05]` and `[F-15, F-16]`
+for commits that did not contain F-03 or F-15 work. F-03 is now explicitly deferred
+(W-12). F-15 (accessibility) is delivered by W-09.
