@@ -20,7 +20,7 @@ import java.nio.channels.WritableByteChannel
  * Edits go to an in-memory additions buffer; unchanged content stays on disk.
  *
  * Key differences from [PieceTableDocument]:
- * - `text()` is supported but O(file) — callers should prefer `line()` or `materialise()`
+ * - `text()` throws [UnsupportedOperationException] — callers must use `line()` or `materialise()`
  * - `materialise()` checks [FileFingerprint] before writing (ADR-015)
  * - `materialise()` streams pieces without loading the entire document
  * - `index` throws (use `line()` directly)
@@ -179,11 +179,16 @@ class LargeFileEditableDocument private constructor(
     }
 
     /**
-     * Returns the full document text as a String.
-     * For large files this is O(file) — prefer [line] for rendering
-     * and [materialise] for saving.
+     * Not supported. Use [line] for rendering or [materialise] for saving.
+     *
+     * Loading the entire document into a single String defeats the purpose of the
+     * piece-table-over-channel design and risks OOM on files approaching 256 MiB.
      */
-    override fun text(): String = table.substring(0, table.length)
+    override fun text(): String {
+        throw UnsupportedOperationException(
+            "LargeFileEditableDocument does not support text() — use line() or materialise()"
+        )
+    }
 
     /**
      * Stream all pieces to [into] (save operation).
@@ -249,24 +254,29 @@ class LargeFileEditableDocument private constructor(
         ): LargeFileEditableDocument = withContext(Dispatchers.IO) {
             val indexResult = FileIndexer.index(file, progress)
             val raf = RandomAccessFile(file, "r")
-            val channel = raf.channel
-            val charset = charset(indexResult.encoding.charset)
-            val bomLength = indexResult.encoding.bomLength
-            val bomBytes: ByteArray? = when {
-                indexResult.encoding.charset.equals("UTF-8", ignoreCase = true) && bomLength == 3 ->
-                    byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
-                indexResult.encoding.charset.equals("UTF-16LE", ignoreCase = true) && bomLength == 2 ->
-                    byteArrayOf(0xFF.toByte(), 0xFE.toByte())
-                indexResult.encoding.charset.equals("UTF-16BE", ignoreCase = true) && bomLength == 2 ->
-                    byteArrayOf(0xFE.toByte(), 0xFF.toByte())
-                else -> null
+            try {
+                val channel = raf.channel
+                val charset = charset(indexResult.encoding.charset)
+                val bomLength = indexResult.encoding.bomLength
+                val bomBytes: ByteArray? = when {
+                    indexResult.encoding.charset.equals("UTF-8", ignoreCase = true) && bomLength == 3 ->
+                        byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
+                    indexResult.encoding.charset.equals("UTF-16LE", ignoreCase = true) && bomLength == 2 ->
+                        byteArrayOf(0xFF.toByte(), 0xFE.toByte())
+                    indexResult.encoding.charset.equals("UTF-16BE", ignoreCase = true) && bomLength == 2 ->
+                        byteArrayOf(0xFE.toByte(), 0xFF.toByte())
+                    else -> null
+                }
+                val fingerprint = FileFingerprint.of(file)
+                val table = ChannelPieceTable(channel, indexResult.index, charset, bomLength)
+                LargeFileEditableDocument(
+                    table, raf, channel, indexResult.encoding.charset,
+                    bomLength, bomBytes, fingerprint, file.absolutePath,
+                )
+            } catch (e: Exception) {
+                raf.close()
+                throw e
             }
-            val fingerprint = FileFingerprint.of(file)
-            val table = ChannelPieceTable(channel, indexResult.index, charset, bomLength)
-            LargeFileEditableDocument(
-                table, raf, channel, indexResult.encoding.charset,
-                bomLength, bomBytes, fingerprint, file.absolutePath,
-            )
         }
     }
 }
