@@ -60,6 +60,8 @@ fun HexGrid(
     // Content and viewport widths measured from actual layout, not estimated.
     var contentWidthPx by remember { mutableFloatStateOf(0f) }
     var viewportWidthPx by remember { mutableFloatStateOf(0f) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val rightMarginPx = remember(density) { with(density) { 16.dp.toPx() } }
 
     LazyColumn(
         modifier = modifier
@@ -102,7 +104,8 @@ fun HexGrid(
                             .onSizeChanged { size ->
                                 // Capture the actual rendered content width from the
                                 // unbounded Row. This is exact — no estimation needed.
-                                val cw = size.width.toFloat()
+                                // Add right margin so text isn't flush against screen edge
+                                val cw = size.width.toFloat() + rightMarginPx
                                 if (cw > contentWidthPx) {
                                     contentWidthPx = cw
                                     hScroll.updateBounds(contentWidthPx, viewportWidthPx)
