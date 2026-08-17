@@ -19,10 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -34,9 +31,8 @@ import androidx.compose.ui.unit.sp
  * via [HorizontalScrollController] — same pattern as the text editor and
  * compare views.
  *
- * Each text element uses `softWrap = false`, `maxLines = 1`, and
- * `wrapContentWidth(unbounded = true)` so content extends beyond the
- * clipped viewport for scrolling, rather than wrapping at the boundary.
+ * Content width is measured from the actual rendered Row (not estimated),
+ * so scroll range is always exact regardless of density or font metrics.
  *
  * Read-only. Bytes per row adapts to width (8/16/32).
  * Shared component — F-18 composes two of these for binary compare.
@@ -61,24 +57,8 @@ fun HexGrid(
 
     val hScroll = rememberHorizontalScrollController()
 
-    // Measure actual content width from the longest hex+ASCII line
-    val textStyle = remember { TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp) }
-    val measurer = rememberTextMeasurer()
-    val density = LocalDensity.current
-
-    val contentWidthPx = remember(bytesPerRow, showAscii, density) {
-        // Measure hex and ASCII parts separately, then add the actual padding
-        val hexPart = (0 until bytesPerRow).joinToString(" ") { "FF" }
-        val hexWidth = measurer.measure(hexPart, textStyle).size.width.toFloat()
-        val asciiWidth = if (showAscii) {
-            val asciiText = "X".repeat(bytesPerRow)
-            val textWidth = measurer.measure(asciiText, textStyle).size.width.toFloat()
-            val paddingPx = with(density) { 16.dp.toPx() }
-            paddingPx + textWidth
-        } else 0f
-        hexWidth + asciiWidth
-    }
-
+    // Content and viewport widths measured from actual layout, not estimated.
+    var contentWidthPx by remember { mutableFloatStateOf(0f) }
     var viewportWidthPx by remember { mutableFloatStateOf(0f) }
 
     LazyColumn(
@@ -103,21 +83,31 @@ fun HexGrid(
                 )
 
                 // Scrollable content area (hex bytes + ASCII)
-                // onSizeChanged here measures the Box (viewport), not the full row,
-                // so updateBounds gets the correct scrollable area width.
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .clipToBounds()
                         .onSizeChanged { size ->
-                            viewportWidthPx = size.width.toFloat()
-                            hScroll.updateBounds(contentWidthPx, viewportWidthPx)
+                            val vp = size.width.toFloat()
+                            if (vp != viewportWidthPx) {
+                                viewportWidthPx = vp
+                                hScroll.updateBounds(contentWidthPx, viewportWidthPx)
+                            }
                         },
                 ) {
                     Row(
                         modifier = Modifier
                             .wrapContentWidth(Alignment.Start, unbounded = true)
-                            .graphicsLayer { translationX = -hScroll.offsetPx },
+                            .graphicsLayer { translationX = -hScroll.offsetPx }
+                            .onSizeChanged { size ->
+                                // Capture the actual rendered content width from the
+                                // unbounded Row. This is exact — no estimation needed.
+                                val cw = size.width.toFloat()
+                                if (cw > contentWidthPx) {
+                                    contentWidthPx = cw
+                                    hScroll.updateBounds(contentWidthPx, viewportWidthPx)
+                                }
+                            },
                     ) {
                         // Hex bytes
                         Text(
