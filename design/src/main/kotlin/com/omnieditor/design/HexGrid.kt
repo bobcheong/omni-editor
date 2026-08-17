@@ -1,23 +1,28 @@
 package com.omnieditor.design
 
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.rememberScrollableState
-import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -26,7 +31,12 @@ import androidx.compose.ui.unit.sp
  *
  * Shows a pinned address column (like line numbers in the text editor) and
  * horizontally scrollable hex bytes + ASCII columns. All rows scroll together
- * via [HorizontalScrollController] (same pattern as the text editor).
+ * via [HorizontalScrollController] — same pattern as the text editor and
+ * compare views.
+ *
+ * Each text element uses `softWrap = false`, `maxLines = 1`, and
+ * `wrapContentWidth(unbounded = true)` so content extends beyond the
+ * clipped viewport for scrolling, rather than wrapping at the boundary.
  *
  * Read-only. Bytes per row adapts to width (8/16/32).
  * Shared component — F-18 composes two of these for binary compare.
@@ -49,27 +59,28 @@ fun HexGrid(
         }
     }
 
-    val hScroll = remember { HorizontalScrollController() }
+    val hScroll = rememberHorizontalScrollController()
 
-    // Estimate content width: hex string is (bytesPerRow * 3 - 1) chars + gap + ASCII (bytesPerRow chars)
-    // At ~7.2px per monospace char at 12sp, approximate the width
-    val charWidthEstimate = 7.2f
-    val hexChars = bytesPerRow * 3 - 1
-    val asciiChars = if (showAscii) bytesPerRow else 0
-    val gapChars = if (showAscii) 2 else 0
-    val totalContentChars = hexChars + gapChars + asciiChars
-    val contentWidthPx = totalContentChars * charWidthEstimate
+    // Measure actual content width from the longest hex+ASCII line
+    val textStyle = remember { TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp) }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
 
-    val scrollableState = rememberScrollableState { delta ->
-        hScroll.dispatchDelta(-delta)
-        delta
+    val contentWidthPx = remember(bytesPerRow, showAscii, density) {
+        val hexPart = (0 until bytesPerRow).joinToString(" ") { "FF" }
+        val asciiPart = if (showAscii) "  " + "X".repeat(bytesPerRow) else ""
+        val sample = hexPart + asciiPart
+        measurer.measure(sample, textStyle).size.width.toFloat()
     }
+
+    var viewportWidthPx by remember { mutableFloatStateOf(0f) }
 
     LazyColumn(
         modifier = modifier
-            .scrollable(scrollableState, Orientation.Horizontal)
+            .horizontalDocumentScroll(hScroll)
             .onSizeChanged { size ->
-                hScroll.updateBounds(contentWidthPx, size.width.toFloat())
+                viewportWidthPx = size.width.toFloat()
+                hScroll.updateBounds(contentWidthPx, viewportWidthPx)
             },
     ) {
         items(rows) { row ->
@@ -84,6 +95,8 @@ fun HexGrid(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    softWrap = false,
+                    maxLines = 1,
                     modifier = Modifier.padding(start = 8.dp, end = 8.dp),
                 )
 
@@ -94,15 +107,17 @@ fun HexGrid(
                         .clipToBounds(),
                 ) {
                     Row(
-                        modifier = Modifier.graphicsLayer {
-                            translationX = -hScroll.offsetPx
-                        },
+                        modifier = Modifier
+                            .wrapContentWidth(Alignment.Start, unbounded = true)
+                            .graphicsLayer { translationX = -hScroll.offsetPx },
                     ) {
                         // Hex bytes
                         Text(
                             text = row.hexString(),
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp,
+                            softWrap = false,
+                            maxLines = 1,
                         )
 
                         // ASCII column
@@ -112,6 +127,8 @@ fun HexGrid(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                softWrap = false,
+                                maxLines = 1,
                                 modifier = Modifier.padding(start = 16.dp),
                             )
                         }
