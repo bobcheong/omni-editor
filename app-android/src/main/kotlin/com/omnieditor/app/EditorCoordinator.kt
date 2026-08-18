@@ -13,8 +13,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import com.omnieditor.core.model.DocumentLimits
 import com.omnieditor.feature.editor.EditorScreen
@@ -110,7 +110,7 @@ internal fun EditorDestination(
 ) {
     val cached = DocumentRegistry.get(contentKey)
     val context = androidx.compose.ui.platform.LocalContext.current
-    val viewModel: EditorViewModel = hiltViewModel()
+    val viewModel: EditorViewModel = viewModel { EditorViewModel() }
     val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
 

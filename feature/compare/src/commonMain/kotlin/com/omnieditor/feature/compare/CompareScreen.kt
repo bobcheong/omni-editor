@@ -1,6 +1,5 @@
 package com.omnieditor.feature.compare
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -166,7 +165,7 @@ fun CompareScreen(
 
     // Intercept back gesture when either side has unsaved merge changes.
     val isDirty = state?.leftDirty == true || state?.rightDirty == true
-    BackHandler(enabled = isDirty) {
+    PlatformBackHandler(enabled = isDirty) {
         showUnsavedDialog = true
     }
 

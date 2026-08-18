@@ -14,7 +14,6 @@ import com.omnieditor.core.io.TextTools
 import com.omnieditor.core.model.LineEnding
 import com.omnieditor.core.model.OmniError
 import com.omnieditor.core.model.OmniException
-import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,8 +21,6 @@ import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.nio.channels.Channels
-import javax.inject.Inject
-
 /**
  * A tool that is pending user confirmation because it would change more than half the lines
  * (spec §2.3: counted confirmation for destructive tools).
@@ -35,8 +32,7 @@ data class PendingTool(
     val apply: () -> Unit,
 )
 
-@HiltViewModel
-class EditorViewModel @Inject constructor() : ViewModel() {
+class EditorViewModel : ViewModel() {
 
     private val _uiState = MutableStateFlow<EditorUiState>(EditorUiState.Empty)
     val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()

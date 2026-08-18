@@ -1,6 +1,5 @@
 package com.omnieditor.feature.editor
 
-import androidx.activity.compose.BackHandler
 import com.omnieditor.core.io.PieceTableDocument
 import com.omnieditor.core.model.DisplaySettings
 import androidx.compose.foundation.layout.Arrangement
@@ -50,7 +49,6 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import com.omnieditor.core.diff.syntax.Grammars
 import com.omnieditor.core.diff.syntax.SymbolExtractor
 import com.omnieditor.design.HexGrid
@@ -143,7 +141,7 @@ fun EditorScreen(
     onIncreaseFontSize: () -> Unit = {},
     onDecreaseFontSize: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
-    viewModel: EditorViewModel = hiltViewModel(),
+    viewModel: EditorViewModel,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val pendingTool by viewModel.pendingTool.collectAsState()
@@ -160,7 +158,7 @@ fun EditorScreen(
     val supportsTextAccess = viewModel.supportsTextAccess
 
     // Intercept the system back gesture/button when there are unsaved changes.
-    BackHandler(enabled = isDirty) {
+    PlatformBackHandler(enabled = isDirty) {
         showUnsavedDialog = true
     }
 
