@@ -31,7 +31,7 @@ android {
         }
     }
 
-    targetProjectPath = ":app"
+    targetProjectPath = ":app-android"
     experimentalProperties["android.experimental.self-instrumenting"] = true
 
     compileOptions {

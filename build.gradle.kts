@@ -46,7 +46,7 @@ tasks.register("checkCorePurity") {
 
 /**
  * CLAUDE.md rule: ContentResolver and java.io.File must only appear in core/io
- * and the flavour source sets (app/src/direct, app/src/store). All other app
+ * and the flavour source sets (app-android/src/direct, app-android/src/store). All other app
  * and feature code must go through SourceProvider.
  *
  * Wired into `check` alongside checkCorePurity.
@@ -58,17 +58,18 @@ tasks.register("checkIoBoundary") {
     doLast {
         val forbidden = Regex("""^\s*import\s+(android\.content\.ContentResolver|java\.io\.File)\b""")
         // Paths where ContentResolver / java.io.File are legitimately allowed:
-        //  - core/io/src          : the IO abstraction layer itself
-        //  - app/src/direct       : direct-flavour filesystem access
-        //  - app/src/store        : store-flavour SAF/ContentResolver access
-        //  - app/src/main         : app entry-point layer; initialises core/io stores
-        //                           with Android context paths (filesDir/cacheDir)
+        //  - core/io/src               : the IO abstraction layer itself
+        //  - app-android/src/direct    : direct-flavour filesystem access
+        //  - app-android/src/store     : store-flavour SAF/ContentResolver access
+        //  - app-android/src/main      : app entry-point layer; initialises core/io stores
+        //                                with Android context paths (filesDir/cacheDir)
         //  - src/test / src/androidTest : test fixtures read golden files directly
         val allowedSegments = listOf(
             "core/io/src",
-            "app/src/direct",
-            "app/src/store",
-            "app/src/main",
+            "app-android/src/direct",
+            "app-android/src/store",
+            "app-android/src/main",
+            "benchmark/src/",       // fixture generator writes files directly — no Android context available
             "src/test/",
             "src/androidTest/",
         )
@@ -92,8 +93,8 @@ tasks.register("checkIoBoundary") {
         if (violations.isNotEmpty()) {
             throw GradleException(
                 "IO boundary violated — ContentResolver and java.io.File must only be used\n" +
-                    "in core/io, flavour source sets (app/src/direct, app/src/store),\n" +
-                    "the app entry-point (app/src/main), and test sources:\n" +
+                    "in core/io, flavour source sets (app-android/src/direct, app-android/src/store),\n" +
+                    "the app entry-point (app-android/src/main), and test sources:\n" +
                     violations.joinToString("\n") { "  $it" }
             )
         }
