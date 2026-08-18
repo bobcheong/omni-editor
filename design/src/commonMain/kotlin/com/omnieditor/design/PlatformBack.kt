@@ -1,4 +1,4 @@
-package com.omnieditor.feature.editor
+package com.omnieditor.design
 
 import androidx.compose.runtime.Composable
 

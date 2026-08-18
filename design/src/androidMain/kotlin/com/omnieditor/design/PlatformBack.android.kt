@@ -1,4 +1,4 @@
-package com.omnieditor.feature.compare
+package com.omnieditor.design
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable

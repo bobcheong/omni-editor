@@ -26,6 +26,7 @@ kotlin {
         }
         androidMain.dependencies {
             // Android-specific: dynamic colour via Material You
+            implementation("androidx.activity:activity-compose:1.13.0")
         }
         val desktopMain by getting {
             dependencies {

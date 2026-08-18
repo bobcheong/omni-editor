@@ -1,5 +1,6 @@
 package com.omnieditor.feature.compare
 
+import com.omnieditor.design.PlatformBackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row

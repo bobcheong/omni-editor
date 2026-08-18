@@ -2,6 +2,7 @@ package com.omnieditor.feature.editor
 
 import com.omnieditor.core.io.PieceTableDocument
 import com.omnieditor.core.model.DisplaySettings
+import com.omnieditor.design.PlatformBackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
