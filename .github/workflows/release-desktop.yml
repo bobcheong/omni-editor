@@ -1,0 +1,98 @@
+name: Release Desktop
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+
+      # D-8 / X-1: tag==file guard
+      - name: Verify tag matches version.properties
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          MAJOR=$(grep '^major=' version.properties | cut -d= -f2)
+          MINOR=$(grep '^minor=' version.properties | cut -d= -f2)
+          PATCH=$(grep '^patch=' version.properties | cut -d= -f2)
+          EXPECTED="v${MAJOR}.${MINOR}.${PATCH}"
+          if [ "$TAG" != "$EXPECTED" ]; then
+            echo "::error::Tag '$TAG' does not match version.properties ('$EXPECTED')"
+            exit 1
+          fi
+
+      - name: Install rpm tools
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Build desktop distributions
+        run: ./gradlew :app-desktop:packageDeb :app-desktop:packageRpm
+
+      - name: Build AppImage
+        run: |
+          # Download appimagetool
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
+          chmod +x appimagetool
+
+          # Create AppDir from jpackage output
+          APPDIR="OmniEditor.AppDir"
+          mkdir -p "$APPDIR/usr"
+          cp -r app-desktop/build/compose/binaries/main/app/omnieditor/* "$APPDIR/usr/" 2>/dev/null || true
+
+          # AppRun script
+          cat > "$APPDIR/AppRun" << 'APPRUN'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/omnieditor" "$@"
+          APPRUN
+          chmod +x "$APPDIR/AppRun"
+
+          # Desktop file
+          cat > "$APPDIR/dev.srcse.OmniEditor.desktop" << 'DESKTOP'
+          [Desktop Entry]
+          Type=Application
+          Name=Omni Editor
+          Comment=Text editor, compare and merge tool
+          Exec=omnieditor %F
+          Icon=dev.srcse.OmniEditor
+          Categories=Development;TextEditor;
+          MimeType=text/plain;
+          Terminal=false
+          DESKTOP
+
+          # Icon (use placeholder if not available)
+          cp app-desktop/src/main/resources/icon.png "$APPDIR/dev.srcse.OmniEditor.png" 2>/dev/null || \
+            convert -size 256x256 xc:teal "$APPDIR/dev.srcse.OmniEditor.png" 2>/dev/null || true
+
+          # Build AppImage
+          ARCH=x86_64 ./appimagetool "$APPDIR" "OmniEditor-x86_64.AppImage" || true
+
+      - name: Upload deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: omni-editor-desktop-deb
+          path: app-desktop/build/compose/binaries/main/deb/*.deb
+          retention-days: 30
+
+      - name: Upload rpm
+        uses: actions/upload-artifact@v4
+        with:
+          name: omni-editor-desktop-rpm
+          path: app-desktop/build/compose/binaries/main/rpm/*.rpm
+          retention-days: 30
+
+      - name: Upload AppImage
+        if: hashFiles('OmniEditor-x86_64.AppImage') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: omni-editor-desktop-appimage
+          path: OmniEditor-x86_64.AppImage
+          retention-days: 30
