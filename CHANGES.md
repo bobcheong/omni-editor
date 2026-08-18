@@ -1,5 +1,25 @@
 # Omni Editor — Change Log
 
+## v0.5.0 (in progress)
+
+### F-03: Large-file editing (INDEXED_EDITABLE tier)
+- `ChannelPieceTable`: piece table backed by `FileChannel` original buffer (ADR-015)
+- `LargeFileEditableDocument`: editable `TextDocument` for 16–256 MiB UTF-8/ASCII files
+- `FileFingerprint`: external-modification detection before save
+- `OmniError.ExternallyModified`: new error variant for externally changed files
+- INDEXED_EDITABLE tier added to `DocumentLimits.SizeTier`
+- Encoding gate: UTF-8/ASCII only; other encodings remain INDEXED_READ_ONLY
+- LRU decode cache (2048 entries) for channel piece reads
+- Benchmark unverified — ceiling raise requires D-2/D-7 recorded benchmark
+
+### F-10: Word-merge UI (OE-MRG-2)
+- Word-level toggle in `ActiveLineSheet` for CHANGED hunks with paired lines
+- Per-range selectable chips showing left/right text with colour coding
+- Live preview of merged result updating as selections change
+- Apply wraps in `beginBatch()`/`commitBatch()` for single undo step (R-54)
+- TalkBack labels on all word-change chips (W-09)
+- C.3 property tests: all-LEFT ⇒ byte-identical left, all-RIGHT ⇒ byte-identical right
+
 ## P1 Completion Plan (R-01 onwards)
 
 Tracks implementation of `docs/P1-COMPLETION-PLAN.md` (v3). The original build plan
