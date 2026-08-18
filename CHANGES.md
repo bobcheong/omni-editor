@@ -20,6 +20,13 @@
 - TalkBack labels on all word-change chips (W-09)
 - C.3 property tests: all-LEFT ⇒ byte-identical left, all-RIGHT ⇒ byte-identical right
 
+### Post-review fixes
+- `OmniException` caught in save path → routes to `ExternallyChanged` UI state
+- `markSaved()` called for `LargeFileEditableDocument` after successful save
+- `supportsTextAccess` flag hides hex view/text tools for large editable files
+- TOCTOU fix in `FileFingerprint.check()` — single `file.length()` call
+- FD leak guard in `LargeFileEditableDocument.open()` on construction failure
+
 ## P1 Completion Plan (R-01 onwards)
 
 Tracks implementation of `docs/P1-COMPLETION-PLAN.md` (v3). The original build plan

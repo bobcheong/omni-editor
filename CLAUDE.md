@@ -32,9 +32,11 @@ This product has no relationship to any existing compare or editor tool or vendo
   Save As (via `CreateDocument` picker). "Compare with…" prefills setup from the
   current file and clears stale state from prior sessions.
 - Documents are tiered by size via `DocumentLimits.SizeTier`: FULL_MEMORY (≤16 MiB,
-  full editing), INDEXED_READ_ONLY (16–256 MiB, read-only via `LargeFileDocument`),
-  REFUSED (>256 MiB, `OmniError.TooLarge`). **No code path may be O(file) per
-  keystroke or per rendered row.** See `docs/adr/012-size-ladder.md`.
+  full editing), INDEXED_EDITABLE (16–256 MiB UTF-8/ASCII, `LargeFileEditableDocument`
+  over `ChannelPieceTable`), INDEXED_READ_ONLY (16–256 MiB other encodings, read-only
+  via `LargeFileDocument`), REFUSED (>256 MiB, `OmniError.TooLarge`). **No code path
+  may be O(file) per keystroke or per rendered row.** See `docs/adr/012-size-ladder.md`
+  and `docs/adr/015-channel-piece-table.md`.
 - Line count is `newlines + 1`. A file ending in a terminator has a real, caret-placeable
   empty final line. See `docs/adr/007-line-model.md`.
 - Long operations are cancellable coroutines scoped to a session, calling `ensureActive()`
