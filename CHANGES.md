@@ -74,6 +74,17 @@ All tests run at Tier 1 (JVM, no device required).
 dedicated CI step after static analysis. Lint-based check (option b from spec);
 upgrade to GMD instrumented tests deferred until a device tier is available.
 
+### Z-1..Z-4 fixes (SPEC-GAP-PLAN rev 8)
+
+- Z-1: `CompareCoordinator.executeMergeSave()` rewired through `SaveOrchestrator`
+  for file:// saves — single-sourced data-safety path (R-51, R-57)
+- Z-2: `DesktopBuildInfo` Gradle-generated with `VERSION_NAME`, `GIT_SHA`, `BUILD_TYPE`
+  matching D-8 About string format
+- Z-3: Real feature screens wired into desktop — `EditorScreen`, `CompareScreen`,
+  `SourceSetupScreen`, `DesktopHomeScreen` with `JFileChooser` file dialogs
+- Z-4: `PlatformBackHandler` deduplicated to `design` module; Move 2b not attempted
+  (accepted as best-effort per spec)
+
 ## P1 Completion Plan (R-01 onwards)
 
 Tracks implementation of `docs/P1-COMPLETION-PLAN.md` (v3). The original build plan
