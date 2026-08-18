@@ -1,24 +1,42 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
 plugins {
-    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.android.kotlin.multiplatform.library)
+    alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.kotlin.compose)
 }
-android {
-    namespace = "com.omnieditor.design"
-    compileSdk = libs.versions.compileSdk.get().toInt()
-    defaultConfig { minSdk = libs.versions.minSdk.get().toInt() }
-    buildFeatures { compose = true }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
-    }
-    kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21) } }
-}
-dependencies {
-    // KeyboardShortcuts model needed for the shared shortcuts sheet (R-37).
-    api(project(":core:model"))
 
-    implementation(platform(libs.compose.bom))
-    api(libs.compose.ui)
-    api(libs.compose.material3)
-    implementation(libs.compose.ui.tooling.preview)
+kotlin {
+    android {
+        namespace = "com.omnieditor.design"
+        compileSdk = libs.versions.compileSdk.get().toInt()
+        minSdk = libs.versions.minSdk.get().toInt()
+    }
+    jvm("desktop")
+
+    @Suppress("DEPRECATION")
+    sourceSets {
+        commonMain.dependencies {
+            api(project(":core:model"))
+            implementation(compose.material3)
+            api(compose.ui)
+            implementation(compose.foundation)
+        }
+        androidMain.dependencies {
+            // Android-specific: dynamic colour via Material You
+        }
+        val desktopMain by getting {
+            dependencies {
+                implementation(compose.uiTooling)
+            }
+        }
+    }
+}
+
+tasks.withType<KotlinCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_21)
+    }
 }

@@ -24,6 +24,9 @@ Permitted: Apache-2.0, MIT, BSD. LGPL by justification only. GPL/AGPL forbidden.
 | AndroidX Benchmark Macro | 1.3.4 | Apache-2.0 (test only) | benchmark | F-05b |
 | AndroidX UiAutomator | 2.3.0 | Apache-2.0 (test only) | benchmark | F-05b |
 
+| JetBrains Compose Multiplatform | 1.11.1 | Apache-2.0 | design (KMP) | T-05 |
+| JetBrains Lifecycle ViewModel Compose | 2.11.0 | Apache-2.0 | (catalog, future feature KMP) | T-05 |
+
 **Licence notes:**
 - JUnit 4 (EPL-1.0): test-only dependency, not bundled in release APKs. EPL-1.0 is
   outside the Apache/MIT/BSD allowlist but is standard for JVM test frameworks and

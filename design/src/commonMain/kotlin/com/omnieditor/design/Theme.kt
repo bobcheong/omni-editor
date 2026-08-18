@@ -1,20 +1,14 @@
 package com.omnieditor.design
 
-import android.os.Build
-import android.provider.Settings
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 
 // ── Syntax token colour schemes (R-19) ──────────────────────────────────────
 
@@ -42,7 +36,7 @@ data class SyntaxColorScheme(
     val default: Color,
 )
 
-private val LightSyntaxColors = SyntaxColorScheme(
+internal val LightSyntaxColors = SyntaxColorScheme(
     keyword   = Color(0xFF0033B3),
     string    = Color(0xFF067D17),
     comment   = Color(0xFF787878),
@@ -59,7 +53,7 @@ private val LightSyntaxColors = SyntaxColorScheme(
     default   = Color(0xFF1F1F1F),
 )
 
-private val DarkSyntaxColors = SyntaxColorScheme(
+internal val DarkSyntaxColors = SyntaxColorScheme(
     keyword   = Color(0xFF6FA0DE),
     string    = Color(0xFF6AAB73),
     comment   = Color(0xFF7A7E85),
@@ -138,7 +132,7 @@ data class CompareColors(
     val intraLineNewBg: Color,
 )
 
-val LightCompareColors = CompareColors(
+internal val LightCompareColors = CompareColors(
     addedFg = Color(0xFF14532D), addedBg = Color(0xFFDCF5E6),
     removedFg = Color(0xFF7F1D1D), removedBg = Color(0xFFFCE4E4),
     changedFg = Color(0xFF6B4A00), changedBg = Color(0xFFFBF0D5),
@@ -148,7 +142,7 @@ val LightCompareColors = CompareColors(
     intraLineNewBg = Color(0xFFC4E8CE),   // deeper green tint over added-bg (used for changed-new)
 )
 
-val DarkCompareColors = CompareColors(
+internal val DarkCompareColors = CompareColors(
     addedFg = Color(0xFF8FE3AE), addedBg = Color(0xFF12301F),
     removedFg = Color(0xFFF3A6A6), removedBg = Color(0xFF3A1616),
     changedFg = Color(0xFFEBCB7C), changedBg = Color(0xFF322608),
@@ -161,21 +155,33 @@ val DarkCompareColors = CompareColors(
 val LocalCompareColors = staticCompositionLocalOf { LightCompareColors }
 
 /**
- * True when the system "remove animations" setting is active
- * (Settings.Global.ANIMATOR_DURATION_SCALE == 0).
+ * True when the system "remove animations" setting is active.
+ * Android: Settings.Global.ANIMATOR_DURATION_SCALE == 0.
+ * Desktop: false (extend later for desktop a11y settings).
  *
  * Consumers: caret blink suppression, sheet transition suppression (R-37, NFR-A1).
  */
 val LocalReduceMotion = compositionLocalOf { false }
 
-private val LightScheme = lightColorScheme(
-    primary = Color(0xFF0B5B58),
-    secondary = Color(0xFF3F5F5D),
-)
-private val DarkScheme = darkColorScheme(
-    primary = Color(0xFF6FD3CD),
-    secondary = Color(0xFF9BC0BD),
-)
+// ── Platform expect declarations ────────────────────────────────────────────
+
+/**
+ * Platform-specific colour scheme selection.
+ * Android: dynamic colour (Material You) when available.
+ * Desktop: static light/dark scheme.
+ */
+@Composable
+expect fun platformColorScheme(darkTheme: Boolean, dynamicColor: Boolean): ColorScheme
+
+/**
+ * Platform-specific reduce-motion detection.
+ * Android: Settings.Global.ANIMATOR_DURATION_SCALE == 0.
+ * Desktop: false (extend later for desktop a11y settings).
+ */
+@Composable
+expect fun platformAnimationsDisabled(): Boolean
+
+// ── Theme composable ────────────────────────────────────────────────────────
 
 @Composable
 fun OmniTheme(
@@ -183,24 +189,8 @@ fun OmniTheme(
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    val context = LocalContext.current
-    val scheme = when {
-        // minSdk is 31, so dynamic colour is available on every supported device.
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        darkTheme -> DarkScheme
-        else -> LightScheme
-    }
-    // Read system "reduce animations" preference (NFR-A1, R-37).
-    // Settings.Global.ANIMATOR_DURATION_SCALE == 0 means animations are disabled.
-    val reduceMotion = remember(context) {
-        val scale = Settings.Global.getFloat(
-            context.contentResolver,
-            Settings.Global.ANIMATOR_DURATION_SCALE,
-            1f,
-        )
-        scale == 0f
-    }
+    val scheme = platformColorScheme(darkTheme, dynamicColor)
+    val reduceMotion = platformAnimationsDisabled()
     CompositionLocalProvider(
         LocalCompareColors provides if (darkTheme) DarkCompareColors else LightCompareColors,
         LocalSyntaxColors provides if (darkTheme) DarkSyntaxColors else LightSyntaxColors,
