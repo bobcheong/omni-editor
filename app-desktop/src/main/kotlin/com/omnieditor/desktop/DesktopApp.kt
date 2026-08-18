@@ -1,20 +1,39 @@
 package com.omnieditor.desktop
 
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import com.omnieditor.core.diff.DiffEngine
+import com.omnieditor.core.io.PieceTableDocument
+import com.omnieditor.core.io.SaveOrchestrator
+import com.omnieditor.core.model.RuleSet
+import com.omnieditor.core.model.SourceKind
+import com.omnieditor.core.model.SourceRef
 import com.omnieditor.design.OmniTheme
+import com.omnieditor.feature.compare.CompareScreen
+import com.omnieditor.feature.compare.CompareState
+import com.omnieditor.feature.editor.EditorScreen
+import com.omnieditor.feature.editor.EditorViewModel
+import com.omnieditor.feature.setup.SourceSetupScreen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 @Composable
 fun DesktopApp(initialAction: StartAction = StartAction.None) {
     val navigator = remember { DesktopNavigator() }
 
-    // Route initial action
+    // Route initial action once
     remember(initialAction) {
         when (initialAction) {
             is StartAction.OpenFile -> navigator.navigate(Screen.Editor(initialAction.path))
             is StartAction.Compare -> navigator.navigate(
-                Screen.Compare(initialAction.left, initialAction.right)
+                Screen.Compare(initialAction.left, initialAction.right),
             )
             StartAction.None -> {} // stay on home
         }
@@ -24,21 +43,201 @@ fun DesktopApp(initialAction: StartAction = StartAction.None) {
     OmniTheme {
         when (val screen = navigator.currentScreen) {
             is Screen.Home -> {
-                // Placeholder: will wire feature screens in T-08+
-                Text("Omni Editor \u2014 Desktop (Home)")
+                DesktopHomeScreen(
+                    onOpenFile = { path -> navigator.navigate(Screen.Editor(path)) },
+                    onCompare = { navigator.navigate(Screen.Setup()) },
+                )
             }
             is Screen.Editor -> {
-                // Placeholder: will wire EditorScreen from feature:editor
-                Text("Editor: ${screen.filePath}")
+                DesktopEditorScreen(
+                    filePath = screen.filePath,
+                    navigator = navigator,
+                )
             }
             is Screen.Compare -> {
-                // Placeholder: will wire CompareScreen from feature:compare
-                Text("Compare: ${screen.leftPath} vs ${screen.rightPath}")
+                DesktopCompareScreen(
+                    leftPath = screen.leftPath,
+                    rightPath = screen.rightPath,
+                    navigator = navigator,
+                )
             }
             is Screen.Setup -> {
-                // Placeholder: will wire SourceSetupScreen from feature:setup
-                Text("Compare Setup")
+                DesktopSetupScreen(
+                    prefillLeft = screen.prefillLeft,
+                    navigator = navigator,
+                )
             }
         }
     }
+}
+
+@Composable
+private fun DesktopEditorScreen(
+    filePath: String?,
+    navigator: DesktopNavigator,
+) {
+    val scope = rememberCoroutineScope()
+    val viewModel = remember { EditorViewModel() }
+
+    // Load file content on first composition
+    LaunchedEffect(filePath) {
+        if (filePath != null) {
+            val content = withContext(Dispatchers.IO) {
+                File(filePath).readText()
+            }
+            viewModel.openDocument(content, fileName = File(filePath).name)
+
+            // Wire save function
+            viewModel.setSaveFunction { bytes ->
+                withContext(Dispatchers.IO) {
+                    File(filePath).writeBytes(bytes)
+                }
+            }
+        }
+    }
+
+    EditorScreen(
+        fileName = filePath?.let { File(it).name } ?: "Untitled",
+        onNavigateBack = { navigator.back() },
+        onCompareWith = {
+            filePath?.let { navigator.navigate(Screen.Setup(prefillLeft = it)) }
+        },
+        onSaveAs = {
+            scope.launch {
+                val target = DesktopFileDialogs.showSaveDialog(
+                    suggestedName = filePath?.let { File(it).name } ?: "document.txt",
+                )
+                if (target != null) {
+                    withContext(Dispatchers.IO) {
+                        val content = viewModel.getContent()
+                        target.writeBytes(content.toByteArray())
+                    }
+                }
+            }
+        },
+        viewModel = viewModel,
+    )
+}
+
+@Composable
+private fun DesktopCompareScreen(
+    leftPath: String,
+    rightPath: String,
+    navigator: DesktopNavigator,
+) {
+    val scope = rememberCoroutineScope()
+    var compareState by remember { mutableStateOf<CompareState?>(null) }
+    var ruleSet by remember { mutableStateOf(RuleSet.DEFAULT) }
+
+    // Run compare on launch (and re-run when ruleSet changes)
+    LaunchedEffect(leftPath, rightPath, ruleSet) {
+        compareState = null
+        withContext(Dispatchers.Default) {
+            val leftText = withContext(Dispatchers.IO) { File(leftPath).readText() }
+            val rightText = withContext(Dispatchers.IO) { File(rightPath).readText() }
+            val leftLines = leftText.lines()
+            val rightLines = rightText.lines()
+            val leftDoc = PieceTableDocument.create(leftText)
+            val rightDoc = PieceTableDocument.create(rightText)
+            val result = DiffEngine.compareAuto(
+                leftLineCount = leftLines.size.toLong(),
+                rightLineCount = rightLines.size.toLong(),
+                leftLine = { leftLines[it.toInt()] },
+                rightLine = { rightLines[it.toInt()] },
+                rules = ruleSet,
+            )
+            compareState = CompareState(
+                result = result,
+                leftLines = leftLines,
+                rightLines = rightLines,
+                ruleSet = ruleSet,
+                leftDocument = leftDoc,
+                rightDocument = rightDoc,
+            )
+        }
+    }
+
+    CompareScreen(
+        state = compareState,
+        ruleSet = ruleSet,
+        onRuleSetChanged = { ruleSet = it },
+        leftLabel = File(leftPath).name,
+        rightLabel = File(rightPath).name,
+        onNavigateBack = { navigator.back() },
+        onSave = {
+            scope.launch {
+                val state = compareState ?: return@launch
+                val backupDir = File(System.getProperty("java.io.tmpdir"), "omnieditor-backups")
+                withContext(Dispatchers.IO) {
+                    val leftDoc = state.leftDocument
+                    if (state.leftDirty && leftDoc != null) {
+                        SaveOrchestrator.saveWithBackup(
+                            leftDoc, File(leftPath), backupDir, "compare",
+                        )
+                        leftDoc.markSaved()
+                    }
+                    val rightDoc = state.rightDocument
+                    if (state.rightDirty && rightDoc != null) {
+                        SaveOrchestrator.saveWithBackup(
+                            rightDoc, File(rightPath), backupDir, "compare",
+                        )
+                        rightDoc.markSaved()
+                    }
+                }
+            }
+        },
+        onOpenLeft = { navigator.navigate(Screen.Editor(leftPath)) },
+        onOpenRight = { navigator.navigate(Screen.Editor(rightPath)) },
+    )
+}
+
+@Composable
+private fun DesktopSetupScreen(
+    prefillLeft: String?,
+    navigator: DesktopNavigator,
+) {
+    val scope = rememberCoroutineScope()
+    var leftPath by remember { mutableStateOf(prefillLeft) }
+    var rightPath by remember { mutableStateOf<String?>(null) }
+
+    SourceSetupScreen(
+        leftSource = leftPath?.let { pathToSourceRef(it) },
+        rightSource = rightPath?.let { pathToSourceRef(it) },
+        onPickLeft = {
+            scope.launch {
+                val file = DesktopFileDialogs.showOpenDialog("Select Left File")
+                if (file != null) leftPath = file.absolutePath
+            }
+        },
+        onPickRight = {
+            scope.launch {
+                val file = DesktopFileDialogs.showOpenDialog("Select Right File")
+                if (file != null) rightPath = file.absolutePath
+            }
+        },
+        onSwapSides = {
+            val tmp = leftPath
+            leftPath = rightPath
+            rightPath = tmp
+        },
+        onCompare = {
+            val l = leftPath
+            val r = rightPath
+            if (l != null && r != null) {
+                navigator.navigate(Screen.Compare(l, r))
+            }
+        },
+        onNavigateBack = { navigator.back() },
+    )
+}
+
+/** Build a [SourceRef] from a local filesystem path for the setup screen. */
+private fun pathToSourceRef(path: String): SourceRef {
+    val file = File(path)
+    return SourceRef(
+        id = path,
+        kind = SourceKind.LOCAL,
+        path = path,
+        label = file.name,
+    )
 }
