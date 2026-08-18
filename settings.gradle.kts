@@ -13,6 +13,7 @@ dependencyResolutionManagement {
 rootProject.name = "omni-editor"
 
 include(":app-android")
+include(":app-desktop")
 include(":core:model")
 include(":core:diff")
 include(":core:io")
