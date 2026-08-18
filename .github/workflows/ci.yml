@@ -18,14 +18,18 @@ jobs:
 
       # DIST-5: both flavours stay green even though only `direct` ships.
       - name: Unit tests, both flavours
-        run: ./gradlew testDirectDebugUnitTest testStoreDebugUnitTest :core:model:test :core:diff:test
+        run: ./gradlew testDirectDebugUnitTest testStoreDebugUnitTest :core:model:test :core:diff:test :core:io:test
 
       - name: Static analysis
-        run: ./gradlew detekt lintDirectDebug
+        run: ./gradlew detekt :app-android:lintDirectDebug
+
+      # Y-2: Accessibility check — lint rules promoted to error
+      - name: Accessibility lint
+        run: ./gradlew :app-android:lintDirectDebug -Pandroid.lint.checkOnly=Accessibility
 
       # X-2 / NFR-A1: IO boundary check
       - name: IO boundary
         run: ./gradlew checkIoBoundary
 
       - name: Assemble
-        run: ./gradlew assembleDirectDebug assembleStoreDebug
+        run: ./gradlew :app-android:assembleDirectDebug :app-android:assembleStoreDebug

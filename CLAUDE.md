@@ -3,7 +3,7 @@
 Read this before every task. The specification is `docs/OE-SPEC-001.html`; the completion
 plan is `docs/P1-COMPLETION-PLAN.md` (v3, authoritative). Forward plan:
 `docs/SPEC-GAP-PLAN.md` (rev 6, v0.3–v1.0). Change log: `CHANGES.md`.
-Current release: v0.4.0 (tagged, D-1 desktop gate passed).
+Current release: v0.5.0 (in progress; KMP conversion underway, desktop entry point added).
 
 ## Independence (non-negotiable)
 
@@ -25,9 +25,18 @@ This product has no relationship to any existing compare or editor tool or vendo
 
 - `core/model` and `core/diff` must not import `android.*` or `androidx.*`.
   `./gradlew checkCorePurity` enforces this and is wired into `check`.
+- **KMP module structure (v0.5+):** `core/model`, `core/diff`, `core/io`, `design`, and
+  all `feature/*` modules are Kotlin Multiplatform. Each has `commonMain`, `androidMain`,
+  and `desktopMain` source sets. `expect`/`actual` declarations live in `commonMain`;
+  platform implementations in `androidMain` / `desktopMain`. Do not add `android.*` or
+  `androidx.*` imports to `commonMain` or `desktopMain` source sets.
+- **App modules:** `app-android/` is the Android application (`com.android.application`);
+  `app-desktop/` is the Compose for Desktop application. `OmniNavGraph`, `EditorCoordinator`,
+  and `CompareCoordinator` live in `app-android/`. The desktop equivalent is `DesktopNavigator`
+  in `app-desktop/`.
 - All file access goes through `SourceProvider`. No `java.io.File`, no `ContentResolver`
-  outside `core/io` and the flavour source sets. `OmniNavGraph` split into
-  `EditorCoordinator`, `CompareCoordinator`, and `OmniNavGraph` (route declarations).
+  outside `core/io` and the flavour source sets. `FileSystemSourceProvider` (in `core/io`
+  `jvmMain`) is the desktop implementation. `checkIoBoundary` enforces this boundary.
 - The editor and both compare panes share one `TextDocument`. Editor has Save and
   Save As (via `CreateDocument` picker). "Compare with…" prefills setup from the
   current file and clears stale state from prior sessions.
@@ -73,8 +82,8 @@ This product has no relationship to any existing compare or editor tool or vendo
 
 1. Acceptance criteria in the build plan pass.
 2. `./gradlew checkCorePurity checkIoBoundary` clean.
-3. `./gradlew testDirectDebugUnitTest testStoreDebugUnitTest :core:model:test :core:diff:test` green.
-4. `./gradlew detekt lintDirectDebug` clean.
+3. `./gradlew testDirectDebugUnitTest testStoreDebugUnitTest :core:model:test :core:diff:test :core:io:test` green.
+4. `./gradlew detekt :app-android:lintDirectDebug` clean.
 5. No new dependency without a line in `docs/licenses.md`.
 6. Requirement IDs referenced in the commit message.
 7. If a task names an ADR, the ADR file exists, states the decision, the alternatives

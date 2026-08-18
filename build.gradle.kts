@@ -66,12 +66,15 @@ tasks.register("checkIoBoundary") {
         //  - app-android/src/store     : store-flavour SAF/ContentResolver access
         //  - app-android/src/main      : app entry-point layer; initialises core/io stores
         //                                with Android context paths (filesDir/cacheDir)
+        //  - app-desktop/src/main      : desktop entry point; FileSystemSourceProvider wired
+        //                                here using java.io.File / java.nio.file.Path (jvmMain)
         //  - src/test / src/androidTest : test fixtures read golden files directly
         val allowedSegments = listOf(
             "core/io/src",
             "app-android/src/direct",
             "app-android/src/store",
             "app-android/src/main",
+            "app-desktop/src/main",
             "benchmark/src/",       // fixture generator writes files directly — no Android context available
             "src/test/",
             "src/androidTest/",
@@ -97,7 +100,7 @@ tasks.register("checkIoBoundary") {
             throw GradleException(
                 "IO boundary violated — ContentResolver and java.io.File must only be used\n" +
                     "in core/io, flavour source sets (app-android/src/direct, app-android/src/store),\n" +
-                    "the app entry-point (app-android/src/main), and test sources:\n" +
+                    "the app entry-points (app-android/src/main, app-desktop/src/main), and test sources:\n" +
                     violations.joinToString("\n") { "  $it" }
             )
         }
