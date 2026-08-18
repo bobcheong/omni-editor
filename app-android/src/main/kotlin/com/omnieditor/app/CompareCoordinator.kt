@@ -15,8 +15,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.omnieditor.core.diff.ReportGenerator
-import com.omnieditor.core.io.MergeSafety
 import com.omnieditor.core.io.PieceTableDocument
+import com.omnieditor.core.io.SaveOrchestrator
 import com.omnieditor.core.io.ResultStore
 import com.omnieditor.core.model.DocumentLimits
 import com.omnieditor.core.model.Granularity
@@ -411,7 +411,7 @@ internal suspend fun shareCompareReport(
 /**
  * R-28: Execute the merge save sequence:
  * 1. Re-fingerprint both files to detect external changes (abort if changed).
- * 2. Pre-write backup via MergeSafety before any byte is written.
+ * 2. Pre-write backup via SaveOrchestrator before any byte is written (file:// path).
  * 3. Write each dirty document back through its URI.
  * 4. Mark documents saved and refresh fingerprints.
  */
@@ -457,45 +457,37 @@ internal suspend fun executeMergeSave(
     // Do not overwrite silently; spec §13 maps this to ExternalChangeDetected UI state.
     if (externalChangeDetected) return
 
-    // Pre-write backup for each dirty document that has a local path (direct flavour).
-    // R-51: Abort if backup fails — never write without a valid backup.
-    val backupFailed = withContext(Dispatchers.IO) {
-        var failed = false
-        leftCachedUri?.let { uriToFileOrNull(it) }?.let { path ->
-            if (leftDocument?.dirty == true) {
-                val backup = MergeSafety.createBackup(path, backupDir, sessionId)
-                if (backup == null) failed = true
-            }
-        }
-        rightCachedUri?.let { uriToFileOrNull(it) }?.let { path ->
-            if (rightDocument?.dirty == true) {
-                val backup = MergeSafety.createBackup(path, backupDir, sessionId)
-                if (backup == null) failed = true
-            }
-        }
-        failed
-    }
-    if (backupFailed) return // Abort save — backup failure is a data-safety concern
-
     // Write dirty documents and refresh fingerprints.
+    // file:// URIs: delegate to SaveOrchestrator (handles backup + atomic write, R-51, R-57).
+    // content:// URIs: ContentResolver write stays inline (Android SAF, no atomic rename available).
     // R-52: Use materialise() to encode with the document's tracked charset, not toByteArray() (UTF-8 only).
     withContext(Dispatchers.IO) {
-        if (leftDocument?.dirty == true && leftUri != null) {
-            val baos = ByteArrayOutputStream()
-            leftDocument.materialise(Channels.newChannel(baos))
-            context.contentResolver.openOutputStream(leftUri, "wt")?.use { it.write(baos.toByteArray()) }
-            leftDocument.markSaved()
-            context.contentResolver.query(leftUri, fingerprintCols, null, null, null)
-                ?.use { c -> if (c.moveToFirst()) onLeftFingerprintUpdated(c.getLong(0), c.getLong(1)) }
+        suspend fun saveDoc(
+            doc: PieceTableDocument?, uri: Uri?, cachedUri: String?,
+            onFingerprintUpdated: (Long, Long) -> Unit,
+        ) {
+            if (doc?.dirty != true || uri == null) return
+            val localFile = cachedUri?.let { uriToFileOrNull(it) }
+            if (localFile != null) {
+                // file:// path — delegate to SaveOrchestrator (single-sourced, R-57)
+                val result = SaveOrchestrator.saveWithBackup(doc, localFile, backupDir, sessionId)
+                if (!result.success) return // abort — backup or write failed
+                doc.markSaved()
+                // Refresh fingerprint from the written file
+                onFingerprintUpdated(localFile.length(), localFile.lastModified())
+            } else {
+                // content:// path — ContentResolver write (Android SAF only)
+                val baos = ByteArrayOutputStream()
+                doc.materialise(Channels.newChannel(baos))
+                context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(baos.toByteArray()) }
+                doc.markSaved()
+                context.contentResolver.query(uri, fingerprintCols, null, null, null)
+                    ?.use { c -> if (c.moveToFirst()) onFingerprintUpdated(c.getLong(0), c.getLong(1)) }
+            }
         }
-        if (rightDocument?.dirty == true && rightUri != null) {
-            val baos = ByteArrayOutputStream()
-            rightDocument.materialise(Channels.newChannel(baos))
-            context.contentResolver.openOutputStream(rightUri, "wt")?.use { it.write(baos.toByteArray()) }
-            rightDocument.markSaved()
-            context.contentResolver.query(rightUri, fingerprintCols, null, null, null)
-                ?.use { c -> if (c.moveToFirst()) onRightFingerprintUpdated(c.getLong(0), c.getLong(1)) }
-        }
+
+        saveDoc(leftDocument, leftUri, leftCachedUri, onLeftFingerprintUpdated)
+        saveDoc(rightDocument, rightUri, rightCachedUri, onRightFingerprintUpdated)
     }
 }
 
