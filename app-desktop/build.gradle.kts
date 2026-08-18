@@ -37,6 +37,10 @@ dependencies {
     implementation(libs.lifecycle.viewmodel.compose.multiplatform)
 }
 
+tasks.processResources {
+    from(rootProject.file("version.properties"))
+}
+
 compose.desktop {
     application {
         mainClass = "com.omnieditor.desktop.MainKt"

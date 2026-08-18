@@ -32,6 +32,13 @@ Permitted: Apache-2.0, MIT, BSD. LGPL by justification only. GPL/AGPL forbidden.
   outside the Apache/MIT/BSD allowlist but is standard for JVM test frameworks and
   carries no runtime or distribution obligations for test-only use.
 
+| JetBrains Mono | 2.304 | OFL-1.1 | app-desktop (bundled font) | T-08 |
+
+**Font licence note — JetBrains Mono (OFL-1.1):**
+OFL-1.1 permits bundling and commercial distribution of the font in any application.
+Copyleft under OFL applies only to derivative *fonts*, never to application code.
+See docs/adr/019-font-licence.md.
+
 Watch items for future phases:
 - P2 (documents): OOXML/PDF parsing libraries — check licences carefully
 - P3 (remote): Apache Commons Net (FTP), SSHJ (SFTP), SMBJ (SMB) — all Apache-2.0
