@@ -121,11 +121,14 @@ tasks.register("checkUnusedPublicTypes") {
 
     // Types documented in ADR-010 as intentionally deferred to P2.
     val allowlist = setOf(
-        "BlockDiff",           // ADR-010: large-file path, needs device benchmark (P2)
-        "Diff3",               // ADR-010: three-pane merge UI deferred to P2
-        "FileIndexer",         // ADR-010: streaming large-file load, wires with BlockDiff (P2)
-        "AccessibilityConfig", // ADR-010: settings screen deferred to P2
-        "DocumentMeta",        // ADR-010: tab-state persistence, settings screen deferred to P2
+        "BlockDiff",                 // ADR-010: large-file path, needs device benchmark (P2)
+        "Diff3",                     // ADR-010: three-pane merge UI deferred to P2
+        "FileIndexer",               // ADR-010: streaming large-file load, wires with BlockDiff (P2)
+        "AccessibilityConfig",       // ADR-010: settings screen deferred to P2
+        "DocumentMeta",              // ADR-010: tab-state persistence, settings screen deferred to P2
+        "SaveOrchestrator",          // ADR-010/ADR-017: Move 2a extraction; Android Move 2b + desktop wiring pending
+        "FileSystemSourceProvider",  // ADR-010/ADR-017: Move 1 extraction; referenced via Kotlin delegation (no import text)
+        "HexViewConfig",             // ADR-010: binary compare settings model; HexGrid UI deferred to P2
     )
 
     val coreModules = listOf("core/model", "core/diff", "core/io")

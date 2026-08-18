@@ -93,6 +93,51 @@ class is kept so that the on-disk format is stable when the persistence path is 
 
 ---
 
+### `SaveOrchestrator` (`core/io`)
+
+**Purpose:** Navigation-agnostic backup + atomic-write orchestration for file:// targets
+(OE-MRG-5). Extracted from `CompareCoordinator` as Move 2a of the KMP desktop port plan
+(ADR-017). Provides `saveWithBackup()` which creates a pre-write backup via `MergeSafety`,
+materialises the document to a temp file, fsyncs, then atomically renames to the target.
+
+**Why deferred (Android consumer):** The Android coordinator (`CompareCoordinator`) writes
+back through `ContentResolver.openOutputStream()` for content:// URIs. Switching it to use
+`SaveOrchestrator` for the file:// path (Move 2b) is best-effort and separate from the
+extraction. `SaveOrchestrator` will be the primary write path on desktop (no ContentResolver).
+
+**Deferral condition:** Wire into `CompareCoordinator` for the file:// branch in Move 2b,
+and into the desktop `DesktopCompareCoordinator` (Task 7 of the KMP plan).
+
+---
+
+### `HexViewConfig` (`core/model`)
+
+**Purpose:** Configuration model for the binary (hex) compare view — column width,
+bytes-per-row, and display format (OE-BIN-1). Serialisable so it survives process death.
+
+**Why deferred:** The hex-grid binary compare UI is deferred to v0.6 per ADR-008.
+The config model is complete so that the schema is settled before the UI is built.
+
+**Deferral condition:** Wire into the hex-grid settings panel in v0.6.
+
+---
+
+### `FileSystemSourceProvider` (`core/io`)
+
+**Purpose:** Pure-JVM filesystem implementation of `SourceProvider` (Move 1, ADR-017).
+Extracted from `DirectSourceProvider` so the logic can be shared between Android
+(`DirectSourceProvider` delegates to it) and the future desktop entry point.
+
+**Why this entry appears:** `checkUnusedPublicTypes` looks for the class name referenced
+in non-test production sources. `DirectSourceProvider` references it via Kotlin interface
+delegation (`by FileSystemSourceProvider(null)`) which does not appear as an explicit
+import or symbol reference in the source text.
+
+**Deferral condition:** Remove from allowlist when the desktop entry point (Task 7) or
+another explicit production reference is wired.
+
+---
+
 ## Types confirmed wired (not deferred)
 
 The following types from the original R-39 checklist were found referenced in production
