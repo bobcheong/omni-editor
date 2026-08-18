@@ -7,10 +7,13 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.omnieditor.core.io.FindReplace
+import com.omnieditor.core.io.LargeFileEditableDocument
 import com.omnieditor.core.io.PieceTableDocument
 import com.omnieditor.core.io.TextDocument
 import com.omnieditor.core.io.TextTools
 import com.omnieditor.core.model.LineEnding
+import com.omnieditor.core.model.OmniError
+import com.omnieditor.core.model.OmniException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -118,6 +121,15 @@ class EditorViewModel @Inject constructor() : ViewModel() {
     var isDirty by mutableStateOf(false)
         private set
 
+    /**
+     * Returns false when the document is a [LargeFileEditableDocument], whose [text()] method
+     * throws [UnsupportedOperationException]. UI controls that call [text()] (hex view toggle,
+     * text tools, replaceAll, convertLineEnding, convertEncoding) must be hidden when false.
+     * Spec rule: "No UI control may exist without behaviour" (CLAUDE.md).
+     */
+    val supportsTextAccess: Boolean
+        get() = editorState?.document !is LargeFileEditableDocument
+
     // Find/replace state
     var findMatches by mutableStateOf<List<FindReplace.Match>>(emptyList())
         private set
@@ -199,8 +211,16 @@ class EditorViewModel @Inject constructor() : ViewModel() {
                 state.document.materialise(Channels.newChannel(baos))
                 fn(baos.toByteArray())
                 (state.document as? PieceTableDocument)?.markSaved()
+                (state.document as? LargeFileEditableDocument)?.markSaved()
                 isDirty = false
                 _uiState.value = EditorUiState.Loaded(state)
+            } catch (e: OmniException) {
+                when (val err = e.error) {
+                    is OmniError.ExternallyModified ->
+                        _uiState.value = EditorUiState.ExternallyChanged(fileName = currentFileName)
+                    else ->
+                        _uiState.value = EditorUiState.Error("Save failed: $err")
+                }
             } catch (e: IOException) {
                 _uiState.value = EditorUiState.Error("Save failed: ${e.message}")
             } catch (e: SecurityException) {

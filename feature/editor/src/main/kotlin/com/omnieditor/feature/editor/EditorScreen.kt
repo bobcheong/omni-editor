@@ -157,6 +157,7 @@ fun EditorScreen(
     var showHexView by remember { mutableStateOf(false) }
 
     val isDirty = viewModel.isDirty
+    val supportsTextAccess = viewModel.supportsTextAccess
 
     // Intercept the system back gesture/button when there are unsaved changes.
     BackHandler(enabled = isDirty) {
@@ -263,6 +264,7 @@ fun EditorScreen(
                 onFind = { showFind = !showFind },
                 onCompareWith = onCompareWith,
                 settingsState = settingsState,
+                supportsTextAccess = supportsTextAccess,
                 callbacks = EditorMenuCallbacks(
                     onSave = { viewModel.save() },
                     onSaveAs = onSaveAs,
@@ -418,7 +420,7 @@ fun EditorScreen(
                 is EditorUiState.Loaded -> {
                     val focusRequester = remember { FocusRequester() }
                     val keyboard = LocalSoftwareKeyboardController.current
-                    if (showHexView) {
+                    if (showHexView && supportsTextAccess) {
                         val bytes = remember(state.editorState.document.editGeneration) {
                             state.editorState.document.text().toByteArray()
                         }
@@ -521,6 +523,7 @@ private fun EditorTopBar(
     settingsState: EditorSettingsState,
     callbacks: EditorMenuCallbacks,
     showHexView: Boolean = false,
+    supportsTextAccess: Boolean = true,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var editOpsExpanded by remember { mutableStateOf(false) }
@@ -572,10 +575,12 @@ private fun EditorTopBar(
                     text = { Text("Decrease font") },
                     onClick = { menuExpanded = false; callbacks.onDecreaseFontSize() },
                 )
-                DropdownMenuItem(
-                    text = { Text(if (showHexView) "View as text" else "View as hex") },
-                    onClick = { menuExpanded = false; callbacks.onViewAsHex() },
-                )
+                if (supportsTextAccess) {
+                    DropdownMenuItem(
+                        text = { Text(if (showHexView) "View as text" else "View as hex") },
+                        onClick = { menuExpanded = false; callbacks.onViewAsHex() },
+                    )
+                }
                 HorizontalDivider()
                 // ── Edit section ──
                 DropdownMenuItem(
@@ -594,15 +599,19 @@ private fun EditorTopBar(
                     text = { Text("Jump to bracket    Ctrl+Shift+M") },
                     onClick = { menuExpanded = false; callbacks.onJumpToBracket() },
                 )
-                DropdownMenuItem(text = { Text("Text tools ▸") }, onClick = {
-                    menuExpanded = false; textToolsExpanded = true
-                })
+                if (supportsTextAccess) {
+                    DropdownMenuItem(text = { Text("Text tools ▸") }, onClick = {
+                        menuExpanded = false; textToolsExpanded = true
+                    })
+                }
                 DropdownMenuItem(text = { Text("Edit operations ▸") }, onClick = {
                     menuExpanded = false; editOpsExpanded = true
                 })
-                DropdownMenuItem(text = { Text("Case conversion ▸") }, onClick = {
-                    menuExpanded = false; caseExpanded = true
-                })
+                if (supportsTextAccess) {
+                    DropdownMenuItem(text = { Text("Case conversion ▸") }, onClick = {
+                        menuExpanded = false; caseExpanded = true
+                    })
+                }
                 HorizontalDivider()
                 // ── Document section ──
                 DropdownMenuItem(text = { Text("Save") }, onClick = { menuExpanded = false; callbacks.onSave() })
@@ -615,9 +624,11 @@ private fun EditorTopBar(
                 DropdownMenuItem(text = { Text("Column select") }, onClick = {
                     menuExpanded = false; callbacks.onToggleColumnSelect()
                 })
-                DropdownMenuItem(text = { Text("Line ending ▸") }, onClick = {
-                    menuExpanded = false; lineEndingExpanded = true
-                })
+                if (supportsTextAccess) {
+                    DropdownMenuItem(text = { Text("Line ending ▸") }, onClick = {
+                        menuExpanded = false; lineEndingExpanded = true
+                    })
+                }
                 DropdownMenuItem(text = { Text("Compare with…") }, onClick = { menuExpanded = false; onCompareWith() })
                 HorizontalDivider()
                 // ── Footer ──
