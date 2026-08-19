@@ -101,6 +101,26 @@ v0.5 port. The R-28 pre-write fingerprint check runs in the outer `executeMergeS
 flow and covers both file:// and content:// branches. See also ADR-015 (save path by
 flavour) and ADR-018 (desktop uses filesystem path exclusively).
 
+### Z-6b/Z-7b punch-list
+
+- Z-6b-1: Edit menu wired via `DesktopMenuActions` — screens register callbacks,
+  items disabled when no action available (never silent no-ops)
+- Z-6b-2: Accelerators derived from `KeyboardShortcuts` model via `KeyBinding.toKeyShortcut()`
+  (single-source rule — no hardcoded bindings in menu)
+- Z-6b-3: File → Save added, enabled when dirty, Ctrl+S from model
+- Z-7b: MIME associations in jpackage deb/rpm via `.desktop` resource override in CI
+- Desktop Settings screen: full Compose UI (Editor/Compare/Appearance/About)
+- View menu: Word Wrap / Line Numbers / Whitespace checkboxes, Font Size +/-, Theme submenu
+- Settings state lifted to Main.kt, shared across MenuBar + screens + Settings screen
+- `kotlinx-coroutines-swing` added for `Dispatchers.Main` on desktop
+- `generateBuildInfo`: `upToDateWhen { false }` ensures GIT_SHA is always current HEAD
+
+### Build releases
+
+| Date | SHA | Commit | Artifacts |
+|------|-----|--------|-----------|
+| 20 Aug 2026 | `1803dcf` | [1803dcf](https://github.com/bobcheong/omni-editor/commit/1803dcf) | APK (direct-debug) + Desktop jar (linux-x64) |
+
 ## P1 Completion Plan (R-01 onwards)
 
 Tracks implementation of `docs/P1-COMPLETION-PLAN.md` (v3). The original build plan
