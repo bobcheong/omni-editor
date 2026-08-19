@@ -41,7 +41,8 @@ val buildType: String = (project.findProperty("omni.build.type") as? String) ?: 
 val generateBuildInfo by tasks.registering {
     val outputDir = layout.buildDirectory.dir("generated/buildinfo/com/omnieditor/desktop")
     outputs.dir(outputDir)
-    // Capture primitive values as inputs so the task is configuration-cache safe
+    // Always re-run so GIT_SHA reflects the current HEAD, not a cached value
+    outputs.upToDateWhen { false }
     val capturedVersionName = "$vMajor.$vMinor.$vPatch"
     val capturedGitSha = gitSha
     val capturedBuildType = buildType
