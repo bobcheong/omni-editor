@@ -85,6 +85,7 @@ dependencies {
     @Suppress("DEPRECATION")
     implementation(compose.material3)
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.swing) // Provides Dispatchers.Main on desktop (AWT EDT)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.lifecycle.viewmodel.compose.multiplatform)
 }
