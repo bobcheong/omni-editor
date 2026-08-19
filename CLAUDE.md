@@ -37,6 +37,9 @@ This product has no relationship to any existing compare or editor tool or vendo
 - **Save path:** `SaveOrchestrator` in `core/io` is the single-sourced save/backup flow for
   filesystem saves. `CompareCoordinator` delegates file:// saves to it (Z-1). Desktop compare
   save uses it directly. Save failures are surfaced via `CompareState.showMessage()` (Z-5).
+- **Desktop build info:** `DesktopBuildInfo.kt` is Gradle-generated with `VERSION_NAME`,
+  `GIT_SHA`, `BUILD_TYPE` (D-8). `generateBuildInfo` runs on every build (`upToDateWhen { false }`)
+  so the SHA always reflects HEAD. Help → About shows `version (sha) · type`.
 - All file access goes through `SourceProvider`. No `java.io.File`, no `ContentResolver`
   outside `core/io` and the flavour source sets. `FileSystemSourceProvider` (in `core/io`
   `jvmMain`) is the desktop implementation. `checkIoBoundary` enforces this boundary.
