@@ -30,6 +30,7 @@ fun DesktopApp(
     navigator: DesktopNavigator = remember { DesktopNavigator() },
     settings: DesktopSettings = remember { DesktopSettings.load() },
     onSettingsChanged: (DesktopSettings) -> Unit = {},
+    menuActions: DesktopMenuActions = remember { DesktopMenuActions() },
 ) {
 
     // Route initial action once
@@ -46,6 +47,7 @@ fun DesktopApp(
     OmniTheme {
         when (val screen = navigator.currentScreen) {
             is Screen.Home -> {
+                LaunchedEffect(Unit) { menuActions.clear() }
                 DesktopHomeScreen(
                     onOpenFile = { path -> navigator.navigate(Screen.Editor(path)) },
                     onCompare = { navigator.navigate(Screen.Setup()) },
@@ -57,6 +59,7 @@ fun DesktopApp(
                     navigator = navigator,
                     settings = settings,
                     onSettingsChanged = onSettingsChanged,
+                    menuActions = menuActions,
                 )
             }
             is Screen.Compare -> {
@@ -66,6 +69,7 @@ fun DesktopApp(
                     navigator = navigator,
                     settings = settings,
                     onSettingsChanged = onSettingsChanged,
+                    menuActions = menuActions,
                 )
             }
             is Screen.Setup -> {
@@ -91,9 +95,24 @@ private fun DesktopEditorScreen(
     navigator: DesktopNavigator,
     settings: DesktopSettings,
     onSettingsChanged: (DesktopSettings) -> Unit,
+    menuActions: DesktopMenuActions,
 ) {
     val scope = rememberCoroutineScope()
     val viewModel = remember { EditorViewModel() }
+
+    // Register menu actions for this screen
+    LaunchedEffect(viewModel) {
+        menuActions.onUndo = { viewModel.undo() }
+        menuActions.onRedo = { viewModel.redo() }
+        menuActions.onFind = { /* Find is handled internally by EditorScreen via its own state */ }
+        menuActions.onSave = { viewModel.save() }
+    }
+    // Track dirty state for File → Save enabled
+    menuActions.isDirty = viewModel.isDirty
+    // Clear on dispose
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { menuActions.clear() }
+    }
 
     val editorSettingsState = remember(settings) {
         com.omnieditor.feature.editor.EditorSettingsState(
@@ -158,10 +177,20 @@ private fun DesktopCompareScreen(
     navigator: DesktopNavigator,
     settings: DesktopSettings,
     onSettingsChanged: (DesktopSettings) -> Unit,
+    menuActions: DesktopMenuActions,
 ) {
     val scope = rememberCoroutineScope()
     var compareState by remember { mutableStateOf<CompareState?>(null) }
     var ruleSet by remember { mutableStateOf(RuleSet.DEFAULT) }
+
+    // Register menu actions for compare screen
+    LaunchedEffect(Unit) {
+        menuActions.onFind = { /* Find handled internally by CompareScreen */ }
+    }
+    // Clear on dispose
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { menuActions.clear() }
+    }
 
     // Run compare on launch (and re-run when ruleSet changes)
     LaunchedEffect(leftPath, rightPath, ruleSet) {

@@ -33,6 +33,14 @@ jobs:
       - name: Install rpm tools
         run: sudo apt-get update && sudo apt-get install -y rpm
 
+      # Z-7b: Copy .desktop file as jpackage resource override so deb/rpm
+      # carry the same MIME associations as the AppImage.
+      - name: Prepare jpackage resources
+        run: |
+          RESDIR="app-desktop/build/compose/tmp/linux-resources"
+          mkdir -p "$RESDIR"
+          cp app-desktop/src/main/resources/dev.srcse.OmniEditor.desktop "$RESDIR/omnieditor.desktop"
+
       - name: Build desktop distributions
         run: ./gradlew :app-desktop:packageDeb :app-desktop:packageRpm
 

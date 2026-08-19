@@ -100,6 +100,10 @@ compose.desktop {
             packageVersion = "$vMajor.$vMinor.$vPatch"
             linux {
                 iconFile.set(project.file("src/main/resources/icon.png"))
+                // Z-7b: MIME associations for deb/rpm. jpackage --linux-shortcut creates
+                // a .desktop file; our resource .desktop file (with full MIME list) is
+                // installed alongside by the CI workflow. The AppImage uses it directly.
+                shortcut = true
             }
         }
     }

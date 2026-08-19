@@ -12,6 +12,7 @@ import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.omnieditor.core.model.ShortcutAction
 import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.system.exitProcess
@@ -31,6 +32,7 @@ fun main(args: Array<String>) {
             height = settings.windowHeight.dp,
         )
         val navigator = remember { DesktopNavigator() }
+        val menuActions = remember { DesktopMenuActions() }
         val scope = rememberCoroutineScope()
 
         fun saveWindowStateAndQuit() {
@@ -58,6 +60,15 @@ fun main(args: Array<String>) {
                         navigator.navigate(Screen.Setup())
                     }
                     Separator()
+                    // Z-6b-3: File → Save from the active screen's save callback
+                    Item(
+                        "Save",
+                        enabled = menuActions.isDirty && menuActions.onSave != null,
+                        shortcut = shortcutFor(ShortcutAction.SAVE) ?: KeyShortcut(Key.S, ctrl = true),
+                    ) {
+                        menuActions.onSave?.invoke()
+                    }
+                    Separator()
                     Item("Settings…") {
                         navigator.navigate(Screen.Settings)
                     }
@@ -66,15 +77,40 @@ fun main(args: Array<String>) {
                         saveWindowStateAndQuit()
                     }
                 }
+                // Z-6b-1: Edit menu wired to focused screen actions; disabled when unavailable
                 Menu("Edit") {
-                    Item("Undo", shortcut = KeyShortcut(Key.Z, ctrl = true)) {}
-                    Item("Redo", shortcut = KeyShortcut(Key.Z, ctrl = true, shift = true)) {}
+                    Item(
+                        "Undo",
+                        enabled = menuActions.onUndo != null,
+                        shortcut = shortcutFor(ShortcutAction.UNDO) ?: KeyShortcut(Key.Z, ctrl = true),
+                    ) { menuActions.onUndo?.invoke() }
+                    Item(
+                        "Redo",
+                        enabled = menuActions.onRedo != null,
+                        shortcut = shortcutFor(ShortcutAction.REDO) ?: KeyShortcut(Key.Z, ctrl = true, shift = true),
+                    ) { menuActions.onRedo?.invoke() }
                     Separator()
-                    Item("Cut", shortcut = KeyShortcut(Key.X, ctrl = true)) {}
-                    Item("Copy", shortcut = KeyShortcut(Key.C, ctrl = true)) {}
-                    Item("Paste", shortcut = KeyShortcut(Key.V, ctrl = true)) {}
+                    Item(
+                        "Cut",
+                        enabled = menuActions.onCut != null,
+                        shortcut = shortcutFor(ShortcutAction.CUT) ?: KeyShortcut(Key.X, ctrl = true),
+                    ) { menuActions.onCut?.invoke() }
+                    Item(
+                        "Copy",
+                        enabled = menuActions.onCopy != null,
+                        shortcut = shortcutFor(ShortcutAction.COPY) ?: KeyShortcut(Key.C, ctrl = true),
+                    ) { menuActions.onCopy?.invoke() }
+                    Item(
+                        "Paste",
+                        enabled = menuActions.onPaste != null,
+                        shortcut = shortcutFor(ShortcutAction.PASTE) ?: KeyShortcut(Key.V, ctrl = true),
+                    ) { menuActions.onPaste?.invoke() }
                     Separator()
-                    Item("Find", shortcut = KeyShortcut(Key.F, ctrl = true)) {}
+                    Item(
+                        "Find",
+                        enabled = menuActions.onFind != null,
+                        shortcut = shortcutFor(ShortcutAction.FIND) ?: KeyShortcut(Key.F, ctrl = true),
+                    ) { menuActions.onFind?.invoke() }
                 }
                 Menu("View") {
                     CheckboxItem(
@@ -120,6 +156,7 @@ fun main(args: Array<String>) {
                 navigator = navigator,
                 settings = settings,
                 onSettingsChanged = ::updateSettings,
+                menuActions = menuActions,
             )
         }
     }
