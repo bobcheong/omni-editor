@@ -3,7 +3,7 @@
 Read this before every task. The specification is `docs/OE-SPEC-001.html`; the completion
 plan is `docs/P1-COMPLETION-PLAN.md` (v3, authoritative). Forward plan:
 `docs/SPEC-GAP-PLAN.md` (rev 6, v0.3–v1.0). Change log: `CHANGES.md`.
-Current release: v0.5.0 (in progress; KMP conversion underway, desktop entry point added).
+Current release: v0.5.0 (in progress; KMP done, desktop screens wired, Z-1..Z-5 resolved, Y-3 device-gated).
 
 ## Independence (non-negotiable)
 
@@ -31,9 +31,12 @@ This product has no relationship to any existing compare or editor tool or vendo
   platform implementations in `androidMain` / `desktopMain`. Do not add `android.*` or
   `androidx.*` imports to `commonMain` or `desktopMain` source sets.
 - **App modules:** `app-android/` is the Android application (`com.android.application`);
-  `app-desktop/` is the Compose for Desktop application. `OmniNavGraph`, `EditorCoordinator`,
-  and `CompareCoordinator` live in `app-android/`. The desktop equivalent is `DesktopNavigator`
-  in `app-desktop/`.
+  `app-desktop/` is the Compose for Desktop application (`kotlinx-coroutines-swing` provides
+  `Dispatchers.Main` on desktop). `OmniNavGraph`, `EditorCoordinator`, and `CompareCoordinator`
+  live in `app-android/`. The desktop equivalent is `DesktopNavigator` in `app-desktop/`.
+- **Save path:** `SaveOrchestrator` in `core/io` is the single-sourced save/backup flow for
+  filesystem saves. `CompareCoordinator` delegates file:// saves to it (Z-1). Desktop compare
+  save uses it directly. Save failures are surfaced via `CompareState.showMessage()` (Z-5).
 - All file access goes through `SourceProvider`. No `java.io.File`, no `ContentResolver`
   outside `core/io` and the flavour source sets. `FileSystemSourceProvider` (in `core/io`
   `jvmMain`) is the desktop implementation. `checkIoBoundary` enforces this boundary.
