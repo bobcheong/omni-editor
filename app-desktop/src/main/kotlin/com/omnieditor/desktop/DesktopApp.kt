@@ -79,6 +79,21 @@ private fun DesktopEditorScreen(
     val scope = rememberCoroutineScope()
     val viewModel = remember { EditorViewModel() }
 
+    // Desktop settings state — persisted to XDG JSON
+    var settings by remember { mutableStateOf(DesktopSettings.load()) }
+    val editorSettingsState = remember(settings) {
+        com.omnieditor.feature.editor.EditorSettingsState(
+            wordWrapEnabled = settings.wordWrap,
+            showLineNumbers = settings.showLineNumbers,
+            fontSize = settings.fontSize,
+        )
+    }
+
+    fun updateSettings(block: DesktopSettings.() -> DesktopSettings) {
+        settings = settings.block()
+        DesktopSettings.save(settings)
+    }
+
     // Load file content on first composition
     LaunchedEffect(filePath) {
         if (filePath != null) {
@@ -114,6 +129,21 @@ private fun DesktopEditorScreen(
                     }
                 }
             }
+        },
+        settingsState = editorSettingsState,
+        onToggleWordWrap = { updateSettings { copy(wordWrap = !wordWrap) } },
+        onToggleLineNumbers = { updateSettings { copy(showLineNumbers = !showLineNumbers) } },
+        onToggleWhitespace = { /* showWhitespace not in DesktopSettings yet — no-op */ },
+        onIncreaseFontSize = { updateSettings { copy(fontSize = (fontSize + 2).coerceAtMost(48)) } },
+        onDecreaseFontSize = { updateSettings { copy(fontSize = (fontSize - 2).coerceAtLeast(8)) } },
+        onOpenSettings = {
+            javax.swing.JOptionPane.showMessageDialog(
+                null,
+                "Settings are managed via the View menu toggles and the menu bar.\n" +
+                    "Configuration file: ${System.getenv("XDG_CONFIG_HOME") ?: "~/.config"}/omnieditor/settings.json",
+                "Settings",
+                javax.swing.JOptionPane.INFORMATION_MESSAGE,
+            )
         },
         viewModel = viewModel,
     )
@@ -157,6 +187,11 @@ private fun DesktopCompareScreen(
         }
     }
 
+    // Compare settings state
+    var layoutMode by remember { mutableStateOf("unified") }
+    var syncScroll by remember { mutableStateOf(true) }
+    var granularity by remember { mutableStateOf("word") }
+
     CompareScreen(
         state = compareState,
         ruleSet = ruleSet,
@@ -164,6 +199,33 @@ private fun DesktopCompareScreen(
         leftLabel = File(leftPath).name,
         rightLabel = File(rightPath).name,
         onNavigateBack = { navigator.back() },
+        settingsState = com.omnieditor.feature.compare.CompareSettingsState(
+            layoutMode = layoutMode,
+            syncScroll = syncScroll,
+            granularity = granularity,
+        ),
+        settingsCallbacks = com.omnieditor.feature.compare.CompareSettingsCallbacks(
+            onSetLayout = { layoutMode = it },
+            onToggleSyncScroll = { syncScroll = !syncScroll },
+            onSetGranularity = { g ->
+                granularity = g
+                val newGranularity = when (g) {
+                    "line" -> com.omnieditor.core.model.Granularity.LINE
+                    "char" -> com.omnieditor.core.model.Granularity.CHARACTER
+                    else -> com.omnieditor.core.model.Granularity.WORD
+                }
+                ruleSet = ruleSet.copy(granularity = newGranularity)
+            },
+            onOpenSettings = {
+                javax.swing.JOptionPane.showMessageDialog(
+                    null,
+                    "Compare settings are available via the toolbar options.\n" +
+                        "Layout, granularity, and sync scroll can be toggled from the menu.",
+                    "Compare Settings",
+                    javax.swing.JOptionPane.INFORMATION_MESSAGE,
+                )
+            },
+        ),
         onSave = {
             scope.launch {
                 val state = compareState ?: return@launch
