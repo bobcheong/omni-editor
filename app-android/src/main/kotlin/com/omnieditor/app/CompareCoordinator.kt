@@ -260,10 +260,10 @@ internal fun CompareDestination(
     val saveFunction: (() -> Unit)? = if (leftDocument != null || rightDocument != null) {
         {
             scope.launch {
-                if (compareState == null) return@launch
+                val state = compareState ?: return@launch
                 val leftUri = leftCached?.uri?.let { android.net.Uri.parse(it) }
                 val rightUri = rightCached?.uri?.let { android.net.Uri.parse(it) }
-                executeMergeSave(
+                val error = executeMergeSave(
                     context = context,
                     leftDocument = leftDocument,
                     rightDocument = rightDocument,
@@ -284,6 +284,12 @@ internal fun CompareDestination(
                         rightInitialSize = sz; rightInitialModified = mod
                     },
                 )
+                // Z-5: surface save errors to the user via mergeMessage (shown as snackbar)
+                if (error != null) {
+                    state.showMessage("Save failed: $error")
+                } else {
+                    state.showMessage("Saved")
+                }
             }
         }
     } else {
@@ -431,7 +437,7 @@ internal suspend fun executeMergeSave(
     sessionId: String,
     onLeftFingerprintUpdated: (Long, Long) -> Unit,
     onRightFingerprintUpdated: (Long, Long) -> Unit,
-) {
+): String? {
     val fingerprintCols = arrayOf(
         OpenableColumns.SIZE,
         DocumentsContract.Document.COLUMN_LAST_MODIFIED,
@@ -455,15 +461,17 @@ internal suspend fun executeMergeSave(
         changed
     }
     // Do not overwrite silently; spec §13 maps this to ExternalChangeDetected UI state.
-    if (externalChangeDetected) return
+    if (externalChangeDetected) return "Save aborted: file was modified externally"
 
     // Write dirty documents and refresh fingerprints.
     // file:// URIs: delegate to SaveOrchestrator (handles backup + atomic write, R-51, R-57).
     // content:// URIs: ContentResolver write stays inline (Android SAF, no atomic rename available).
     // R-52: Use materialise() to encode with the document's tracked charset, not toByteArray() (UTF-8 only).
+    val errors = mutableListOf<String>()
     withContext(Dispatchers.IO) {
         suspend fun saveDoc(
             doc: PieceTableDocument?, uri: Uri?, cachedUri: String?,
+            label: String,
             onFingerprintUpdated: (Long, Long) -> Unit,
         ) {
             if (doc?.dirty != true || uri == null) return
@@ -471,7 +479,10 @@ internal suspend fun executeMergeSave(
             if (localFile != null) {
                 // file:// path — delegate to SaveOrchestrator (single-sourced, R-57)
                 val result = SaveOrchestrator.saveWithBackup(doc, localFile, backupDir, sessionId)
-                if (!result.success) return // abort — backup or write failed
+                if (!result.success) {
+                    errors.add("$label: ${result.error ?: "save failed"}")
+                    return
+                }
                 doc.markSaved()
                 // Refresh fingerprint from the written file
                 onFingerprintUpdated(localFile.length(), localFile.lastModified())
@@ -486,9 +497,10 @@ internal suspend fun executeMergeSave(
             }
         }
 
-        saveDoc(leftDocument, leftUri, leftCachedUri, onLeftFingerprintUpdated)
-        saveDoc(rightDocument, rightUri, rightCachedUri, onRightFingerprintUpdated)
+        saveDoc(leftDocument, leftUri, leftCachedUri, "Left", onLeftFingerprintUpdated)
+        saveDoc(rightDocument, rightUri, rightCachedUri, "Right", onRightFingerprintUpdated)
     }
+    return if (errors.isEmpty()) null else errors.joinToString("; ")
 }
 
 /**

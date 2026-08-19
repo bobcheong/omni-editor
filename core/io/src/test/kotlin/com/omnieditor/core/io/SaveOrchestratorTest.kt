@@ -162,4 +162,43 @@ class SaveOrchestratorTest {
         // Original file must be untouched (atomic rename never happened).
         target.readText() shouldBe "precious original"
     }
+
+    // ── Z-5: Backup failure aborts save ─────────────────────────────────────────
+
+    @Test
+    fun `saveWithBackup on backup failure aborts save and preserves original`() = runTest {
+        val target = File(testDir, "guarded.txt").also { it.writeText("must not change") }
+        val doc = docWith("would overwrite")
+
+        // Make backup dir a file (not a directory) so MergeSafety.createBackup fails
+        backupDir.parentFile?.mkdirs()
+        backupDir.writeText("I am a file, not a directory")
+
+        val result = SaveOrchestrator.saveWithBackup(doc, target, backupDir, "s1")
+
+        result.success shouldBe false
+        result.error shouldNotBe null
+        result.error!!.contains("Backup failed") shouldBe true
+        // Original file must be untouched — save was aborted before any write
+        target.readText() shouldBe "must not change"
+    }
+
+    @Test
+    fun `saveWithBackup on backup failure returns error message with file name`() = runTest {
+        val target = File(testDir, "important.txt").also { it.writeText("original") }
+        val doc = docWith("new content")
+
+        // Unwritable backup dir
+        backupDir.mkdirs()
+        backupDir.setWritable(false)
+
+        val result = SaveOrchestrator.saveWithBackup(doc, target, backupDir, "s1")
+
+        result.success shouldBe false
+        result.error shouldNotBe null
+        // Restore permissions for cleanup
+        backupDir.setWritable(true)
+        // Original untouched
+        target.readText() shouldBe "original"
+    }
 }

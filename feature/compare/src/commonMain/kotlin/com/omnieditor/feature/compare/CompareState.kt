@@ -117,9 +117,11 @@ class CompareState(
     /** True when documents are available for merge write-back. */
     val canMerge: Boolean get() = leftDocument != null || rightDocument != null
 
-    /** Message shown after a merge operation. */
+    /** Message shown after a merge or save operation. */
     var mergeMessage by mutableStateOf<String?>(null)
-        internal set
+
+    /** Set a message to display to the user (merge result, save error, etc.). */
+    fun showMessage(message: String) { mergeMessage = message }
 
     /** True when at least one document has undoable edits (i.e. restore is possible). */
     val canUndo: Boolean

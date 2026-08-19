@@ -168,22 +168,35 @@ private fun DesktopCompareScreen(
             scope.launch {
                 val state = compareState ?: return@launch
                 val backupDir = File(System.getProperty("java.io.tmpdir"), "omnieditor-backups")
+                val errors = mutableListOf<String>()
                 withContext(Dispatchers.IO) {
                     val leftDoc = state.leftDocument
                     if (state.leftDirty && leftDoc != null) {
-                        SaveOrchestrator.saveWithBackup(
+                        val result = SaveOrchestrator.saveWithBackup(
                             leftDoc, File(leftPath), backupDir, "compare",
                         )
-                        leftDoc.markSaved()
+                        if (result.success) {
+                            leftDoc.markSaved()
+                        } else {
+                            errors.add("Left: ${result.error ?: "save failed"}")
+                        }
                     }
                     val rightDoc = state.rightDocument
                     if (state.rightDirty && rightDoc != null) {
-                        SaveOrchestrator.saveWithBackup(
+                        val result = SaveOrchestrator.saveWithBackup(
                             rightDoc, File(rightPath), backupDir, "compare",
                         )
-                        rightDoc.markSaved()
+                        if (result.success) {
+                            rightDoc.markSaved()
+                        } else {
+                            errors.add("Right: ${result.error ?: "save failed"}")
+                        }
                     }
                 }
+                // Z-5: surface save errors to user via mergeMessage (shown as snackbar)
+                state.showMessage(
+                    if (errors.isEmpty()) "Saved" else "Save failed: ${errors.joinToString("; ")}"
+                )
             }
         },
         onOpenLeft = { navigator.navigate(Screen.Editor(leftPath)) },
