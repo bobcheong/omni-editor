@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Omni Editor
+Comment=Text editor, compare and merge tool
+Exec=omnieditor %F
+Icon=dev.srcse.OmniEditor
+Categories=Development;TextEditor;
+MimeType=text/plain;text/x-log;text/csv;text/markdown;application/json;application/xml;text/x-patch;text/x-diff;
+Terminal=false

@@ -25,19 +25,19 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 @Composable
-fun DesktopApp(initialAction: StartAction = StartAction.None) {
-    val navigator = remember { DesktopNavigator() }
-
+fun DesktopApp(
+    initialAction: StartAction = StartAction.None,
+    navigator: DesktopNavigator = remember { DesktopNavigator() },
+) {
     // Route initial action once
-    remember(initialAction) {
+    LaunchedEffect(initialAction) {
         when (initialAction) {
             is StartAction.OpenFile -> navigator.navigate(Screen.Editor(initialAction.path))
             is StartAction.Compare -> navigator.navigate(
                 Screen.Compare(initialAction.left, initialAction.right),
             )
-            StartAction.None -> {} // stay on home
+            StartAction.None -> {}
         }
-        true
     }
 
     OmniTheme {

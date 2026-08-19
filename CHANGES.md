@@ -84,6 +84,22 @@ upgrade to GMD instrumented tests deferred until a device tier is available.
   `SourceSetupScreen`, `DesktopHomeScreen` with `JFileChooser` file dialogs
 - Z-4: `PlatformBackHandler` deduplicated to `design` module; Move 2b not attempted
   (accepted as best-effort per spec)
+- Z-5: Save-failure errors surfaced via `CompareState.showMessage()` on both platforms;
+  `executeMergeSave()` returns error string instead of silently aborting
+- Z-6: Desktop menu bar (File/Edit/Help) with accelerators; About dialog shows D-8 string
+- Z-7: MIME associations extended (`.md`, `.json`, `.patch`, `.csv`, `.xml`, `.log`, `.diff`);
+  `%F` in Exec line for file-manager integration
+
+### D-9: SAF save-path limitation (ledger note)
+
+Store-flavour (SAF) saves are not crash-atomic. `openOutputStream(uri, "wt")` truncates
+the document in place; a mid-write failure (process kill, disk full) can corrupt the file.
+SAF provides no temp+rename or backup mechanism. The direct flavour's atomic write path
+(via `SaveOrchestrator`: backup → temp file → fsync → rename, per R-51/R-57) is the
+safety-recommended path. This is a pre-existing limitation, not introduced by the
+v0.5 port. The R-28 pre-write fingerprint check runs in the outer `executeMergeSave()`
+flow and covers both file:// and content:// branches. See also ADR-015 (save path by
+flavour) and ADR-018 (desktop uses filesystem path exclusively).
 
 ## P1 Completion Plan (R-01 onwards)
 

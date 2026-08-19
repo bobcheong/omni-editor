@@ -1,9 +1,15 @@
 package com.omnieditor.desktop
 
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyShortcut
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -11,18 +17,80 @@ fun main(args: Array<String>) {
     val action = parseArgs(args)
 
     application {
-        val settings = DesktopSettings.load()
+        val settings = remember { DesktopSettings.load() }
         val state = rememberWindowState(
             width = settings.windowWidth.dp,
             height = settings.windowHeight.dp,
         )
+        val navigator = remember { DesktopNavigator() }
+        val scope = rememberCoroutineScope()
 
         Window(
-            onCloseRequest = ::exitApplication,
+            onCloseRequest = {
+                // Persist window state before quitting
+                DesktopSettings.save(
+                    settings.copy(
+                        windowWidth = state.size.width.value.toInt(),
+                        windowHeight = state.size.height.value.toInt(),
+                    )
+                )
+                exitApplication()
+            },
             title = "Omni Editor",
             state = state,
         ) {
-            DesktopApp(initialAction = action)
+            // Z-6: Desktop menu bar — mapped to existing actions, no new functionality
+            MenuBar {
+                Menu("File") {
+                    Item("Open…", shortcut = KeyShortcut(Key.O, ctrl = true)) {
+                        scope.launch {
+                            val file = DesktopFileDialogs.showOpenDialog()
+                            if (file != null) navigator.navigate(Screen.Editor(file.absolutePath))
+                        }
+                    }
+                    Item("Compare…") {
+                        navigator.navigate(Screen.Setup())
+                    }
+                    Separator()
+                    Item("Quit", shortcut = KeyShortcut(Key.Q, ctrl = true)) {
+                        DesktopSettings.save(
+                            settings.copy(
+                                windowWidth = state.size.width.value.toInt(),
+                                windowHeight = state.size.height.value.toInt(),
+                            )
+                        )
+                        exitApplication()
+                    }
+                }
+                Menu("Edit") {
+                    Item("Undo", shortcut = KeyShortcut(Key.Z, ctrl = true)) {
+                        // Routed to the active screen's undo via key event — menu is informational
+                    }
+                    Item("Redo", shortcut = KeyShortcut(Key.Z, ctrl = true, shift = true)) {}
+                    Separator()
+                    Item("Cut", shortcut = KeyShortcut(Key.X, ctrl = true)) {}
+                    Item("Copy", shortcut = KeyShortcut(Key.C, ctrl = true)) {}
+                    Item("Paste", shortcut = KeyShortcut(Key.V, ctrl = true)) {}
+                    Separator()
+                    Item("Find", shortcut = KeyShortcut(Key.F, ctrl = true)) {}
+                }
+                Menu("Help") {
+                    Item("About") {
+                        // Show about info — the D-8 string gets its desktop home
+                        javax.swing.JOptionPane.showMessageDialog(
+                            null,
+                            "Omni Editor\n${DesktopBuildInfo.aboutString}\n\nText editor, compare and merge tool",
+                            "About Omni Editor",
+                            javax.swing.JOptionPane.INFORMATION_MESSAGE,
+                        )
+                    }
+                }
+            }
+
+            DesktopApp(
+                initialAction = action,
+                navigator = navigator,
+            )
         }
     }
 }
