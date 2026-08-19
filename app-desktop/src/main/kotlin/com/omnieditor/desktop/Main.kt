@@ -1,7 +1,10 @@
 package com.omnieditor.desktop
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyShortcut
 import androidx.compose.ui.unit.dp
@@ -17,29 +20,32 @@ fun main(args: Array<String>) {
     val action = parseArgs(args)
 
     application {
-        val settings = remember { DesktopSettings.load() }
-        val state = rememberWindowState(
+        var settings by remember { mutableStateOf(DesktopSettings.load()) }
+        fun updateSettings(newSettings: DesktopSettings) {
+            settings = newSettings
+            DesktopSettings.save(newSettings)
+        }
+
+        val windowState = rememberWindowState(
             width = settings.windowWidth.dp,
             height = settings.windowHeight.dp,
         )
         val navigator = remember { DesktopNavigator() }
         val scope = rememberCoroutineScope()
 
+        fun saveWindowStateAndQuit() {
+            updateSettings(settings.copy(
+                windowWidth = windowState.size.width.value.toInt(),
+                windowHeight = windowState.size.height.value.toInt(),
+            ))
+            exitApplication()
+        }
+
         Window(
-            onCloseRequest = {
-                // Persist window state before quitting
-                DesktopSettings.save(
-                    settings.copy(
-                        windowWidth = state.size.width.value.toInt(),
-                        windowHeight = state.size.height.value.toInt(),
-                    )
-                )
-                exitApplication()
-            },
+            onCloseRequest = ::saveWindowStateAndQuit,
             title = "Omni Editor",
-            state = state,
+            state = windowState,
         ) {
-            // Z-6: Desktop menu bar — mapped to existing actions, no new functionality
             MenuBar {
                 Menu("File") {
                     Item("Open…", shortcut = KeyShortcut(Key.O, ctrl = true)) {
@@ -52,20 +58,16 @@ fun main(args: Array<String>) {
                         navigator.navigate(Screen.Setup())
                     }
                     Separator()
+                    Item("Settings…") {
+                        navigator.navigate(Screen.Settings)
+                    }
+                    Separator()
                     Item("Quit", shortcut = KeyShortcut(Key.Q, ctrl = true)) {
-                        DesktopSettings.save(
-                            settings.copy(
-                                windowWidth = state.size.width.value.toInt(),
-                                windowHeight = state.size.height.value.toInt(),
-                            )
-                        )
-                        exitApplication()
+                        saveWindowStateAndQuit()
                     }
                 }
                 Menu("Edit") {
-                    Item("Undo", shortcut = KeyShortcut(Key.Z, ctrl = true)) {
-                        // Routed to the active screen's undo via key event — menu is informational
-                    }
+                    Item("Undo", shortcut = KeyShortcut(Key.Z, ctrl = true)) {}
                     Item("Redo", shortcut = KeyShortcut(Key.Z, ctrl = true, shift = true)) {}
                     Separator()
                     Item("Cut", shortcut = KeyShortcut(Key.X, ctrl = true)) {}
@@ -74,9 +76,35 @@ fun main(args: Array<String>) {
                     Separator()
                     Item("Find", shortcut = KeyShortcut(Key.F, ctrl = true)) {}
                 }
+                Menu("View") {
+                    CheckboxItem(
+                        "Word Wrap",
+                        checked = settings.wordWrap,
+                    ) { updateSettings(settings.copy(wordWrap = it)) }
+                    CheckboxItem(
+                        "Line Numbers",
+                        checked = settings.showLineNumbers,
+                    ) { updateSettings(settings.copy(showLineNumbers = it)) }
+                    CheckboxItem(
+                        "Show Whitespace",
+                        checked = settings.showWhitespace,
+                    ) { updateSettings(settings.copy(showWhitespace = it)) }
+                    Separator()
+                    Item("Increase Font Size") {
+                        updateSettings(settings.copy(fontSize = (settings.fontSize + 2).coerceAtMost(48)))
+                    }
+                    Item("Decrease Font Size") {
+                        updateSettings(settings.copy(fontSize = (settings.fontSize - 2).coerceAtLeast(8)))
+                    }
+                    Separator()
+                    Menu("Theme") {
+                        Item("System Default") { updateSettings(settings.copy(darkTheme = "system")) }
+                        Item("Light") { updateSettings(settings.copy(darkTheme = "light")) }
+                        Item("Dark") { updateSettings(settings.copy(darkTheme = "dark")) }
+                    }
+                }
                 Menu("Help") {
                     Item("About") {
-                        // Show about info — the D-8 string gets its desktop home
                         javax.swing.JOptionPane.showMessageDialog(
                             null,
                             "Omni Editor\n${DesktopBuildInfo.aboutString}\n\nText editor, compare and merge tool",
@@ -90,6 +118,8 @@ fun main(args: Array<String>) {
             DesktopApp(
                 initialAction = action,
                 navigator = navigator,
+                settings = settings,
+                onSettingsChanged = ::updateSettings,
             )
         }
     }

@@ -9,7 +9,12 @@ data class DesktopSettings(
     val darkTheme: String = "system", // "system", "light", "dark"
     val wordWrap: Boolean = true,
     val showLineNumbers: Boolean = true,
+    val showWhitespace: Boolean = false,
     val fontSize: Int = 14,
+    val tabWidth: Int = 4,
+    val defaultLayout: String = "unified", // "unified" or "split"
+    val syncScroll: Boolean = true,
+    val granularity: String = "word", // "word", "char", "line"
     val windowWidth: Int = 1200,
     val windowHeight: Int = 800,
     val windowX: Int = -1,

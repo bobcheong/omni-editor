@@ -9,6 +9,7 @@ sealed class Screen {
     data class Editor(val filePath: String?) : Screen()
     data class Compare(val leftPath: String, val rightPath: String) : Screen()
     data class Setup(val prefillLeft: String? = null) : Screen()
+    data object Settings : Screen()
 }
 
 class DesktopNavigator {

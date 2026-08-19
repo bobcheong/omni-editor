@@ -28,7 +28,10 @@ import java.io.File
 fun DesktopApp(
     initialAction: StartAction = StartAction.None,
     navigator: DesktopNavigator = remember { DesktopNavigator() },
+    settings: DesktopSettings = remember { DesktopSettings.load() },
+    onSettingsChanged: (DesktopSettings) -> Unit = {},
 ) {
+
     // Route initial action once
     LaunchedEffect(initialAction) {
         when (initialAction) {
@@ -52,6 +55,8 @@ fun DesktopApp(
                 DesktopEditorScreen(
                     filePath = screen.filePath,
                     navigator = navigator,
+                    settings = settings,
+                    onSettingsChanged = onSettingsChanged,
                 )
             }
             is Screen.Compare -> {
@@ -59,12 +64,21 @@ fun DesktopApp(
                     leftPath = screen.leftPath,
                     rightPath = screen.rightPath,
                     navigator = navigator,
+                    settings = settings,
+                    onSettingsChanged = onSettingsChanged,
                 )
             }
             is Screen.Setup -> {
                 DesktopSetupScreen(
                     prefillLeft = screen.prefillLeft,
                     navigator = navigator,
+                )
+            }
+            is Screen.Settings -> {
+                DesktopSettingsScreen(
+                    settings = settings,
+                    onSettingsChanged = onSettingsChanged,
+                    onNavigateBack = { navigator.back() },
                 )
             }
         }
@@ -75,23 +89,19 @@ fun DesktopApp(
 private fun DesktopEditorScreen(
     filePath: String?,
     navigator: DesktopNavigator,
+    settings: DesktopSettings,
+    onSettingsChanged: (DesktopSettings) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val viewModel = remember { EditorViewModel() }
 
-    // Desktop settings state — persisted to XDG JSON
-    var settings by remember { mutableStateOf(DesktopSettings.load()) }
     val editorSettingsState = remember(settings) {
         com.omnieditor.feature.editor.EditorSettingsState(
             wordWrapEnabled = settings.wordWrap,
             showLineNumbers = settings.showLineNumbers,
+            showWhitespace = settings.showWhitespace,
             fontSize = settings.fontSize,
         )
-    }
-
-    fun updateSettings(block: DesktopSettings.() -> DesktopSettings) {
-        settings = settings.block()
-        DesktopSettings.save(settings)
     }
 
     // Load file content on first composition
@@ -131,20 +141,12 @@ private fun DesktopEditorScreen(
             }
         },
         settingsState = editorSettingsState,
-        onToggleWordWrap = { updateSettings { copy(wordWrap = !wordWrap) } },
-        onToggleLineNumbers = { updateSettings { copy(showLineNumbers = !showLineNumbers) } },
-        onToggleWhitespace = { /* showWhitespace not in DesktopSettings yet — no-op */ },
-        onIncreaseFontSize = { updateSettings { copy(fontSize = (fontSize + 2).coerceAtMost(48)) } },
-        onDecreaseFontSize = { updateSettings { copy(fontSize = (fontSize - 2).coerceAtLeast(8)) } },
-        onOpenSettings = {
-            javax.swing.JOptionPane.showMessageDialog(
-                null,
-                "Settings are managed via the View menu toggles and the menu bar.\n" +
-                    "Configuration file: ${System.getenv("XDG_CONFIG_HOME") ?: "~/.config"}/omnieditor/settings.json",
-                "Settings",
-                javax.swing.JOptionPane.INFORMATION_MESSAGE,
-            )
-        },
+        onToggleWordWrap = { onSettingsChanged(settings.copy(wordWrap = !settings.wordWrap)) },
+        onToggleLineNumbers = { onSettingsChanged(settings.copy(showLineNumbers = !settings.showLineNumbers)) },
+        onToggleWhitespace = { onSettingsChanged(settings.copy(showWhitespace = !settings.showWhitespace)) },
+        onIncreaseFontSize = { onSettingsChanged(settings.copy(fontSize = (settings.fontSize + 2).coerceAtMost(48))) },
+        onDecreaseFontSize = { onSettingsChanged(settings.copy(fontSize = (settings.fontSize - 2).coerceAtLeast(8))) },
+        onOpenSettings = { navigator.navigate(Screen.Settings) },
         viewModel = viewModel,
     )
 }
@@ -154,6 +156,8 @@ private fun DesktopCompareScreen(
     leftPath: String,
     rightPath: String,
     navigator: DesktopNavigator,
+    settings: DesktopSettings,
+    onSettingsChanged: (DesktopSettings) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var compareState by remember { mutableStateOf<CompareState?>(null) }
@@ -187,11 +191,6 @@ private fun DesktopCompareScreen(
         }
     }
 
-    // Compare settings state
-    var layoutMode by remember { mutableStateOf("unified") }
-    var syncScroll by remember { mutableStateOf(true) }
-    var granularity by remember { mutableStateOf("word") }
-
     CompareScreen(
         state = compareState,
         ruleSet = ruleSet,
@@ -200,15 +199,15 @@ private fun DesktopCompareScreen(
         rightLabel = File(rightPath).name,
         onNavigateBack = { navigator.back() },
         settingsState = com.omnieditor.feature.compare.CompareSettingsState(
-            layoutMode = layoutMode,
-            syncScroll = syncScroll,
-            granularity = granularity,
+            layoutMode = settings.defaultLayout,
+            syncScroll = settings.syncScroll,
+            granularity = settings.granularity,
         ),
         settingsCallbacks = com.omnieditor.feature.compare.CompareSettingsCallbacks(
-            onSetLayout = { layoutMode = it },
-            onToggleSyncScroll = { syncScroll = !syncScroll },
+            onSetLayout = { onSettingsChanged(settings.copy(defaultLayout = it)) },
+            onToggleSyncScroll = { onSettingsChanged(settings.copy(syncScroll = !settings.syncScroll)) },
             onSetGranularity = { g ->
-                granularity = g
+                onSettingsChanged(settings.copy(granularity = g))
                 val newGranularity = when (g) {
                     "line" -> com.omnieditor.core.model.Granularity.LINE
                     "char" -> com.omnieditor.core.model.Granularity.CHARACTER
@@ -216,15 +215,7 @@ private fun DesktopCompareScreen(
                 }
                 ruleSet = ruleSet.copy(granularity = newGranularity)
             },
-            onOpenSettings = {
-                javax.swing.JOptionPane.showMessageDialog(
-                    null,
-                    "Compare settings are available via the toolbar options.\n" +
-                        "Layout, granularity, and sync scroll can be toggled from the menu.",
-                    "Compare Settings",
-                    javax.swing.JOptionPane.INFORMATION_MESSAGE,
-                )
-            },
+            onOpenSettings = { navigator.navigate(Screen.Settings) },
         ),
         onSave = {
             scope.launch {
@@ -255,7 +246,6 @@ private fun DesktopCompareScreen(
                         }
                     }
                 }
-                // Z-5: surface save errors to user via mergeMessage (shown as snackbar)
                 state.showMessage(
                     if (errors.isEmpty()) "Saved" else "Save failed: ${errors.joinToString("; ")}"
                 )
