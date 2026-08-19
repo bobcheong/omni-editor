@@ -134,9 +134,18 @@ fun main(args: Array<String>) {
                     }
                     Separator()
                     Menu("Theme") {
-                        Item("System Default") { updateSettings(settings.copy(darkTheme = "system")) }
-                        Item("Light") { updateSettings(settings.copy(darkTheme = "light")) }
-                        Item("Dark") { updateSettings(settings.copy(darkTheme = "dark")) }
+                        RadioButtonItem(
+                            "System Default",
+                            selected = settings.darkTheme == "system",
+                        ) { updateSettings(settings.copy(darkTheme = "system")) }
+                        RadioButtonItem(
+                            "Light",
+                            selected = settings.darkTheme == "light",
+                        ) { updateSettings(settings.copy(darkTheme = "light")) }
+                        RadioButtonItem(
+                            "Dark",
+                            selected = settings.darkTheme == "dark",
+                        ) { updateSettings(settings.copy(darkTheme = "dark")) }
                     }
                 }
                 Menu("Help") {

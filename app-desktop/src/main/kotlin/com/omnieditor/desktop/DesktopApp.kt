@@ -13,6 +13,7 @@ import com.omnieditor.core.io.SaveOrchestrator
 import com.omnieditor.core.model.RuleSet
 import com.omnieditor.core.model.SourceKind
 import com.omnieditor.core.model.SourceRef
+import androidx.compose.foundation.isSystemInDarkTheme
 import com.omnieditor.design.OmniTheme
 import com.omnieditor.feature.compare.CompareScreen
 import com.omnieditor.feature.compare.CompareState
@@ -44,7 +45,14 @@ fun DesktopApp(
         }
     }
 
-    OmniTheme {
+    val systemDark = isSystemInDarkTheme()
+    val darkTheme = when (settings.darkTheme) {
+        "light" -> false
+        "dark" -> true
+        else -> systemDark // "system" follows OS preference
+    }
+
+    OmniTheme(darkTheme = darkTheme, dynamicColor = false) {
         when (val screen = navigator.currentScreen) {
             is Screen.Home -> {
                 LaunchedEffect(Unit) { menuActions.clear() }
