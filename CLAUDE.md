@@ -3,7 +3,7 @@
 Read this before every task. The specification is `docs/OE-SPEC-001.html`; the completion
 plan is `docs/P1-COMPLETION-PLAN.md` (v3, authoritative). Forward plan:
 `docs/SPEC-GAP-PLAN.md` (rev 9, v0.3–v1.0). Change log: `CHANGES.md`.
-Current release: v0.5.0 (in progress; all code done incl. Settings screen + View menu + coroutines-swing fix; Y-3 benchmark gates tag).
+Current release: v0.5.0 (in progress; all code done incl. Z-6b/Z-7b punch-list; Y-3 benchmark gates tag).
 
 ## Independence (non-negotiable)
 
