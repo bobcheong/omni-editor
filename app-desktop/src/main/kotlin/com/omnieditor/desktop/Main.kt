@@ -68,6 +68,13 @@ fun main(args: Array<String>) {
                     ) {
                         menuActions.onSave?.invoke()
                     }
+                    Item(
+                        "Save As…",
+                        enabled = menuActions.onSaveAs != null,
+                        shortcut = KeyShortcut(Key.S, ctrl = true, shift = true),
+                    ) {
+                        menuActions.onSaveAs?.invoke()
+                    }
                     Separator()
                     Item("Settings…") {
                         navigator.navigate(Screen.Settings)

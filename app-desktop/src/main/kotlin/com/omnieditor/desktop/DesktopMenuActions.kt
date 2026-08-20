@@ -24,11 +24,12 @@ class DesktopMenuActions {
     var onCopy: (() -> Unit)? by mutableStateOf(null)
     var onPaste: (() -> Unit)? by mutableStateOf(null)
     var onFind: (() -> Unit)? by mutableStateOf(null)
+    var onSaveAs: (() -> Unit)? by mutableStateOf(null)
     var isDirty: Boolean by mutableStateOf(false)
 
     /** Clear all actions — called when navigating away from a screen. */
     fun clear() {
-        onSave = null; onUndo = null; onRedo = null
+        onSave = null; onSaveAs = null; onUndo = null; onRedo = null
         onCut = null; onCopy = null; onPaste = null
         onFind = null; isDirty = false
     }

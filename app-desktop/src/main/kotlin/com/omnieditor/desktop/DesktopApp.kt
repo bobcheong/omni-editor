@@ -14,6 +14,8 @@ import com.omnieditor.core.model.RuleSet
 import com.omnieditor.core.model.SourceKind
 import com.omnieditor.core.model.SourceRef
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
 import com.omnieditor.design.OmniTheme
 import com.omnieditor.feature.compare.CompareScreen
 import com.omnieditor.feature.compare.CompareState
@@ -53,6 +55,8 @@ fun DesktopApp(
     }
 
     OmniTheme(darkTheme = darkTheme, dynamicColor = false) {
+        // Surface ensures the entire window background follows the theme
+        Surface(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
         when (val screen = navigator.currentScreen) {
             is Screen.Home -> {
                 LaunchedEffect(Unit) { menuActions.clear() }
@@ -94,6 +98,7 @@ fun DesktopApp(
                 )
             }
         }
+        } // Surface
     }
 }
 
@@ -108,12 +113,28 @@ private fun DesktopEditorScreen(
     val scope = rememberCoroutineScope()
     val viewModel = remember { EditorViewModel() }
 
+    // Save As action — shared between menu and screen
+    val saveAsAction: () -> Unit = {
+        scope.launch {
+            val target = DesktopFileDialogs.showSaveDialog(
+                suggestedName = filePath?.let { File(it).name } ?: "document.txt",
+            )
+            if (target != null) {
+                withContext(Dispatchers.IO) {
+                    val content = viewModel.getContent()
+                    target.writeBytes(content.toByteArray())
+                }
+            }
+        }
+    }
+
     // Register menu actions for this screen
     LaunchedEffect(viewModel) {
         menuActions.onUndo = { viewModel.undo() }
         menuActions.onRedo = { viewModel.redo() }
         menuActions.onFind = { /* Find is handled internally by EditorScreen via its own state */ }
         menuActions.onSave = { viewModel.save() }
+        menuActions.onSaveAs = saveAsAction
     }
     // Track dirty state for File → Save enabled
     menuActions.isDirty = viewModel.isDirty
@@ -154,19 +175,7 @@ private fun DesktopEditorScreen(
         onCompareWith = {
             filePath?.let { navigator.navigate(Screen.Setup(prefillLeft = it)) }
         },
-        onSaveAs = {
-            scope.launch {
-                val target = DesktopFileDialogs.showSaveDialog(
-                    suggestedName = filePath?.let { File(it).name } ?: "document.txt",
-                )
-                if (target != null) {
-                    withContext(Dispatchers.IO) {
-                        val content = viewModel.getContent()
-                        target.writeBytes(content.toByteArray())
-                    }
-                }
-            }
-        },
+        onSaveAs = saveAsAction,
         settingsState = editorSettingsState,
         onToggleWordWrap = { onSettingsChanged(settings.copy(wordWrap = !settings.wordWrap)) },
         onToggleLineNumbers = { onSettingsChanged(settings.copy(showLineNumbers = !settings.showLineNumbers)) },
