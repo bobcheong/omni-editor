@@ -121,6 +121,7 @@ flavour) and ADR-018 (desktop uses filesystem path exclusively).
 |------|-----|--------|-----------|
 | 20 Aug 2026 | `1803dcf` | [1803dcf](https://github.com/bobcheong/omni-editor/commit/1803dcf) | APK (direct-debug) + Desktop jar (linux-x64) |
 | 20 Aug 2026 | `c4fb048` | [c4fb048](https://github.com/bobcheong/omni-editor/commit/c4fb048) | APK + Desktop jar — theme switching fix |
+| 20 Aug 2026 | `29b07e8` | [29b07e8](https://github.com/bobcheong/omni-editor/commit/29b07e8) | APK + Desktop jar — consistent dark theme + Save As |
 
 ## P1 Completion Plan (R-01 onwards)
 
